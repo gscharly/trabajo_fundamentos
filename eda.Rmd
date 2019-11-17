@@ -1,0 +1,91 @@
+---
+title: "eda"
+author: "Carlos Gomez Sanchez"
+date: "16 de noviembre de 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(GGally)
+library(dplyr)
+```
+
+```{r}
+houses <- read.csv('datasets/melb_data.csv')
+cols <- ncol(houses)
+rows <- nrow(houses)
+
+sprintf("El dataset tiene %i columnas y %i filas", cols, rows)
+
+head(houses)
+
+```
+
+Examinamos las variables categóricas:
+```{r}
+
+
+```
+Vemos que Rooms tiene pinta de concentrarse en pocos valores (1, 2, 3?)
+Sobre precio y distancia, se concetran en valores pequeños, y son candidatos a aplicar log para convertirlo en normales
+Landize y building area es probable que tengan unos outliers muy grandes, habría que verlo por separado.
+
+```{r message=FALSE}
+numeric_cols <- c("Rooms", "Price", "Distance", "Landsize", "BuildingArea", "Regionname")
+# Con select_if(is.numeric) nos cogeríamos todas las numericas
+
+houses %>% select(numeric_cols) %>%
+  na.omit() %>%
+  ggpairs(columns=1:5)
+```
+
+Vamos a mirar primero la variable prices:
+
+
+
+```{r prices}
+hist(houses$Rooms)
+boxplot(houses$Rooms)
+```
+```{r}
+for (i in 1:nrow(houses)) {
+  if (houses[i, "Rooms"] <=2) {
+    houses[i, "RoomsCat"] = "entre_1_y_2"
+  }
+  else if (houses[i, "Rooms"] <=4 & houses[i, "Rooms"] >2) {
+    houses[i, "RoomsCat"] = "entre_2_y_4"
+  }
+  else if (houses[i, "Rooms"] <=6 & houses[i, "Rooms"] >4) {
+    houses[i, "RoomsCat"] = "entre_4_y_6"
+  }
+  else if (houses[i, "Rooms"] <=8 & houses[i, "Rooms"] >6) {
+    houses[i, "RoomsCat"] = "entre_6_y_8"
+  }
+  else{
+    houses[i, "RoomsCat"] = "entre_8_y_10"
+  }
+}
+```
+
+```{r}
+houses %>% select(c("Price", "RoomsCat")) %>%
+  na.omit() %>%
+  ggplot(aes(x=Price, colour=RoomsCat)) +
+    geom_density()
+```
+
+
+```{r rooms}
+
+houses %>% select(c("Price", "Regionname")) %>%
+  na.omit() %>%
+  ggplot(aes(x=Price, colour=Regionname)) +
+    geom_density()
+
+```
