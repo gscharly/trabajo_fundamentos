@@ -1,155 +1,406 @@
 ---
-  title: "eda"
+title: "eda"
 author: "Carlos Gomez Sanchez"
 date: "16 de noviembre de 2019"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
   
-  ```{r setup, include=FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r}
+```{r libraries}
 library(ggplot2)
 library(GGally)
 library(dplyr)
+library(RColorBrewer)
+library(Hmisc)
+library(VIM)
 ```
 
-```{r}
+# Datos
+El dataset contiene información acerca del precio de venta de viviendas en Melbourne. En principio, el objetivo será utilizar las distintas variables para predecir el precio al que se venden las viviendas.
+
+Incluye la siguientes variables:
+
+- Suburb: barrio
+
+- Address: dirección
+
+- Postcode: código postal
+
+- YearBuilt: año de construcción
+
+- Lattitude
+
+- Longitude
+
+- Rooms: número de habitaciones
+
+- Price: precio en dólares
+
+- Method: S - property sold; SP - property sold prior; PI - property passed in; PN - sold prior not disclosed; SN - sold not disclosed; NB - no bid; VB - vendor bid; W - withdrawn prior to auction; SA - sold after auction; SS - sold after auction price not disclosed. N/A - price or highest bid not available.
+
+- Type: br - bedroom(s); h - house,cottage,villa, semi,terrace; u - unit, duplex; t - townhouse; dev site - development site; o res - other residential.
+
+- SellerG: agente inmobiliario
+
+- Date: fecha de venta
+
+- Distance: distancia desde el centro
+
+- Regionname: región general (West, North West, North, North east ...etc)
+
+- Propertycount: número de propiedades que hay en el barrio
+
+- Bedroom2: número de dormitorios
+
+- Bathroom: número de baños
+
+- Car: número de plazas de aparcamiento
+
+- Landsize: tamaño de parcela ¿?
+
+- BuildingArea: área de edificio ¿?
+
+- CouncilArea: gobernador del área
+
+
+
+```{r load_data}
 houses <- read.csv('datasets/melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
-
 sprintf("El dataset tiene %i columnas y %i filas", cols, rows)
-
 head(houses)
-
 ```
 
-rooms, price, method, distance,
-bedroom2, bathroom, car, landsize,
-buildingarea, councilarea, regionname
+# Análisis exploratorio de datos
 
-Examinamos las variables categóricas:
-  ```{r}
+## Un primer vistazo
+En primer lugar, hacemos un summary para ver con qué tipo de variables estamos tratando, y sus principales estadísticos.
+Observaciones:
+
+- Suburb, Address, Type, Method, SellerG, CouncilArea y Regionname son categóricas.
+- Postcode y YearBuilt son numéricas, aunque representan el código postal y el año de construcción.
+- Hay casas con Landsize y BuildingArea igual a 0. ¿Datos faltantes?
+- Tanto YearBuilt, BuildingArea y Car tienen NAs.
+
+```{r summary}
 summary(houses)
-
 ```
-Vemos que Rooms tiene pinta de concentrarse en pocos valores (1, 2, 3?)
-Sobre precio y distancia, se concetran en valores pequeños, y son candidatos a aplicar log para convertirlo en normales
-Landize y building area es probable que tengan unos outliers muy grandes, habría que verlo por separado.
+
+
+## Variables numéricas
+A continuación, examinamos las distintas variables numéricas, y su relación con la que será nuestra columna objetivo (Price).
+
+Vemos que Rooms se concentra en pocos valores (1,2,3).
+Sobre precio y distancia, se concetran en valores pequeños, y son candidatos a aplicar log para convertirlo en normales.
+Rooms, Bedroom2 y Bathroom presentan una correlación elevada lógicamente (son tipos de habitaciones).
+El número de habitaciones presenta una correlación lineal positiva con respecto al precio, mientras que la distancia es negativa (a menor distancia del centro, mayor precio).
 
 ```{r message=FALSE}
-numeric_cols <- c("Rooms", "Price", "Distance", "Landsize", "BuildingArea", "Regionname")
-# Con select_if(is.numeric) nos cogeríamos todas las numericas
+numeric_cols <- c("Rooms", "Distance", "Bedroom2", "Bathroom", "Car", "Price")
+# Con select_if(is.numeric) nos cogeríamos todas las numericas, pero no se ve nada
 
 houses %>% select(numeric_cols) %>%
   na.omit() %>%
-  ggpairs(columns=1:5)
+  ggpairs(columns=1:6)
 ```
 
-```{r message=FALSE}
-houses %>% select_if(is.numeric) %>%
-  na.omit() %>%
-  ggpairs(columns=1:5)
-```
+Examinando los histogramas y boxplots por separado:
 
+```{r histograms}
+cols = c("Rooms", "Distance", "Bedroom2", "Bathroom", "Price", "Car", "Landsize", "BuildingArea", "YearBuilt", "Propertycount")
 
-Vamos a mirar primero la variable prices:
-  
-  
-  
-  ```{r prices}
-hist(houses$Rooms)
-boxplot(houses$Rooms)
-```
-```{r}
-for (i in 1:nrow(houses)) {
-  if (houses[i, "Rooms"] <=2) {
-    houses[i, "RoomsCat"] = "entre_1_y_2"
-  }
-  else if (houses[i, "Rooms"] <=4 & houses[i, "Rooms"] >2) {
-    houses[i, "RoomsCat"] = "entre_2_y_4"
-  }
-  else if (houses[i, "Rooms"] <=6 & houses[i, "Rooms"] >4) {
-    houses[i, "RoomsCat"] = "entre_4_y_6"
-  }
-  else if (houses[i, "Rooms"] <=8 & houses[i, "Rooms"] >6) {
-    houses[i, "RoomsCat"] = "entre_6_y_8"
-  }
-  else{
-    houses[i, "RoomsCat"] = "entre_8_y_10"
-  }
+plot_hist <- function(df, col){
+  hist(df[,col],
+     col = 'darkslategray3',
+     border = 'white',
+     main = paste('Histogram', col),
+     xlab = col,
+     ylab = 'Freq')
+}
+
+for (col in cols) {
+  plot_hist(houses, col)
 }
 ```
 
+```{r boxplots}
+plot_box <- function(df, col){
+  boxplot(df[,col],
+     border = '#105e62',
+     main = paste('Boxplot', col),
+     ylabel=col)
+}
+
+for (col in cols) {
+  plot_box(houses, col)
+}
+```
+
+### Rooms y Prices
+Rooms se concetra entre 2, 3 y 4 habitaciones. Parece que los precios más altos se alcanzan con 3, 4 y 5 habitaciones, pero los rangos son similares.
+
 ```{r}
-houses %>% select(c("Price", "RoomsCat")) %>%
-  na.omit() %>%
-  ggplot(aes(x=Price, colour=RoomsCat)) +
+houses %>%
+  select('Rooms', 'Price') %>%
+  ggpairs
+```
+Podemos probar a categorizar la variable Rooms:
+
+```{r}
+houses %>%
+  mutate(rooms_cat = cut2(Rooms, g=4)) %>%
+  select(rooms_cat) %>%
+  table()
+```
+
+```{r}
+houses %>% 
+  mutate(rooms_cat = cut2(Rooms, g=4)) %>%
+  select(Price, rooms_cat) %>%
+  ggplot(aes(x=Price, colour=rooms_cat)) +
   geom_density()
 ```
 
+### Distance y Price
+Parece que las casas vendidas se concentran a una distancia del centro menor que 15km.
+```{r}
+houses %>%
+  select('Distance', 'Price') %>%
+  ggpairs
+```
 
-```{r rooms}
 
+```{r}
+model_room_price = lm(Price ~ Distance, data=houses)
+summary(model_room_price)
+```
+```{r}
+my_cols = brewer.pal(5, "Set1")
+houses %>%
+  select('Distance', 'Price') %>%
+  ggplot(aes(x=Distance, y=Price)) + 
+  geom_point(color=my_cols[3]) + 
+  geom_smooth(method=lm, fill=my_cols[2])
+```
+
+```{r}
+houses %>% select(Distance) %>%
+  filter(Distance > 0) %>%
+  mutate(log_distance = log10(Distance)) %>%
+  ggplot(aes(x=log_distance)) +
+  geom_density()
+```
+
+## Variables categóricas
+Examinamos la variable Price en función de las variables categóricas que tenemos.
+
+### Regionname
+Distribución de precio en función de la región. Western Victoria parece que tiene unos precios más bajos, mientras que Southern Metropolitan y Easter Metropolitan (¿?) parece que tienen mayores precios.
+
+```{r fig.width=15, fig.height=4}
 houses %>% select(c("Price", "Regionname")) %>%
   na.omit() %>%
   ggplot(aes(x=Price, colour=Regionname)) +
   geom_density()
-
 ```
-```{r}
-houses %>% select(c("YearBuilt", "Regionname")) %>%
+```{r fig.width=15, fig.height=4}
+houses %>% select(c("Price", "Regionname")) %>%
   na.omit() %>%
-  ggplot(aes(x=YearBuilt, colour=Regionname)) +
+  ggplot(aes(y=Price, fill=Regionname)) +
+  geom_boxplot()
+```
+
+### Type
+Solo tenemos 3 tipos (en la descripción aparecen más)
+
+```{r}
+houses %>% select(c("Price", "Type")) %>%
+  na.omit() %>%
+  ggplot(aes(x=Price, colour=Type)) +
   geom_density()
 ```
 
-
+```{r}
+houses %>% select(c("Price", "Type")) %>%
+  na.omit() %>%
+  ggplot(aes(y=Price, fill=Type)) +
+  geom_boxplot()
+```
+### Method
+```{r}
+houses %>% select(c("Price", "Method")) %>%
+  na.omit() %>%
+  ggplot(aes(x=Price, colour=Method)) +
+  geom_density()
+```
 
 ```{r}
-boxplot(houses$YearBuilt)
+houses %>% select(c("Price", "Method")) %>%
+  na.omit() %>%
+  ggplot(aes(y=Price, fill=Method)) +
+  geom_boxplot()
 ```
 
 
 
-```{r datos_faltantes}
+### CouncilArea
+
+```{r fig.width=15, fig.height=4}
+houses %>% select(c("Price", "CouncilArea")) %>%
+  na.omit() %>%
+  ggplot(aes(y=Price, fill=CouncilArea)) +
+  geom_boxplot()
+```
+
+### Suburb
+
+```{r}
+length(unique(houses$Suburb))
+```
+
+### SellerG
+```{r}
+length(unique(houses$SellerG))
+```
+
+# Datos faltantes
+Hemos visto anteriormente que las variables YearBuilt, BuildingArea y Car tenían valores NAs, y que la variable Landsize tenía valores sospechosos (0).
+Examinamos primero que % de los registros no tienen estos valores rellenos.
+
+Observamos que cerca del 50% de los regisros tienen la variable BuildingArea sin informar, así como el 40% no tienen la varialbe YearBuilt informada. Vemos además que en el 37% de los casos, BuildingArea y YearBuilt faltan simultáneamente. El % de registros con la variable Car vacía es muy pequeño. Además, tenemos 15% de 0 en la variable landsize, lo que podríamos considerar como valores faltantes
+
+```{r datos_faltantes, message=FALSE}
 library(VIM)
 aggr_plot <- aggr(houses, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE,
                   labels=names(houses), cex.axis=.7, gap=3, 
                   ylab=c("Histogram of missing data","Pattern"))
 
 ```
+¿Puede haber relación?
+```{r}
+houses %>% filter((YearBuilt > 1200 | is.na(YearBuilt)) & (BuildingArea < 2500 | is.na(BuildingArea))) %>% select(YearBuilt, BuildingArea) %>% marginplot()
+```
+```{r}
+houses %>% filter((YearBuilt > 1200 | is.na(YearBuilt)) & (BuildingArea < 2500 | is.na(BuildingArea))) %>%
+  select(YearBuilt, BuildingArea) %>%
+  VIM::kNN() %>%
+  marginplot(., delimiter='_imp')
+```
+```{r}
+houses %>% filter(YearBuilt > 1200 | is.na(YearBuilt) & BuildingArea < 2500) %>%
+  select(YearBuilt, BuildingArea) %>%
+  VIM::kNN() %>%
+  select(BuildingArea) %>%
+  boxplot
+```
+
+
+### BuildingArea
+Tenemos 7130 (52.5%) valores informados, de los cuales el 0.24% son 0. Además, los valores informados son muy dispares, con una gran cantidad de outliers. Hay 4 valores por encima de 2500 que nos dificultan mucho la visualización de los datos. Se podrían quitar, o hacer una transformación logarítmica para verlo mejor.
+
+```{r}
+houses %>%
+  select(BuildingArea) %>%
+  filter(BuildingArea > 0) %>%
+  nrow
+```
 
 ```{r buildingArea}
-boxplot(houses$BuildingArea)
+houses %>%
+  select(BuildingArea) %>%
+  filter(BuildingArea > 0 & BuildingArea < 2500) %>%
+  boxplot(main='BuildingArea')
+```
+```{r}
+houses %>%
+  select(BuildingArea, Price) %>%
+  filter(BuildingArea > 0 & BuildingArea < 2500) %>%
+  ggpairs(columns=1:2)
 ```
 
 ```{r}
-houses %>% select(YearBuilt, BuildingArea) %>% marginplot()
-```
-
-```{r}
-houses %>% filter(YearBuilt < 1200)
-```
-Además, tenemos 15% de 0 en la variable landsize, lo que podríamos considerar como valores faltantes
-
-```{r}
-houses %>% select(c('BuildingArea', 'Landsize', 'Price')) %>%
+houses %>% select(BuildingArea) %>%
   na.omit() %>%
-  ggpairs(columns=1:3)
+  filter(BuildingArea > 0) %>%
+  mutate(log_building_area = log10(BuildingArea)) %>%
+  ggplot(aes(x=log_building_area)) +
+  geom_density()
+```
+
+Hay que explorar BuildingArea en función de otras variables.
+
+#### Type
+
+```{r}
+houses %>% select(c("BuildingArea", "Type")) %>%
+  na.omit() %>% 
+  filter(BuildingArea > 0 & BuildingArea < 2500) %>%
+  ggplot(aes(x=BuildingArea, colour=Type)) +
+  geom_density()
 ```
 
 ```{r}
-# Estas igual son el centro de verdad
-houses %>% filter(Distance == 0)
+houses %>% select(c("BuildingArea", "Type")) %>%
+  na.omit() %>%
+  filter(BuildingArea > 0 & BuildingArea < 2500) %>%
+  ggplot(aes(y=BuildingArea, fill=Type)) +
+  geom_boxplot()
+```
+```{r}
+houses %>% filter(BuildingArea < 2500 | is.na(BuildingArea)) %>% select(Type, BuildingArea) %>% marginplot()
+```
+```{r}
+houses %>% filter(BuildingArea < 2500 | is.na(BuildingArea)) %>%
+  select(Type, BuildingArea) %>%
+  VIM::kNN() %>%
+  marginplot(., delimiter='_imp')
 ```
 
 ```{r}
-boxplot(houses$Car)
+houses %>% filter(BuildingArea < 2500 | is.na(BuildingArea)) %>%
+  select(Type, BuildingArea) %>%
+  VIM::kNN()  %>%
+  ggplot(aes(y=BuildingArea, fill=Type)) +
+  geom_boxplot()
 ```
+```{r}
+houses %>% filter(BuildingArea < 2500 | is.na(BuildingArea)) %>%
+  select(Type, BuildingArea) %>%
+  VIM::kNN()  %>%
+  select(BuildingArea) %>%
+  boxplot
+```
+
+### YearBuilt
+8205 valores informados. Tenemos un outlier en 1196.
+```{r}
+houses %>%
+  select(YearBuilt) %>%
+  filter(YearBuilt >= 0) %>%
+  nrow
+```
+
+```{r buildingArea}
+houses %>%
+  select(YearBuilt) %>%
+  filter(YearBuilt > 1200) %>%
+  boxplot(main='YearBuilt')
+```
+```{r}
+houses %>%
+  select(YearBuilt, Price) %>%
+  filter(YearBuilt > 1200) %>%
+  ggpairs(columns=1:2)
+```
+
+
 ```{r}
 houses %>%
   na.omit() %>%
@@ -163,22 +414,8 @@ houses %>% filter((YearBuilt > 1200) | is.na(YearBuilt)) %>% select(YearBuilt, P
 ```
 
 ```{r}
-houses %>% filter((YearBuilt > 1200) | is.na(YearBuilt)) %>% select(YearBuilt, Landsize) %>% marginplot()
+houses %>% filter((YearBuilt > 1200) | is.na(YearBuilt)) %>%
+  select(YearBuilt, Price) %>%
+  VIM::kNN() %>%
+  marginplot(., delimiter='_imp')
 ```
-
-
-```{r}
-
-
-houses %>%
-  na.omit() %>%
-  filter(YearBuilt > 1200) %>%
-  ggplot(aes(x = YearBuilt, y = Landsize)) +
-  geom_point()
-```
-
-
-
-
-
-
