@@ -5,26 +5,96 @@ date: "16 de noviembre de 2019"
 output: html_document
 ---
 
+<center style="color: #5d1451;font-size: 200%">
+**Melbourne Housing**
+</center>
+<br>
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r}
+```{r, eval=FALSE, message=FALSE}
 library(ggplot2)
 library(GGally)
 library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(Hmisc)
 ```
 
-```{r}
-houses <- read.csv('datasets/melb_data.csv')
+## Lectura y descripción del dataset
+
+```{r Lectura}
+houses <- read.csv('melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
+```
 
-sprintf("El dataset tiene %i columnas y %i filas", cols, rows)
+El presente dataset contiene información acerca del sector inmobiliario en la ciudad de Melbourne. Está compuesto por un total de 21 variables y 13580 observaciones.
+A continuación se muestra una tabla con la descripción de cada variable.
 
-head(houses)
+```{r Descripción}
+dfcol <- data.frame(
+  'Variable' = c('Rooms', 'Price', 'Method', 'Type', 'SellerG', 'Date', 'Distance', 'Regionname', 'Propertycount', 'Bedroom2', 'Bathroom', 'Car', 'Landsize', 'BuildingArea', 'CouncilArea'),
+  'Descripción' = c('Number of rooms', 'Price in dollars', 'S - property sold; SP - property sold prior; PI - property passed in; PN - sold prior not disclosed; SN - sold not disclosed; NB - no bid; VB - vendor bid; W - withdrawn prior to auction; SA - sold after auction; SS - sold after auction price not disclosed. N/A - price or highest bid not available', 'br - bedroom(s); h - house,cottage,villa, semi,terrace; u - unit, duplex; t - townhouse; dev site - development site; o res - other residential', 'Real Estate Agent', ' Date sold', 'Distance from CBD', 'General Region (West, North West, North, North east ...etc)', 'Number of properties that exist in the suburb', 'Scraped of Bedrooms (from different source)', 'Number of Bathrooms', 'Number of carspots', 'Land Size', 'Building Size', 'Governing council for the area')
+)
+#Faltan por añadir a la tabla:
+#Suburb, Address, Rooms, Price, SellerG, Date, Postcode, YearBuilt, Lattitude, Longtitude
 
+dfcol %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c('striped'), position = 'center')
+
+head(houses, 10)
+```
+
+#Resumen numérico variables cualitativas
+
+```{r ResumenCualitativas}
+VarCualitativas <- houses %>% select_if(Negate(is.numeric))
+#VarCualitativas %>% table('Regionname','Type')
+
+names(VarCualitativas) # show the variables
+str(VarCualitativas) # show the structure
+```
+```{r FrecuenciaRegion}
+# tabla frecuencia absoluta para cada región
+freqRegion <- data.frame(table(VarCualitativas$Regionname))
+knitr::kable(freqRegion, caption = 'Tabla de frecuencias de Regionname', col.names = c('Región', 'Frecuencia'))
+ggplot(data=freqRegion, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(x="Región", y = "Frecuencia")
+
+#Esto puede repetirse para las variables cualitativas que consideremos
+#No he encontrado como quitar las etiquetas de los valores que se solapan
+```
+```{r FrecuenciaType}
+freqType <- data.frame(table(VarCualitativas$Type))
+knitr::kable(freqRegion, caption = 'Tabla de frecuencias de Type', col.names = c('Tipo de casa', 'Frecuencia'))
+ggplot(data=freqRegion, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(x="Tipo de casa", y = "Frecuencia")
+```
+
+```{r contingenciaRegionType}
+#Si consideramos que hay que ver la relación entre dos cualitativas 
+contingenciaRegionType <- data.frame((table(VarCualitativas$Regionname, VarCualitativas$Type)))
+
+sp <- spread(contingenciaRegionType, Var2, Freq) %>% knitr::kable(caption = 'Tabla de contingencia Regionname/Type', col.names = c('Región', 'h', 't', 'u'))
+sp
+
+ggplot(data=contingenciaRegionType, aes(x=Var1, y=Freq, fill=Var2)) +
+  geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2")
+
+chisq.test(VarCualitativas$Regionname, VarCualitativas$Type)
+#Podemos usar chi cuadrado para ver la relacion entre variables
+#En este caso rechazamos la independencia y tendría sentido la tabla y el gráfico 
+```
+
+
+```{r ResumenCuantitativas}
+VarCuantitativas <- houses %>% select_if(is.numeric)
+#VarCuantitativas %>% describe()
+VarCuantitativas %>% summary()
 ```
 
 Examinamos las variables categóricas:
