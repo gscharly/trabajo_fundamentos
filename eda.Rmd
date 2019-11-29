@@ -312,7 +312,7 @@ houses %>%
   nrow
 ```
 
-```{r buildingArea}
+```{r}
 houses %>%
   select(BuildingArea) %>%
   filter(BuildingArea > 0 & BuildingArea < 2500) %>%
