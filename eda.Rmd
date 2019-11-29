@@ -1,33 +1,40 @@
 ---
-title: "eda"
+title: "Métodos de análisis de datos"
 author: "Carlos Gomez Sanchez"
 date: "16 de noviembre de 2019"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
 ---
 
-<center style="color: #5d1451;font-size: 200%">
+<center style="color: #5d1451;font-size: 250%">
 **Melbourne Housing**
 </center>
 <br>
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, echo=FALSE, eval=TRUE}
+knitr::opts_chunk$set(error = TRUE)
 ```
 
 
-```{r, eval=FALSE, message=FALSE}
+```{r, eval=FALSE}
 library(ggplot2)
-library(GGally)
 library(dplyr)
 library(tidyr)
 library(knitr)
 library(kableExtra)
 library(Hmisc)
+library(gmodels)
 ```
+<br>
 
 ## Lectura y descripción del dataset
 
-```{r Lectura}
+<br>
+```{r Lectura, echo=FALSE}
 houses <- read.csv('melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
@@ -36,7 +43,7 @@ rows <- nrow(houses)
 El presente dataset contiene información acerca del sector inmobiliario en la ciudad de Melbourne. Está compuesto por un total de 21 variables y 13580 observaciones.
 A continuación se muestra una tabla con la descripción de cada variable.
 
-```{r Descripción}
+```{r Descripción, echo=FALSE}
 dfcol <- data.frame(
   'Variable' = c('Rooms', 'Price', 'Method', 'Type', 'SellerG', 'Date', 'Distance', 'Regionname', 'Propertycount', 'Bedroom2', 'Bathroom', 'Car', 'Landsize', 'BuildingArea', 'CouncilArea'),
   'Descripción' = c('Number of rooms', 'Price in dollars', 'S - property sold; SP - property sold prior; PI - property passed in; PN - sold prior not disclosed; SN - sold not disclosed; NB - no bid; VB - vendor bid; W - withdrawn prior to auction; SA - sold after auction; SS - sold after auction price not disclosed. N/A - price or highest bid not available', 'br - bedroom(s); h - house,cottage,villa, semi,terrace; u - unit, duplex; t - townhouse; dev site - development site; o res - other residential', 'Real Estate Agent', ' Date sold', 'Distance from CBD', 'General Region (West, North West, North, North east ...etc)', 'Number of properties that exist in the suburb', 'Scraped of Bedrooms (from different source)', 'Number of Bathrooms', 'Number of carspots', 'Land Size', 'Building Size', 'Governing council for the area')
@@ -50,9 +57,11 @@ dfcol %>%
 
 head(houses, 10)
 ```
+<br>
 
-#Resumen numérico variables cualitativas
+## Resumen numérico variables cualitativas
 
+<br>
 ```{r ResumenCualitativas}
 VarCualitativas <- houses %>% select_if(Negate(is.numeric))
 #VarCualitativas %>% table('Regionname','Type')
@@ -60,19 +69,40 @@ VarCualitativas <- houses %>% select_if(Negate(is.numeric))
 names(VarCualitativas) # show the variables
 str(VarCualitativas) # show the structure
 ```
-```{r FrecuenciaRegion}
+<br>
+
+### Frecuencias
+
+<br>
+```{r FrecuenciasCualitativas}
 # tabla frecuencia absoluta para cada región
 freqRegion <- data.frame(table(VarCualitativas$Regionname))
-knitr::kable(freqRegion, caption = 'Tabla de frecuencias de Regionname', col.names = c('Región', 'Frecuencia'))
-ggplot(data=freqRegion, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(x="Región", y = "Frecuencia")
-
+knitr::kable(freqRegion, caption = 'Tabla de frecuencias Regionname', col.names = c('Región', 'Frecuencia'))
+freqType <- data.frame(table(VarCualitativas$Type))
+knitr::kable(freqRegion, caption = 'Tabla de frecuencias Type', col.names = c('Tipo de casa', 'Frecuencia'))
+freqCouncilArea <- data.frame(table(VarCualitativas$CouncilArea))
+knitr::kable(freqCouncilArea, caption = 'Tabla de frecuencias CouncilArea', col.names = c('CouncilArea', 'Frecuencia'))
+freqMethod <- data.frame(table(VarCualitativas$Method))
+knitr::kable(freqMethod, caption = 'Tabla de frecuencias Método', col.names = c('Método', 'Frecuencia'))
 #Esto puede repetirse para las variables cualitativas que consideremos
 #No he encontrado como quitar las etiquetas de los valores que se solapan
 ```
-```{r FrecuenciaType}
-freqType <- data.frame(table(VarCualitativas$Type))
-knitr::kable(freqRegion, caption = 'Tabla de frecuencias de Type', col.names = c('Tipo de casa', 'Frecuencia'))
-ggplot(data=freqRegion, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(x="Tipo de casa", y = "Frecuencia")
+<br>
+
+### Gráficas de barras
+
+<br>
+
+```{r paleta32, echo=FALSE}
+palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#70B397","#E7E529","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+```
+
+```{r GráficaBarras}
+par(mfrow=c(2,2))
+ggplot(data=freqRegion, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(title="Número de casa por región",x="Región", y = "Frecuencia", fill = NULL) + theme(axis.text.x=element_blank())
+ggplot(data=freqType, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(title="Número de casas según el tipo",x="Tipo de casa", y = "Frecuencia", fill=NULL) + theme(axis.text.x=element_blank())
+ggplot(data=freqCouncilArea, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_manual(values=palette34) +  labs(title="Número de casas por ",x="CouncilArea", y = "Frecuencia", fill=NULL) + theme(axis.text.x=element_blank())
+ggplot(data=freqMethod, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(title="Número de casas según método de venta",x="Método de venta", y = "Frecuencia", fill=NULL) + theme(axis.text.x=element_blank())
 ```
 
 ```{r contingenciaRegionType}
@@ -82,20 +112,30 @@ contingenciaRegionType <- data.frame((table(VarCualitativas$Regionname, VarCuali
 sp <- spread(contingenciaRegionType, Var2, Freq) %>% knitr::kable(caption = 'Tabla de contingencia Regionname/Type', col.names = c('Región', 'h', 't', 'u'))
 sp
 
+CrossTable(VarCualitativas$Regionname, VarCualitativas$Type, prop.t = FALSE)
+
 ggplot(data=contingenciaRegionType, aes(x=Var1, y=Freq, fill=Var2)) +
-  geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2")
+  geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(title="Tipo de vivienda y se región",x="Región", y = "Frecuencia", fill ="Tipo vivienda") + theme(axis.text.x = element_text(angle=90, hjust=1))
 
 chisq.test(VarCualitativas$Regionname, VarCualitativas$Type)
 #Podemos usar chi cuadrado para ver la relacion entre variables
 #En este caso rechazamos la independencia y tendría sentido la tabla y el gráfico 
 ```
+<br>
 
+## Resumen numérico variables cuantitativas
 
+<br>
 ```{r ResumenCuantitativas}
 VarCuantitativas <- houses %>% select_if(is.numeric)
-#VarCuantitativas %>% describe()
 VarCuantitativas %>% summary()
+VarCuantitativas %>% describe() #Similar a summary pero más completa
+#observaciones totales, missings, número de valores únicos, media, cuariles
+#Para variables que se interpreten como recuento se da la freq de cada valor
+#gmd es una medida de dispersión 
 ```
+
+
 
 Examinamos las variables categóricas:
 ```{r}
