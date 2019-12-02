@@ -8,8 +8,13 @@ output:
     toc_float:
       collapsed: true
       smooth_scroll: true
+      section_divs: true
+    theme: "spacelab"
+    highlight: "zenburn"
+    code_folding: "hide"
 ---
 
+<br>
 <center style="color: #5d1451;font-size: 250%">
 **Melbourne Housing**
 </center>
@@ -19,8 +24,8 @@ output:
 knitr::opts_chunk$set(error = TRUE)
 ```
 
-
-```{r, eval=FALSE}
+```{r librerías, message=FALSE}
+library(caret)
 library(ggplot2)
 library(dplyr)
 library(tidyr)
@@ -28,6 +33,10 @@ library(knitr)
 library(kableExtra)
 library(Hmisc)
 library(gmodels)
+library(RColorBrewer)
+library(VIM)
+library(mice)
+library(wesanderson)
 ```
 <br>
 
@@ -57,91 +66,173 @@ dfcol %>%
 
 head(houses, 10)
 ```
+
 <br>
 
-## Resumen numérico variables cualitativas
+## División de los datos
+
+<br>
+
+Separaremos el archivo en dos subconjuntos: datos de entrenamiento y datos de validación. 
+
+```{r DivisiónDatos}
+trainIndex <- createDataPartition(houses$Price, p = .8, list = FALSE, times = 1)
+housesTrain <- houses[ trainIndex,]
+housesTest <- houses[-trainIndex,]
+```
+
+Ahora, el subconjunto *Train*, con el que trabajaremos inicialmente, está formado por 10865 observaciones. 
+
+<br>
+
+## Análisis exploratorio de datos
+
+<br>
+
+
+### Resumen numérico de variables cualitativas
 
 <br>
 ```{r ResumenCualitativas}
-VarCualitativas <- houses %>% select_if(Negate(is.numeric))
-#VarCualitativas %>% table('Regionname','Type')
-
+VarCualitativas <- housesTrain %>% select_if(Negate(is.numeric))
 names(VarCualitativas) # show the variables
 str(VarCualitativas) # show the structure
 ```
-<br>
 
-### Frecuencias
+A continuación se muestran las tablas de frecuencia para cada una de las variables cualitativas del dataset a excepción de la variable *Address*. Se decide no emplear esta variable ya que se cuenta con otras de localización como son *Regionname*, *CouncilArea* y *Suburb*.
 
-<br>
-```{r FrecuenciasCualitativas}
-# tabla frecuencia absoluta para cada región
-freqRegion <- data.frame(table(VarCualitativas$Regionname))
-knitr::kable(freqRegion, caption = 'Tabla de frecuencias Regionname', col.names = c('Región', 'Frecuencia'))
-freqType <- data.frame(table(VarCualitativas$Type))
-knitr::kable(freqRegion, caption = 'Tabla de frecuencias Type', col.names = c('Tipo de casa', 'Frecuencia'))
-freqCouncilArea <- data.frame(table(VarCualitativas$CouncilArea))
-knitr::kable(freqCouncilArea, caption = 'Tabla de frecuencias CouncilArea', col.names = c('CouncilArea', 'Frecuencia'))
-freqMethod <- data.frame(table(VarCualitativas$Method))
-knitr::kable(freqMethod, caption = 'Tabla de frecuencias Método', col.names = c('Método', 'Frecuencia'))
-#Esto puede repetirse para las variables cualitativas que consideremos
-#No he encontrado como quitar las etiquetas de los valores que se solapan
+Respecto a la variable *Date* nos parece más adecuado mostrar las frecuencias por meses del año por lo que la separamos en tres variables distintas: *day*, *mounth* y *year*.
+```{r DateSeparate}
+dateyear <- VarCualitativas %>% separate(Date, c('day','mounth', 'year'),sep = '/')
 ```
+
+```{r FrecuenciasCualitativas, eval=FALSE}
+table_frecuencias <- function(df, columna1, columna2 = 'Frecuencia'){
+  knitr::kable(df, caption = title, col.names = c(columna1, columna2)) %>%
+    kable_styling(bootstrap_options = 'striped', position = 'center',full_width = T) %>%
+    scroll_box(width = "100%", height = "350px")
+  
+}
+
+table_frecuencias(df= data.frame(table(VarCualitativas$Suburb)),columna1 = 'Suburb')
+table_frecuencias(df= data.frame(table(VarCualitativas$Type)),columna1 = 'Type')
+table_frecuencias(df= data.frame(table(VarCualitativas$Method)),columna1 = 'Method')
+table_frecuencias(df= data.frame(table(dateyear$mounth)),columna1 = 'Mounth')
+table_frecuencias(df= data.frame(table(VarCualitativas$CouncilArea)),columna1 = 'CouncilArea')
+table_frecuencias(df= data.frame(table(VarCualitativas$Regionname)),columna1 = 'Region')
+```
+
 <br>
 
 ### Gráficas de barras
 
 <br>
+En este apartado se muestran las gráficas de barras correspondientes a las frecuencias anteriores excepto para la variable *Suburb* ya que presenta 314 niveles y no ofrecería una gráfica legible.
 
 ```{r paleta32, echo=FALSE}
+#Paleta creada a partir de Brewer Dark2
 palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#70B397","#E7E529","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
 ```
 
 ```{r GráficaBarras}
-par(mfrow=c(2,2))
-ggplot(data=freqRegion, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(title="Número de casa por región",x="Región", y = "Frecuencia", fill = NULL) + theme(axis.text.x=element_blank())
-ggplot(data=freqType, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(title="Número de casas según el tipo",x="Tipo de casa", y = "Frecuencia", fill=NULL) + theme(axis.text.x=element_blank())
-ggplot(data=freqCouncilArea, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_manual(values=palette34) +  labs(title="Número de casas por ",x="CouncilArea", y = "Frecuencia", fill=NULL) + theme(axis.text.x=element_blank())
-ggplot(data=freqMethod, aes(x=Var1, y=Freq, fill = Var1)) + geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(title="Número de casas según método de venta",x="Método de venta", y = "Frecuencia", fill=NULL) + theme(axis.text.x=element_blank())
+plot_barritas <-function(df, x, bar, title, xlab, ylab = 'Frecuencia'){
+
+  ggplot(data=df, aes(x=x, fill = bar)) + 
+    geom_bar(stat="count",position=position_dodge()) +
+    scale_fill_manual(values=palette34) +
+    labs(title= title,x= xlab, y = ylab, fill=NULL) + 
+    theme(axis.text.x=element_blank())
+}
+
+plot_barritas(df = housesTrain,x = housesTrain$Type,bar= housesTrain$Type,title ="Número de casas según su tipo",xlab = "Tipo de casa")
+
+plot_barritas(df = housesTrain,x = housesTrain$Method,bar= housesTrain$Method, title ="Número de casas según método de venta", xlab = "Método de venta")
+
+plot_barritas(df = dateyear,x = dateyear$mounth,bar= dateyear$year,title ="Número de casas según mes y año de venta",xlab = "Mes")
+
+plot_barritas(df = housesTrain,x = housesTrain$CouncilArea,bar = housesTrain$CouncilArea, title ="Número de casas por 'CouncilArea'", xlab = "CouncilArea")
+
+plot_barritas(df = housesTrain,x = housesTrain$Regionname,bar = housesTrain$Regionname, title ="Número de casa por región",xlab = "Región")
 ```
 
-```{r contingenciaRegionType}
-#Si consideramos que hay que ver la relación entre dos cualitativas 
-contingenciaRegionType <- data.frame((table(VarCualitativas$Regionname, VarCualitativas$Type)))
+Atendiendo a la salida, tanto numérica como gráfica, observamos que la variable *CouncilArea* presenta una categoría vacía y otra llamada *Unavailable*. Los datos de dichas categorías (10%) los consideramos faltantes y serán imputados en el apartado dedicado a esto.
 
-sp <- spread(contingenciaRegionType, Var2, Freq) %>% knitr::kable(caption = 'Tabla de contingencia Regionname/Type', col.names = c('Región', 'h', 't', 'u'))
-sp
-
-CrossTable(VarCualitativas$Regionname, VarCualitativas$Type, prop.t = FALSE)
-
-ggplot(data=contingenciaRegionType, aes(x=Var1, y=Freq, fill=Var2)) +
-  geom_bar(stat="identity") + scale_fill_brewer(palette="Dark2") + labs(title="Tipo de vivienda y se región",x="Región", y = "Frecuencia", fill ="Tipo vivienda") + theme(axis.text.x = element_text(angle=90, hjust=1))
-
-chisq.test(VarCualitativas$Regionname, VarCualitativas$Type)
-#Podemos usar chi cuadrado para ver la relacion entre variables
-#En este caso rechazamos la independencia y tendría sentido la tabla y el gráfico 
-```
 <br>
 
-## Resumen numérico variables cuantitativas
+### Resumen numérico variables cuantitativas
 
 <br>
 ```{r ResumenCuantitativas}
-VarCuantitativas <- houses %>% select_if(is.numeric)
-VarCuantitativas %>% summary()
-VarCuantitativas %>% describe() #Similar a summary pero más completa
-#observaciones totales, missings, número de valores únicos, media, cuariles
-#Para variables que se interpreten como recuento se da la freq de cada valor
-#gmd es una medida de dispersión 
+VarCuantitativas <- housesTrain %>% select_if(is.numeric)
+VarCuantitativas %>% describe()
+```
+
+<br>
+
+### Histogramas, densidad, asimetría y apuntamiento
+
+<br>
+
+```{r HistogramaDensidad}
+colorDensidad <- wes_palettes$GrandBudapest1[2]
+colorNormal <- wes_palettes$GrandBudapest1[3]
+
+plot_histograma <- function(df, xaes){
+  
+  ggplot(df, aes(x=xaes)) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) +
+  stat_function(fun=dnorm, color=colorNormal, 
+  args=list(mean=mean(xaes), sd=sd(xaes)))
+
+}
+
+plot_histograma(housesTrain,housesTrain$Distance)
+plot_histograma(housesTrain,housesTrain$Price)
+plot_histograma(housesTrain,housesTrain$YearBuilt)
+plot_histograma(housesTrain,housesTrain$Rooms)
+plot_histograma(housesTrain,housesTrain$Bathroom)
+plot_histograma(housesTrain,housesTrain$Bedroom2)
+plot_histograma(housesTrain,housesTrain$Car)
+plot_histograma(housesTrain,housesTrain$Propertycount)
+```
+
+Una de las primeras acciones que realizaremos, en vista del resumen numérico y gráfico, es convertir a categóricas las variables *Rooms*, *Bedroom*, *Bathroom* y *Car*. Para los puntos de corte, nos basaremos en las frecuencias mostradas en la función *describe()* que se pueden observar, también, en los picos de las distribuciones de estas variables.
+
+```{r CuantitativaCategorica}
+housesTrain[,"Room_grupos"] <- cut(housesTrain$Rooms, breaks = c(0,1,2,3,4,5,6,11), labels = c("0", "1", "2", "3", "4", "5", "6 o más"), include.lowest = TRUE, right = FALSE)
+
+housesTrain[,"Bed_grupos"] <- cut(housesTrain$Bedroom2, breaks = c(0,1,2,3,4,5,6,21), labels = c("0", "1", "2", "3", "4", "5", "6 o más"), include.lowest = TRUE, right = FALSE)
+
+housesTrain[,"Bath_grupos"] <- cut(housesTrain$Bathroom, breaks = c(0,1,2,3,4,5,9), labels = c("0", "1", "2", "3", "4", "5 o más"), include.lowest = TRUE, right = FALSE)
+
+housesTrain[,"Car_grupos"] <- cut(housesTrain$Car, breaks = c(0,1,2,3,4,5,11), labels = c("0", "1", "2", "3", "4", "5 o más"), include.lowest = TRUE, right = FALSE)
+```
+
+<br>
+
+## Análisis exploratorio de datos faltantes
+
+<br>
+
+
+```{r HistFaltantes}
+aggr_plot <- aggr(housesTrain, col=c('#666666','#E6AB02'), numbers=TRUE, sortVars=TRUE,
+                  labels=names(housesTrain), cex.axis=0.6, gap=3, 
+                  ylab=c("Histogram of missing data","Patrón de co-ocurrencia"))
+
+```
+
+La primera decisión que se toma es eliminar las variables *BuildingArea* y *Landsize*. Ambas variables hacen referencia al area o tamaño de un espacio puesto que los valores iguales a cero han de entenderse como datos faltantes. En este sentido para la variable *BuildingArea* hay un 95.3% de datos faltantes y un 98.85% para la variable *Landsize*. De esta manera, el alto número de datos faltantes hace inviable la imputación de los mismos.
+
+Para las otras variables con datos faltantes (*YearBuilt*, *Car* y *CouncilArea*), vamos a comprobar si dichos datos se distribuyen de manera aleatoria.
+
+```{r DistribuciónFaltantes}
+
 ```
 
 
 
 Examinamos las variables categóricas:
-```{r}
 
-
-```
 Vemos que Rooms tiene pinta de concentrarse en pocos valores (1, 2, 3?)
 Sobre precio y distancia, se concetran en valores pequeños, y son candidatos a aplicar log para convertirlo en normales
 Landize y building area es probable que tengan unos outliers muy grandes, habría que verlo por separado.
