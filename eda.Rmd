@@ -41,6 +41,11 @@ library(mice)
 library(wesanderson)
 library(ggplot2)
 library(GGally)
+library(gridExtra)
+library(car)
+
+colorDensidad <- wes_palettes$GrandBudapest1[2]
+colorNormal <- wes_palettes$GrandBudapest1[3]
 ```
 <br>
 
@@ -168,15 +173,23 @@ Atendiendo a la salida, tanto numérica como gráfica, observamos que la variabl
 Examinamos la variable Price en función de las variables categóricas que tenemos.
 
 __Regionname__
+
 Distribución de precio en función de la región. Western Victoria parece que tiene unos precios más bajos, mientras que Southern Metropolitan y Eastern Metropolitan (¿?) parece que tienen mayores precios.
 
-```{r fig.width=15, fig.height=4}
+```{r fig.width=15, fig.height=6}
 housesTrain %>% select(c("Price", "Regionname")) %>%
   na.omit() %>%
   ggplot(aes(x=Price, colour=Regionname)) +
   geom_density()
 ```
-```{r fig.width=15, fig.height=4}
+
+```{r}
+housesTrain %>% select(Distance, Type, Price) %>%
+  ggplot(aes(y=Price, x=Distance, color=Type)) +
+  geom_point()
+```
+
+```{r fig.width=15, fig.height=6}
 housesTrain %>% select(c("Price", "Regionname")) %>%
   na.omit() %>%
   ggplot(aes(y=Price, fill=Regionname)) +
@@ -184,6 +197,7 @@ housesTrain %>% select(c("Price", "Regionname")) %>%
 ```
 
 __Type__
+
 Solo tenemos 3 tipos (en la descripción aparecen más)
 
 ```{r}
@@ -201,6 +215,7 @@ housesTrain %>% select(c("Price", "Type")) %>%
 ```
 
 __Method__
+
 ```{r}
 housesTrain %>% select(c("Price", "Method")) %>%
   na.omit() %>%
@@ -216,6 +231,7 @@ housesTrain %>% select(c("Price", "Method")) %>%
 ```
 
 __CouncilArea__
+
 ```{r fig.width=15, fig.height=4}
 housesTrain %>% select(c("Price", "CouncilArea")) %>%
   na.omit() %>%
@@ -236,6 +252,22 @@ VarCuantitativas <- housesTrain %>% select_if(is.numeric)
 VarCuantitativas %>% describe()
 ```
 
+#### Comprobación de datos
+Debido a que tenemos variables que representan habitaciones dentro de una casa (*Rooms*, *Bedroom2*, *Bathroom*), vamos a comprobar primero si *Rooms* incluye a las demás. En ese caso, tendría sentido quedarse solo con esa variable, por no ser independientes.
+
+```{r}
+housesTrain %>% select(Rooms, Bedroom2, Bathroom) %>%
+  filter(Rooms < Bedroom2+Bathroom) %>%
+  nrow
+```
+```{r}
+housesTrain %>% select(Rooms, Bedroom2, Bathroom) %>%
+  filter(Rooms <= Bedroom2) %>%
+  nrow
+```
+*Rooms* no incluye la suma de *Bedroom2* y *Bathroom*, ya que el 98% de las veces el valor es menor a la suma de ambos.
+
+
 <br>
 
 #### Histogramas, densidad, asimetría y apuntamiento
@@ -243,8 +275,6 @@ VarCuantitativas %>% describe()
 <br>
 
 ```{r HistogramaDensidad}
-colorDensidad <- wes_palettes$GrandBudapest1[2]
-colorNormal <- wes_palettes$GrandBudapest1[3]
 
 plot_histograma <- function(df, xaes, title, xlab, ylab = 'Densidad'){
   
@@ -280,13 +310,14 @@ for (col in cols) {
   plot_box(housesTrain, col)
 }
 ```
+
 Con toda esta información, ya vemos que tanto BuildingArea (por todos sus valores faltantes) como Landsize (por su elevado número de ceros) van a proporcionar poca información. Lo veremos más en detalle a la hora de imputar datos faltantes.
 
 Además, vemos que las variables *Rooms*, *Bedroom*, *Bathroom*, y *Car* se concentran en torno a unos pocos valores enteros, por lo que previsiblemente las convertiremos a variables categóricas.
 
 Una de las primeras acciones que realizaremos, en vista del resumen numérico y gráfico, es convertir a categóricas las variables *Rooms*, *Bedroom*, *Bathroom* y *Car*. Para los puntos de corte, nos basaremos en las frecuencias mostradas en la función *describe()* que se pueden observar, también, en los picos de las distribuciones de estas variables.
 
-```{r CuantitativaCategorica}
+```{r CuantitativaCategorica, message=FALSE}
 housesTrain[,"Room_grupos"] <- cut(housesTrain$Rooms, breaks = c(0,1,2,3,4,5,6,11), labels = c("0", "1", "2", "3", "4", "5", "6 o más"), include.lowest = TRUE, right = FALSE)
 
 housesTrain[,"Bed_grupos"] <- cut(housesTrain$Bedroom2, breaks = c(0,1,2,3,4,5,6,21), labels = c("0", "1", "2", "3", "4", "5", "6 o más"), include.lowest = TRUE, right = FALSE)
@@ -295,6 +326,11 @@ housesTrain[,"Bath_grupos"] <- cut(housesTrain$Bathroom, breaks = c(0,1,2,3,4,5,
 
 housesTrain[,"Car_grupos"] <- cut(housesTrain$Car, breaks = c(0,1,2,3,4,5,11), labels = c("0", "1", "2", "3", "4", "5 o más"), include.lowest = TRUE, right = FALSE)
 ```
+
+```{r}
+housesTrain %>% group_by(Car_grupos) %>% tally()
+```
+
 
 <br>
 Analizamos ahora distintas variables en función de la variable objetivo (Price).
@@ -308,7 +344,10 @@ housesTrain %>% select(numeric_cols) %>%
   ggpairs(columns=1:6)
 ```
 
+Teniendo en cuenta las correlaciones lineales, sería interesante elegir una variable de entre *Rooms*, *Bedroom2* y *Bathroom*, ya que están altamente correladas. Además, parece que la que presenta mayor correlación con *Price* es *Rooms*, por lo que elegimos esta.
+
 __Rooms y Prices__
+
 Rooms se concetra entre 2, 3 y 4 habitaciones. Parece que los precios más altos se alcanzan con 3, 4 y 5 habitaciones, pero los rangos son similares.
 
 ```{r}
@@ -317,10 +356,25 @@ housesTrain %>%
   ggpairs
 ```
 Podemos probar a categorizar la variable Rooms:
+```{r}
+summary(housesTrain$Rooms)
+```
+
+```{r}
+housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>% select(rooms_cat) %>%
+  table()
+```
+
+```{r}
+housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>%
+  select(Price, rooms_cat) %>%
+  ggplot(aes(x=Price, colour=rooms_cat)) +
+  geom_density()
+```
 
 ```{r}
 housesTrain %>%
-  mutate(rooms_cat = cut2(Rooms, g=4)) %>%
+  mutate(rooms_cat = cut2(Rooms, g=7)) %>%
   select(rooms_cat) %>%
   table()
 ```
@@ -332,8 +386,39 @@ housesTrain %>%
   ggplot(aes(x=Price, colour=rooms_cat)) +
   geom_density()
 ```
+__Car y Price__
+
+De nuevo, los valores de *Car* se concentran en 1 o 2, siendo una variable candidata a discretización.
+```{r}
+housesTrain %>%
+  select('Car', 'Price') %>%
+  na.omit() %>%
+  ggpairs
+```
+
+```{r}
+summary(housesTrain$Car)
+```
+
+
+```{r}
+housesTrain %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,9), labels = c("De 0 a 1", "De 2 a 9"), include.lowest = TRUE, right = FALSE)) %>%
+  select(car_cat) %>%
+  table()
+```
+
+```{r}
+housesTrain %>% 
+  na.omit() %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,9), labels = c("De 0 a 1", "De 2 a 9"), include.lowest = TRUE, right = FALSE)) %>%
+  select(Price, car_cat) %>%
+  ggplot(aes(x=Price, colour=car_cat)) +
+  geom_density()
+```
 
 __Distance y Price__
+
 Parece que las casas vendidas se concentran a una distancia del centro menor que 15km.
 ```{r}
 housesTrain %>%
@@ -342,6 +427,11 @@ housesTrain %>%
 ```
 
 Tanto la variable Distance como la variable Price tienen sus valores concentrados en la parte baja de la distribución, por lo que una transformación logarítmica podría ser útil.
+```{r}
+housesTrain %>% filter(Distance == 0) %>% nrow
+```
+
+
 ```{r}
 housesTrain %>% select(Distance) %>%
   filter(Distance > 0) %>%
@@ -369,6 +459,40 @@ housesTrainLog <- housesTrain %>%
   ggpairs
 ```
 
+```{r}
+p1 <- housesTrain %>% select(Distance) %>%
+  ggplot(aes(y=Distance)) + 
+  geom_boxplot()
+
+p2 <- housesTrain %>% select(Distance) %>%
+  filter(Distance > 0) %>%
+  mutate(log_distance = log10(Distance)) %>%
+  ggplot(aes(y=log_distance)) +
+  geom_boxplot()
+
+grid.arrange(p1, p2, nrow=1)
+```
+
+```{r}
+p1 <- housesTrain %>% select(Distance) %>%
+  ggplot(aes(x=Distance)) + 
+  geom_density()
+
+p2 <- housesTrain %>% select(Distance) %>%
+  filter(Distance > 0) %>%
+  mutate(log_distance = log10(Distance)) %>%
+  ggplot(aes(x=log_distance)) +
+  geom_density()
+
+grid.arrange(p1, p2, nrow=1)
+```
+
+Probamos una transformación Box-Cox
+
+```{r}
+housesTrain %>% select(Distance) %>%
+  symbox(~ Distance, data= .)
+```
 
 <br>
 
@@ -388,10 +512,18 @@ aggr_plot <- aggr(housesTrain, col=c('#666666','#E6AB02'), numbers=TRUE, sortVar
 ```
 
 En resumen:
-- Para la variable *BuildingArea*, el 47% de los valores (5145 de 10865) son NaNs, y 0.11% son 0. En total, tendríamos 48.11% de valores informados.
+
+- Para la variable *BuildingArea*, el 47% de los valores (5145 de 10865) son NaNs, y el 0.11% son 0. En total, tendríamos 47.11% de valores informados.
+
 - Para la variable *YearBuilt*, el 40% de los valores son NaNs.
+
 - Para la variable *Landsize*, no hay NaNs, pero el 14.3% de los valores son 0.
 
+- La variable *Car* tiene 49 valores faltantes (0.45%).
+
+```{r}
+housesTrain %>% filter(is.na(Car)) %>% nrow
+```
 
 ```{r}
 housesTrain %>% filter(Landsize == 0) %>% nrow
@@ -403,7 +535,9 @@ housesTrain %>% filter(YearBuilt == 0) %>% nrow
 ```{r}
 housesTrain %>% filter(BuildingArea == 0) %>% nrow
 ```
+
 __BuildingArea__
+
 Los valores informados son muy dispares, con una gran cantidad de outliers. Hay 4 valores por encima de 2500 que nos dificultan mucho la visualización de los datos. Se podrían quitar, o hacer una transformación logarítmica para verlo mejor.
 
 ```{r}
@@ -429,20 +563,10 @@ housesTrain %>% select(BuildingArea) %>%
 ```{r}
 housesTrain %>% filter((YearBuilt > 1200 | is.na(YearBuilt)) & (BuildingArea < 2500 | is.na(BuildingArea))) %>% select(YearBuilt, BuildingArea) %>% marginplot()
 ```
-```{r}
-housesTrainImputed <- housesTrain %>%
-  filter((YearBuilt > 1200 | is.na(YearBuilt)) & (BuildingArea < 2500 | is.na(BuildingArea))) %>%
-  select(YearBuilt, BuildingArea) %>%
-  VIM::kNN()
-
-#marginplot(., delimiter='_imp')
-```
-
-
 ¿Puede haber relación entre BuildingArea y Landsize?
 
 ```{r}
-housesTrain %>% filter(is.na(BuildingArea & Landsize==0)) %>% nrow
+housesTrain %>% filter(is.na(BuildingArea) & Landsize==0) %>% nrow
 ```
 ```{r}
 housesTrain %>% filter(Landsize > 0 & Landsize < 2000 & (BuildingArea < 2500 | is.na(BuildingArea))) %>% select(BuildingArea, Landsize) %>% marginplot()
@@ -455,12 +579,24 @@ housesTrain %>% select(numeric_cols) %>%
   filter(BuildingArea < 2500 & Landsize > 0 & Landsize<2000) %>%
   ggpairs(columns=1:7)
 ```
+
 __Landsize__
+
 Aparte de los valores a 0, esta variable presenta valores muy dispersos. Se puede probar una transformación para verla mejor.
 ```{r}
-housesTrain[housesTrain$Landsize==0, ]$Landsize <- NA
+housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
 housesTrain %>% filter(is.na(Landsize)) %>% nrow
 ```
+
+```{r}
+housesTrain %>% select(Landsize) %>%
+  na.omit() %>%
+  filter(Landsize > 0) %>%
+  mutate(log_landsize = log10(Landsize)) %>%
+  ggplot(aes(x=log_landsize)) +
+  geom_density()
+```
+
 ```{r}
 housesTrain %>% filter((Landsize < 2000 | is.na(Landsize)) & (BuildingArea < 2500 | is.na(BuildingArea))) %>% select(BuildingArea, Landsize) %>% marginplot()
 ```
@@ -470,7 +606,20 @@ housesTrain %>%
   VIM::kNN() %>%
   marginplot(., delimiter = '_imp')
 ```
+```{r}
+p1 <- housesTrain %>% select(Landsize) %>%
+  na.omit() %>%
+  ggplot(aes(y=Landsize)) + 
+  geom_boxplot()
 
+p2 <- housesTrain %>% select(Landsize) %>%
+  na.omit() %>%
+  mutate(log_landsize = log10(Landsize)) %>%
+  ggplot(aes(y=log_landsize)) +
+  geom_boxplot()
+
+grid.arrange(p1, p2, nrow=1)
+```
 
 
 ```{r}
@@ -509,7 +658,8 @@ housesTrain %>% select(Landsize) %>%
   geom_boxplot()
 ```
 
-### YearBuilt
+__YearBuilt__
+
 6603 valores informados. Tenemos un outlier en 1196.
 
 ```{r}
@@ -540,3 +690,131 @@ houses %>%
   ggplot(aes(x = YearBuilt, y = Price)) +
   geom_point()
 ```
+
+```{r}
+housesTrain %>%
+  filter(YearBuilt > 1200 | is.na(YearBuilt)) %>%
+  select(YearBuilt, Price) %>%
+  VIM::kNN() %>%
+  marginplot(., delimiter = '_imp')
+```
+
+### Imputamos
+Comprobamos las nuevas distribuciones con los valores imputados.
+
+```{r imputations}
+housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
+housesTrain$BuildingArea[which(housesTrain$BuildingArea == 0)] <- NA
+
+imputations <- housesTrain %>%
+  select(BuildingArea, YearBuilt, Landsize, Car) %>%
+  VIM::kNN()
+```
+
+__BuildingArea__
+
+```{r}
+housesTrain$BuildingAreaImp <- imputations$BuildingArea
+housesTrain %>% select(BuildingAreaImp) %>%
+  mutate(log_building_area = log10(BuildingAreaImp)) %>%
+  ggplot(aes(x=log_building_area)) +
+  geom_histogram(aes(y=..density..), colour="black", fill="white") +
+  geom_density(fill= colorDensidad , alpha=.2)
+```
+
+```{r}
+p1 <- housesTrain %>% select(BuildingAreaImp) %>%
+  ggplot(aes(y=BuildingAreaImp)) + 
+  geom_boxplot()
+
+p2 <- housesTrain %>% select(BuildingAreaImp) %>%
+  mutate(log_building_area = log10(BuildingAreaImp)) %>%
+  ggplot(aes(y=log_building_area)) +
+  geom_boxplot()
+
+grid.arrange(p1, p2, nrow=1)
+```
+
+
+__Landsize__
+
+```{r}
+housesTrain$LandsizeImp <- imputations$Landsize
+housesTrain %>% select(LandsizeImp) %>%
+  mutate(log_landsize = log10(LandsizeImp)) %>%
+  ggplot(aes(x=log_landsize)) +
+  geom_histogram(aes(y=..density..), colour="black", fill="white") +
+  geom_density(fill= colorDensidad , alpha=.2)
+```
+```{r}
+p1 <- housesTrain %>% select(LandsizeImp) %>%
+  ggplot(aes(y=LandsizeImp)) + 
+  geom_boxplot()
+
+p2 <- housesTrain %>% select(LandsizeImp) %>%
+  mutate(log_landsize = log10(LandsizeImp)) %>%
+  ggplot(aes(y=log_landsize)) +
+  geom_boxplot()
+
+grid.arrange(p1, p2, nrow=1)
+```
+
+__YearBuilt__
+
+Observamos que puede haber varios grupos distintos.
+
+```{r}
+housesTrain$YearBuiltImp <- imputations$YearBuilt
+housesTrain %>% select(YearBuiltImp) %>%
+  filter(YearBuiltImp > 1200) %>%
+  ggplot(aes(x=YearBuiltImp)) +
+  geom_histogram(aes(y=..density..), colour="black", fill="white") +
+  geom_density(fill= colorDensidad , alpha=.2)
+```
+```{r}
+year_categories <- housesTrain %>% 
+  mutate(year_cat = cut2(YearBuiltImp, g=5))
+
+year_categories %>%
+  select(year_cat) %>% table()
+```
+
+```{r}
+year_categories %>%
+  select(Price, year_cat) %>%
+  ggplot(aes(x=Price, colour=year_cat)) +
+  geom_density()
+```
+```{r}
+year_categories %>%
+  select(Price, year_cat) %>%
+  ggplot(aes(y=Price, fill=year_cat)) +
+  geom_boxplot()
+```
+
+__Car__
+
+Como ya se ha comentado, se sigue el mismo procedimiento que para la variable *Rooms*.
+
+```{r}
+housesTrain$CarImp <- imputations$Car
+housesTrain %>% select(CarImp) %>%
+  ggplot(aes(x=CarImp)) +
+  geom_histogram(aes(y=..density..), colour="black", fill="white") +
+  geom_density(fill= colorDensidad , alpha=.2)
+```
+```{r}
+car_categories <- housesTrain %>% 
+  mutate(car_cat = cut(CarImp, breaks = c(0,2,9), labels = c("De 0 a 1", "De 2 a 9"), include.lowest = TRUE, right = FALSE))
+
+car_categories %>% select(car_cat) %>% table()
+```
+```{r}
+car_categories %>%
+  select(Price, car_cat) %>%
+  ggplot(aes(x=Price, colour=car_cat)) +
+  geom_density()
+```
+
+
+## Selección de variables
