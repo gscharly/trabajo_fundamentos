@@ -37,6 +37,7 @@ library(RColorBrewer)
 library(VIM)
 library(mice)
 library(wesanderson)
+library(moments)
 ```
 <br>
 
@@ -101,25 +102,31 @@ str(VarCualitativas) # show the structure
 
 A continuación se muestran las tablas de frecuencia para cada una de las variables cualitativas del dataset a excepción de la variable *Address*. Se decide no emplear esta variable ya que se cuenta con otras de localización como son *Regionname*, *CouncilArea* y *Suburb*.
 
-Respecto a la variable *Date* nos parece más adecuado mostrar las frecuencias por meses del año por lo que la separamos en tres variables distintas: *day*, *mounth* y *year*.
+Respecto a la variable *Date* nos parece más relevante mostrar las frecuencias por meses del año por lo que la separamos en tres variables distintas: *day*, *mounth* y *year*.
+
 ```{r DateSeparate}
 dateyear <- VarCualitativas %>% separate(Date, c('day','mounth', 'year'),sep = '/')
 ```
 
-```{r FrecuenciasCualitativas, eval=FALSE}
-table_frecuencias <- function(df, columna1, columna2 = 'Frecuencia'){
-  knitr::kable(df, caption = title, col.names = c(columna1, columna2)) %>%
-    kable_styling(bootstrap_options = 'striped', position = 'center',full_width = T) %>%
+```{r FrecuenciasCualitativas}
+table_frecuencias_s <- function(df, title, columna1, columna2 = 'Frecuencia'){
+  
+  knitr::kable(df, col.names = c(columna1, columna2)) %>%
+    kable_styling(bootstrap_options = 'striped', position = 'center',full_width = T)%>% 
     scroll_box(width = "100%", height = "350px")
+}
+table_frecuencias <- function(df, title, columna1, columna2 = 'Frecuencia'){
+  knitr::kable(df, col.names = c(columna1, columna2)) %>%
+    kable_styling(bootstrap_options = 'striped', position = 'center',full_width = T)
   
 }
 
-table_frecuencias(df= data.frame(table(VarCualitativas$Suburb)),columna1 = 'Suburb')
+table_frecuencias_s(df= data.frame(table(VarCualitativas$Suburb)),columna1 = 'Suburb')
 table_frecuencias(df= data.frame(table(VarCualitativas$Type)),columna1 = 'Type')
 table_frecuencias(df= data.frame(table(VarCualitativas$Method)),columna1 = 'Method')
-table_frecuencias(df= data.frame(table(dateyear$mounth)),columna1 = 'Mounth')
-table_frecuencias(df= data.frame(table(VarCualitativas$CouncilArea)),columna1 = 'CouncilArea')
-table_frecuencias(df= data.frame(table(VarCualitativas$Regionname)),columna1 = 'Region')
+table_frecuencias_s(df= data.frame(table(dateyear$mounth)),columna1 = 'Mounth')
+table_frecuencias_s(df= data.frame(table(VarCualitativas$CouncilArea)),columna1 = 'CouncilArea')
+table_frecuencias_s(df= data.frame(table(VarCualitativas$Regionname)),columna1 = 'Region')
 ```
 
 <br>
@@ -135,24 +142,20 @@ palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A676
 ```
 
 ```{r GráficaBarras}
-plot_barritas <-function(df, x, bar, title, xlab, ylab = 'Frecuencia'){
+plot_barras <-function(df, x, bar, xlab, ylab = 'Frecuencia'){
 
   ggplot(data=df, aes(x=x, fill = bar)) + 
     geom_bar(stat="count",position=position_dodge()) +
     scale_fill_manual(values=palette34) +
-    labs(title= title,x= xlab, y = ylab, fill=NULL) + 
+    labs(x= xlab, y = ylab, fill=NULL) + 
     theme(axis.text.x=element_blank())
 }
-
-plot_barritas(df = housesTrain,x = housesTrain$Type,bar= housesTrain$Type,title ="Número de casas según su tipo",xlab = "Tipo de casa")
-
-plot_barritas(df = housesTrain,x = housesTrain$Method,bar= housesTrain$Method, title ="Número de casas según método de venta", xlab = "Método de venta")
-
-plot_barritas(df = dateyear,x = dateyear$mounth,bar= dateyear$year,title ="Número de casas según mes y año de venta",xlab = "Mes")
-
-plot_barritas(df = housesTrain,x = housesTrain$CouncilArea,bar = housesTrain$CouncilArea, title ="Número de casas por 'CouncilArea'", xlab = "CouncilArea")
-
-plot_barritas(df = housesTrain,x = housesTrain$Regionname,bar = housesTrain$Regionname, title ="Número de casa por región",xlab = "Región")
+  
+plot_barras(df = housesTrain,x = housesTrain$Type,bar= housesTrain$Type,xlab = "Tipo de vivienda")
+plot_barras(df = housesTrain,x = housesTrain$Method,bar= housesTrain$Method, xlab = "Método de venta")
+plot_barras(df = dateyear,x = dateyear$mounth,bar= dateyear$year,xlab = "Mes")
+plot_barras(df = housesTrain,x = housesTrain$CouncilArea,bar = housesTrain$CouncilArea, xlab = "CouncilArea")
+plot_barras(df = housesTrain,x = housesTrain$Regionname,bar = housesTrain$Regionname,xlab = "Región")
 ```
 
 Atendiendo a la salida, tanto numérica como gráfica, observamos que la variable *CouncilArea* presenta una categoría vacía y otra llamada *Unavailable*. Los datos de dichas categorías (10%) los consideramos faltantes y serán imputados en el apartado dedicado a esto.
@@ -166,6 +169,10 @@ Atendiendo a la salida, tanto numérica como gráfica, observamos que la variabl
 VarCuantitativas <- housesTrain %>% select_if(is.numeric)
 VarCuantitativas %>% describe()
 ```
+```{r}
+Land0 <- VarCuantitativas %>% filter (Landsize == 0)
+print(length((Land0)))
+```
 
 <br>
 
@@ -174,25 +181,40 @@ VarCuantitativas %>% describe()
 <br>
 
 ```{r HistogramaDensidad}
-colorDensidad <- wes_palettes$GrandBudapest1[2]
-colorNormal <- wes_palettes$GrandBudapest1[3]
+colorDensidad <- wes_palettes$GrandBudapest2[1]
+colorNormal <- wes_palettes$FantasticFox1[3]
 
-plot_histograma <- function(df, xaes){
+plot_histograma <- function(df = housesTrain, xlab, ylab = "Densidad", xaes){
   
-  ggplot(df, aes(x=xaes)) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) +
+  ggplot(df, aes(x=xaes)) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) + theme_light () +
   stat_function(fun=dnorm, color=colorNormal, 
-  args=list(mean=mean(xaes), sd=sd(xaes)))
+  args=list(mean=mean(xaes), sd=sd(xaes)))  + labs(x= xlab, y = ylab)
+    
 
 }
 
-plot_histograma(housesTrain,housesTrain$Distance)
-plot_histograma(housesTrain,housesTrain$Price)
-plot_histograma(housesTrain,housesTrain$YearBuilt)
-plot_histograma(housesTrain,housesTrain$Rooms)
-plot_histograma(housesTrain,housesTrain$Bathroom)
-plot_histograma(housesTrain,housesTrain$Bedroom2)
-plot_histograma(housesTrain,housesTrain$Car)
-plot_histograma(housesTrain,housesTrain$Propertycount)
+variables_not_geo <- colnames(VarCuantitativas)[-c(11,12)]
+for (var in plot_variables){
+  xaes_var <- housesTrain %>% select(var)
+  print(plot_histograma(df = housesTrain, xlab = var,xaes = unlist(xaes_var)))
+}
+
+```
+
+```{r asimetría}
+for (var in variables_not_geo){
+  xaes_var <- housesTrain %>% select(var)
+  asimetria <- skewness(xaes_var, na.rm = TRUE)
+  print(asimetria)
+}
+```
+
+```{r curtosis}
+for (var in variables_not_geo){
+  xaes_var <- housesTrain %>% select(var)
+  curtosis <- kurtosis(xaes_var, na.rm = TRUE)
+  print(curtosis)
+}
 ```
 
 Una de las primeras acciones que realizaremos, en vista del resumen numérico y gráfico, es convertir a categóricas las variables *Rooms*, *Bedroom*, *Bathroom* y *Car*. Para los puntos de corte, nos basaremos en las frecuencias mostradas en la función *describe()* que se pueden observar, también, en los picos de las distribuciones de estas variables.
@@ -221,14 +243,9 @@ aggr_plot <- aggr(housesTrain, col=c('#666666','#E6AB02'), numbers=TRUE, sortVar
 
 ```
 
-La primera decisión que se toma es eliminar las variables *BuildingArea* y *Landsize*. Ambas variables hacen referencia al area o tamaño de un espacio puesto que los valores iguales a cero han de entenderse como datos faltantes. En este sentido para la variable *BuildingArea* hay un 95.3% de datos faltantes y un 98.85% para la variable *Landsize*. De esta manera, el alto número de datos faltantes hace inviable la imputación de los mismos.
+La primera decisión que se toma es eliminar las variables *BuildingArea* y *Landsize*. Ambas variables hacen referencia al area o tamaño de un espacio puesto que los valores iguales a cero han de entenderse como datos faltantes. En este sentido para la variable *BuildingArea* hay un 95.3% de datos faltantes y un 0.12% para la variable *Landsize*. De esta manera, para la primera variable, el alto número de datos faltantes hace inviable la imputación de ellos.
 
 Para las otras variables con datos faltantes (*YearBuilt*, *Car* y *CouncilArea*), vamos a comprobar si dichos datos se distribuyen de manera aleatoria.
-
-```{r DistribuciónFaltantes}
-
-```
-
 
 
 Examinamos las variables categóricas:
