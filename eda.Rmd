@@ -759,6 +759,22 @@ p2 <- housesTrain %>% select(LandsizeImp) %>%
 grid.arrange(p1, p2, nrow=1)
 ```
 
+Comprobamos adicionalmente la relación entre las variables imputadas:
+
+```{r}
+housesTrain %>%
+  select(BuildingAreaImp, LandsizeImp, Price) %>%
+  ggpairs
+```
+```{r}
+housesTrain %>%
+  mutate(log_landsize = log10(LandsizeImp), log_building_area = log10(BuildingAreaImp)) %>%
+  select(log_building_area, log_landsize, Price) %>%
+  ggpairs
+```
+
+
+
 __YearBuilt__
 
 Observamos que puede haber varios grupos distintos.
@@ -815,6 +831,12 @@ car_categories %>%
   ggplot(aes(x=Price, colour=car_cat)) +
   geom_density()
 ```
+
+## Transformaciones de variables cuantitativas
+Resumir las que se hacen log y guardarlas (buildingarea, landsize, distance)
+
+## Procesado de variables cualitativas
+Convertir en dummy las variables categóricas (rooms, yearbuilt, type, regionname, method)
 
 
 ## Selección de variables
