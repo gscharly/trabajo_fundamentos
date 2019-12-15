@@ -162,8 +162,6 @@ plot_barritas(df = housesTrain,x = housesTrain$Type,bar= housesTrain$Type,title 
 
 plot_barritas(df = housesTrain,x = housesTrain$Method,bar= housesTrain$Method, title ="Número de casas según método de venta", xlab = "Método de venta")
 
-plot_barritas(df = dateyear,x = dateyear$mounth,bar= dateyear$year,title ="Número de casas según mes y año de venta",xlab = "Mes")
-
 plot_barritas(df = housesTrain,x = housesTrain$CouncilArea,bar = housesTrain$CouncilArea, title ="Número de casas por 'CouncilArea'", xlab = "CouncilArea")
 
 plot_barritas(df = housesTrain,x = housesTrain$Regionname,bar = housesTrain$Regionname, title ="Número de casa por región",xlab = "Región")
@@ -401,7 +399,7 @@ housesTrain %>%
   geom_density()
 ```
 
-
+<br>
 
 
 __Car y Price__
@@ -550,15 +548,22 @@ Lo primero que hacemos con esta variable será extraer el año, ya que viene en 
 
 
 ```{r}
-housesTrain$sellYear <- housesTrain %>% separate(Date, c('day','month', 'year'), sep = '/') %>% select(year)
-#housesTrain$sellYear <- sapply(housesTrain$sellYear, as.numeric)
-#housesTrain$sellYear <- factor(housesTrain$sellYear)
+housesTrain$sellYear <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$year
+housesTrain$sellYear <-factor(housesTrain$year, levels=c("2016", "2017"))
 ```
 
 Observamos que solo hay 2 años de venta.
 ```{r}
 describe(housesTrain$sellYear)
 ```
+
+```{r}
+housesTrain %>% select(c("Price", "sellYear")) %>%
+  na.omit() %>%
+  ggplot(aes(x=Price, colour=sellYear)) +
+  geom_density()
+```
+
 
 ```{r}
 price2016 <- housesTrain %>% filter(sellYear==2016) %>% select(Price)
@@ -746,13 +751,27 @@ grid.arrange( p2, p4, nrow=1)
 
 __Car__
 Para la variable *Car*, solo hay 49 valores faltantes (0.45%). Al ser una variable numérica con valores discretos (solo toma valores enteros desde 0 hasta 8), no parece buena idea utilizar métodos de imputación por regresiones en base a otras variables.
- 
+
+Podemos por un lado tratar de imputarlas basándonos en otras variables y usando kNN:
+
 ```{r}
-housesTrain %>% select(Rooms, Car) %>% na.omit() %>% ggplot(aes(x=Rooms, y=Car)) + geom_point() + geom_smooth(method='lm')
-housesTrain %>% select(Distance, Car) %>% na.omit() %>% ggplot(aes(x=Distance, y=Car)) + geom_point() + geom_smooth(method='lm')
-housesTrain %>% select(Longtitude, Car) %>% na.omit() %>% ggplot(aes(x=Longtitude, y=Car)) + geom_point() + geom_smooth(method='lm')
+housesTrain %>% select(Rooms, Car)  %>% marginplot()
+housesTrain %>% select(Rooms, Car) %>% VIM::kNN() %>% marginplot(., delimiter = '_imp')
 ```
-Tenemos dos opciones:
+
+
+```{r}
+housesTrain %>% select(YearBuilt, Car) %>% filter(!is.na(YearBuilt)) %>% marginplot()
+housesTrain %>% select(YearBuilt, Car) %>% filter(!is.na(YearBuilt)) %>% VIM::kNN() %>% marginplot(., delimiter = '_imp')
+```
+```{r}
+housesTrain %>% select(Distance, Car)%>% marginplot()
+housesTrain %>% select(Distance, Car) %>% VIM::kNN() %>% marginplot(., delimiter = '_imp')
+housesTrain %>% select(Distance, YearBuilt, Car) %>% filter(!is.na(YearBuilt)) %>% VIM::kNN() %>% select(Distance, Car, Car_imp) %>% marginplot(., delimiter = '_imp')
+```
+
+ 
+Otras dos opciones:
 * Borrar esos 49 registros (a riesgo de poder perder algo de información).
 * Transformar la variable a categórica e intentar imputar el factor.
 
@@ -760,7 +779,7 @@ Categorizamos la variable (ya vimos que se puede dividir en 2 categorías con ap
 
 ```{r}
 housesTrain$car_cat = housesTrain %>%
-  mutate(car_cat = addNA(cut(Car, breaks = c(0,2,9), labels = c("De 0 a 1", "De 2 a 9"), include.lowest = TRUE, right = FALSE))) %>%
+  mutate(car_cat = addNA(cut(Car, breaks = c(0,2,9), labels = c("0 o 1 plaza", "2 o más"), include.lowest = TRUE, right = FALSE))) %>%
   select(car_cat) 
 
 housesTrain$rooms_cat = housesTrain%>% 
@@ -775,11 +794,13 @@ housesTrain %>%
 
 
 ```{r}
+# ESTO NO ME SALE
 library(mice)
 cols <- c('rooms_cat', 'Regionname', 'car_cat')
 car_imputed = mice(housesTrain[,cols], m=5, method='polyreg', seed=10)
 ```
 
+Una vez imputado, previsiblemente no habrá cambiado la distribución de la variable al ser un % tan pequeño de datos faltantes.
 
 __YearBuilt__
 Al tener tantos registros sin informar, y ser una variable cuantitativa con una distribución que presenta varios tipos, se pretende transformar a una variable categórica que represente intervalos temporales, añadiendo una categoría Unknown a los valores faltantes.
@@ -829,7 +850,8 @@ A modo de resumen, se contemplan las siguientes transformaciones de las variable
 #housesTrainFinal <- housesTrain
 housesTrain$YearBuilt[which(housesTrain$YearBuilt<1850)] <- NA
 housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
-imputationsLandsizeFinal <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
+#imputationsLandsizeFinal <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
+#imputationsCarFinal <- housesTrain %>% select(Rooms, Car) %>% VIM::kNN(variable='Car')
 
 # Transformaciones de variables cuantitativas
 
@@ -838,30 +860,44 @@ housesTrain$log_landsize <- imputationsLandsizeFinal %>% mutate(log_landsize=log
 housesTrain$log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
 
 # Discretización de variables cuantitativas
-housesTrain$rooms_cat <- housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)) %>% select(rooms_cat)
-#housesTrainFinal$rooms_cat <- factor(housesTrainFinal$rooms_cat)
+housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
 
-housesTrain$year_built_cat <- housesTrain %>%
-  mutate(year_cat = addNA(cut2(YearBuilt, g=2))) %>% select(year_cat)
-#housesTrainFinal$year_built_cat <- factor(housesTrainFinal$year_built_cat)
+housesTrain$year_built_cat <- addNA(factor(cut2(housesTrain$YearBuilt, g=2), labels=c("Antigua", "Moderna")))
+
+housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Hasta 1 plaza", "2 o más plazas"), include.lowest = TRUE, right = FALSE)
 ```
 
+
+```{r}
+housesTrain$rooms_cat %>% table()
+housesTrain$year_built_cat %>% table()
+housesTrain$car_cat %>% table()
+```
+
+```{r}
+levels(housesTrain$rooms_cat)
+levels(housesTrain$year_built_cat)
+levels(housesTrain$car_cat)
+```
+
+
 ```{r message=FALSE}
+# ESTO NO HARÍA FALTA SI LO ANTERIOR SE GUARDA BIEN
 housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE), sqrt_distance = sqrt(Distance), log_price = log10(Price)) %>% select(sqrt_distance, log_price, rooms_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=rooms_cat, alpha=0.1))
 ```
 ```{r}
-housesTrain %>% select(Distance, Price) %>% ggplot(aes(x=Distance, y=Price)) + geom_point()
+housesTrain %>% mutate(sqrt_distance = sqrt(Distance), log_price = log10(Price)) %>% select(sqrt_distance, log_price, Type) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Type, alpha=0.1))
+```
+```{r}
+housesTrain %>% mutate(sqrt_distance = sqrt(Distance), log_price = log10(Price)) %>% select(sqrt_distance, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
 ```
 
+## Contrastes entre niveles de variables categóricas
 
 ```{r}
-housesTrainFinal %>% select(Distance, Price, rooms_cat) %>% ggpairs(columns=1:2, ggplot2::aes(colour=rooms_cat))
+housesTrain %>% ggplot(aes(x=Distance, y=Price, colour=rooms_cat)) + geom_point()
 ```
 
-
-
-## Procesado de variables cualitativas
-Convertir en dummy las variables categóricas (rooms, yearbuilt, type, regionname, method)
 
 
 ## Selección de variables
