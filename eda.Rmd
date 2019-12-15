@@ -53,7 +53,7 @@ colorNormal <- wes_palettes$GrandBudapest1[3]
 
 <br>
 ```{r Lectura, echo=FALSE}
-houses <- read.csv('melb_data.csv')
+houses <- read.csv('datasets/melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
 ```
@@ -89,6 +89,12 @@ set.seed(10)
 trainIndex <- createDataPartition(houses$Price, p = .8, list = FALSE, times = 1)
 housesTrain <- houses[ trainIndex,]
 housesTest <- houses[-trainIndex,]
+```
+
+```{r yearfilterfunciton, echo = F, message=F, warning=F}
+year_filter <- function(dataset){ dataset <- dataset %>% filter(dataset$YearBuilt > 1803 | is.na(YearBuilt)) }  
+
+housesTrain <- year_filter(housesTrain)
 ```
 
 Ahora, el subconjunto *Train*, con el que trabajaremos inicialmente, está formado por 10865 observaciones. 
@@ -660,7 +666,9 @@ housesTrain %>% select(Landsize) %>%
 
 __YearBuilt__
 
-6603 valores informados. Tenemos un outlier en 1196.
+Esta variable toma el valor de 1196 en una de las observaciones. El primer asentamiento en el área que actualmente se corresponde con la ciudad de Melbourne data de 1803, por lo tanto este dato es evidentemente erróneo. Hemos establecido una regla de filtrado a nuestro dataset de tal manera que si entra alguna observación en la cual la variable *Yearbuilt* sea anterior al año 1835 no será descartada por tratarse de un dato erróneo.
+
+Una vez eliminado ese registro, se dispone de 6602 valores informados.
 
 ```{r}
 housesTrain %>%
@@ -669,35 +677,28 @@ housesTrain %>%
   nrow
 ```
 
-```{r buildingArea}
-houses %>%
+```{r }
+housesTrain %>%
   select(YearBuilt) %>%
-  filter(YearBuilt > 1200) %>%
   boxplot(main='YearBuilt')
 ```
-```{r}
-houses %>%
+```{r  warning=F}
+housesTrain %>%
   select(YearBuilt, Price) %>%
-  filter(YearBuilt > 1200) %>%
   ggpairs(columns=1:2)
 ```
 
 
 ```{r}
-houses %>%
+housesTrain %>%
   na.omit() %>%
-  filter(YearBuilt > 1200) %>%
   ggplot(aes(x = YearBuilt, y = Price)) +
   geom_point()
 ```
 
-```{r}
-housesTrain %>%
-  filter(YearBuilt > 1200 | is.na(YearBuilt)) %>%
-  select(YearBuilt, Price) %>%
-  VIM::kNN() %>%
-  marginplot(., delimiter = '_imp')
-```
+Hemos decidido tratar los valores nulos de esta variable como una categoría adicional que llamaremos "unknown". 
+
+
 
 ### Imputamos
 Comprobamos las nuevas distribuciones con los valores imputados.
@@ -707,7 +708,7 @@ housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
 housesTrain$BuildingArea[which(housesTrain$BuildingArea == 0)] <- NA
 
 imputations <- housesTrain %>%
-  select(BuildingArea, YearBuilt, Landsize, Car) %>%
+  select(BuildingArea, Landsize, Car) %>%
   VIM::kNN()
 ```
 
@@ -761,32 +762,37 @@ grid.arrange(p1, p2, nrow=1)
 
 __YearBuilt__
 
-Observamos que puede haber varios grupos distintos.
 
-```{r}
-housesTrain$YearBuiltImp <- imputations$YearBuilt
-housesTrain %>% select(YearBuiltImp) %>%
-  filter(YearBuiltImp > 1200) %>%
-  ggplot(aes(x=YearBuiltImp)) +
+```{r  echo=F,message=F,warning=F}
+housesTrain %>% select(YearBuilt) %>%
+  ggplot(aes(x=YearBuilt)) +
   geom_histogram(aes(y=..density..), colour="black", fill="white") +
   geom_density(fill= colorDensidad , alpha=.2)
 ```
-```{r}
-year_categories <- housesTrain %>% 
-  mutate(year_cat = cut2(YearBuiltImp, g=5))
 
-year_categories %>%
+
+```{r}
+
+housesTrain <- housesTrain %>%
+  mutate(year_cat = cut2(YearBuilt, g=5))
+
+levels(housesTrain$year_cat) <- c(levels(housesTrain$year_cat), 'Unknown')
+
+housesTrain$year_cat[which(is.na(housesTrain$YearBuilt))] <- 'Unknown'
+
+housesTrain %>%
   select(year_cat) %>% table()
 ```
 
+
 ```{r}
-year_categories %>%
+housesTrain %>%
   select(Price, year_cat) %>%
   ggplot(aes(x=Price, colour=year_cat)) +
   geom_density()
 ```
 ```{r}
-year_categories %>%
+housesTrain %>%
   select(Price, year_cat) %>%
   ggplot(aes(y=Price, fill=year_cat)) +
   geom_boxplot()
@@ -815,6 +821,12 @@ car_categories %>%
   ggplot(aes(x=Price, colour=car_cat)) +
   geom_density()
 ```
+
+
+
+
+
+
 
 
 ## Selección de variables
