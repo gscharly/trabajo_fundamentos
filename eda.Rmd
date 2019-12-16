@@ -174,7 +174,7 @@ Examinamos la variable Price en función de las variables categóricas que tenem
 
 __Regionname__
 
-Distribución de precio en función de la región. Western Victoria parece que tiene unos precios más bajos, mientras que Southern Metropolitan y Eastern Metropolitan (¿?) parece que tienen mayores precios.
+Distribución de precio en función de la región. Western Victoria parece que tiene unos precios más bajos, mientras que Southern Metropolitan y Eastern Metropolitan parece que tienen mayores precios.
 
 ```{r fig.width=15, fig.height=6}
 housesTrain %>% select(c("Price", "Regionname")) %>%
@@ -367,6 +367,10 @@ housesTrain %>%
   select('Rooms', 'Price') %>%
   ggpairs
 ```
+```{r}
+housesTrain %>% ggplot(aes(x=Rooms, y=Price)) + geom_point() + geom_smooth(method='lm')
+```
+
 Podemos probar a categorizar la variable Rooms:
 ```{r}
 summary(housesTrain$Rooms)
@@ -810,7 +814,7 @@ housesTrain %>% select(YearBuilt, Price) %>% na.omit() %>% ggpairs
 Lo primero que hacemos es una rápida comprobación de valores informados. Vemos que hay un outlier en el año 1196. Se establece que cualquier casa que tenga *YearBuilt* por debajo del año de fundación de la ciudad será eliminada.
 ```{r}
 housesTrain %>% select(YearBuilt, Price) %>% na.omit() %>%
-  filter(YearBuilt >= 1850) %>% ggpairs
+  filter(YearBuilt >= 1850) %>% mutate(log_price=log10(Price)) %>% ggpairs
 ```
 
 Después, se convierte a categórica, y se comprueba su relación con *Price*.
@@ -850,14 +854,17 @@ A modo de resumen, se contemplan las siguientes transformaciones de las variable
 #housesTrainFinal <- housesTrain
 housesTrain$YearBuilt[which(housesTrain$YearBuilt<1850)] <- NA
 housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
-#imputationsLandsizeFinal <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
-#imputationsCarFinal <- housesTrain %>% select(Rooms, Car) %>% VIM::kNN(variable='Car')
+imputationsLandsizeFinal <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
+imputationsCarFinal <- housesTrain %>% select(Rooms, Car) %>% VIM::kNN(variable='Car')
 
 # Transformaciones de variables cuantitativas
 
-housesTrain$sqrt_distance <- housesTrain %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
-housesTrain$log_landsize <- imputationsLandsizeFinal %>% mutate(log_landsize=log10(Landsize)) %>% select(log_landsize)
-housesTrain$log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
+sqrt_distance <- housesTrain %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
+housesTrain$sqrt_distance <- unlist(sqrt_distance)
+log_landsize <- imputationsLandsizeFinal %>% mutate(log_landsize=log10(Landsize)) %>% select(log_landsize)
+housesTrain$log_landsize <- unlist(log_landsize)
+log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
+housesTrain$log_price <- unlist(log_price)
 
 # Discretización de variables cuantitativas
 housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
@@ -865,6 +872,26 @@ housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = 
 housesTrain$year_built_cat <- addNA(factor(cut2(housesTrain$YearBuilt, g=2), labels=c("Antigua", "Moderna")))
 
 housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Hasta 1 plaza", "2 o más plazas"), include.lowest = TRUE, right = FALSE)
+
+# Estandarización de variables
+num_vars <- c('Distance', 'sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude', 'Rooms')
+cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method')
+housesTrainNum <- housesTrain %>% select(num_vars)
+normParam <- preProcess(housesTrainNum)
+housesTrainNumNorm <- predict(normParam, housesTrainNum)
+
+housesTrainFinal <- data.frame(housesTrainNumNorm[,num_vars], housesTrain[,cat_vars], housesTrain[, c('Price', 'log_price')])
+```
+
+Comprobamos los niveles de los factores de las variables categóricas. Siempre que sea posible, el primer nivel debería asociarse a la categoría con más muestras, ya que previsiblemente será la que menor desviación estándar tenga. Además, si los factores siguen un orden lógico, debería respetarse en los niveles.
+
+Teniendo en cuenta esto, reordenamos las variables *Regionname*, *Method* y *Type*, y forzamos el orden en la variable *rooms_cat*.
+
+```{r}
+housesTrain$Regionname = factor(housesTrain$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 
+                                                                 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
+housesTrain$Method = factor(housesTrain$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+housesTrain$Type = factor(housesTrain$Type, levels=c('h', 'u', 't'))
 ```
 
 
@@ -872,32 +899,51 @@ housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c
 housesTrain$rooms_cat %>% table()
 housesTrain$year_built_cat %>% table()
 housesTrain$car_cat %>% table()
+housesTrain$Regionname %>% table()
+housesTrain$Method %>% table()
+housesTrain$Type %>% table()
 ```
 
 ```{r}
 levels(housesTrain$rooms_cat)
 levels(housesTrain$year_built_cat)
 levels(housesTrain$car_cat)
+levels(housesTrain$Regionname)
+levels(housesTrain$Method)
+levels(housesTrain$Type)
 ```
+
+```{r}
+as_tibble(model.matrix(~ housesTrain$sqrt_distance + housesTrain$rooms_cat))
+```
+
+
 
 
 ```{r message=FALSE}
-# ESTO NO HARÍA FALTA SI LO ANTERIOR SE GUARDA BIEN
-housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE), sqrt_distance = sqrt(Distance), log_price = log10(Price)) %>% select(sqrt_distance, log_price, rooms_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=rooms_cat, alpha=0.1))
+housesTrain %>% select(sqrt_distance, log_landsize, log_price, rooms_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=rooms_cat, alpha=0.1))
 ```
-```{r}
-housesTrain %>% mutate(sqrt_distance = sqrt(Distance), log_price = log10(Price)) %>% select(sqrt_distance, log_price, Type) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Type, alpha=0.1))
-```
-```{r}
-housesTrain %>% mutate(sqrt_distance = sqrt(Distance), log_price = log10(Price)) %>% select(sqrt_distance, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
+```{r message=FALSE}
+housesTrain %>% select(Lattitude, Longtitude, log_price, rooms_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=rooms_cat, alpha=0.1))
 ```
 
-## Contrastes entre niveles de variables categóricas
-
 ```{r}
-housesTrain %>% ggplot(aes(x=Distance, y=Price, colour=rooms_cat)) + geom_point()
+housesTrain %>% select(sqrt_distance, log_landsize, log_price, car_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=car_cat, alpha=0.1))
 ```
 
+```{r}
+housesTrain %>% select(sqrt_distance, log_landsize, log_price, year_built_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=year_built_cat, alpha=0.1))
+```
+
+
+```{r}
+housesTrain %>% select(sqrt_distance, log_price, Type) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Type, alpha=0.1))
+```
+```{r}
+housesTrain %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
+```
 
 
 ## Selección de variables
+
+En base al exploratorio realizado, hemos visto que no hay ninguna correlación lineal evidente entre las variables cuantitativas y la variable objetivo. Por tanto, vamos a aplicar diversos métodos de selección de variables para encontrar la mejor combinación posible.
