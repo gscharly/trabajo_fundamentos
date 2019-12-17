@@ -35,18 +35,14 @@ library(knitr)
 library(kableExtra)
 library(Hmisc)
 library(gmodels)
-library(RColorBrewer)
 library(VIM)
 library(mice)
 library(wesanderson)
-library(moments)
 library(ggplot2)
 library(GGally)
 library(gridExtra)
 library(car)
 library(tidyverse)
-colorDensidad <- wes_palettes$GrandBudapest1[2]
-colorNormal <- wes_palettes$GrandBudapest1[3]
 ```
 <br>
 
@@ -151,7 +147,7 @@ Podemos observar que las casas tipo h (house, cottage, villa...) son las más nu
 
 ```{r paleta32, echo=FALSE}
 #Paleta creada a partir de Brewer Dark2
-palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#70B397","#E7E529","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
 ```
 
 ```{r GráficaBarras}
@@ -199,12 +195,14 @@ VarCuantitativas %>% describe()
 
 <br>
 
+A continuación obserbamos las distribuciones para cada variable cuantitativa a través de sus histogramas.
+
 ```{r HistogramaDensidad}
 colorDensidad <- brewer.pal(n = 4, name = 'Dark2')[4]
 colorNormal <- wes_palettes$GrandBudapest2[4]
 
 plot_histograma <- function(df = housesTrain, dat, xlab, ylab = "Densidad", xaes){
-  ggplot(df, aes(x=xaes, label = curt)) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) + theme_light () +
+  ggplot(df, aes(x=xaes, label = curt), na.omit = TRUE) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) + theme_light () +
   stat_function(fun=dnorm, color=colorNormal, lwd = 1.3,
   args=list(mean=mean(xaes), sd=sd(xaes)))  + labs(x= xlab, y = ylab) + 
   annotate(geom = 'text', label = dat, hjust = 0, vjust = 1)
@@ -226,22 +224,20 @@ for (var in variables_not_geo){
 
 <br>
 
-También es interesante visualizar los boxplots de estas mismas variables.
+Es interesante también visualizar los boxplots de estas mismas variables.
 
 ```{r boxplots}
-plot_box <- function(df, col){
-  boxplot(df[,col],
-     border = '#105e62',
-     main = paste('Boxplot', col),
-     ylabel=col)
+colorBox <- brewer.pal(n = 4, name = 'Dark2')[3]
+plot_box <- function(df = VarCuantitativas, yaes){
+  ggplot(df, aes(y=yaes)) + geom_boxplot(na.rm = TRUE, colour = colorBox)
+                                              
 }
-cols <- c('Price', 'Distance', 'YearBuilt', 'Rooms', 'Bathroom', 'Bedroom2', 'Car', 'Propertycount', 'BuildingArea', 'Landsize')
 
-cols <- c('Price', 'Distance', 'YearBuilt', 'Rooms', 'Bathroom', 'Bedroom2', 'Car', 'Propertycount', 'BuildingArea', 'Landsize', 'Lattitude', 'Longtitude')
+cols <- colnames(VarCuantitativas)[-4]
           
-
 for (col in cols) {
-  plot_box(housesTrain, col)
+  yaes_var <- VarCuantitativas %>% select(col)
+  print(plot_box(yaes = unlist(yaes_var)))
 }
 ```
 
@@ -269,7 +265,7 @@ housesTrain %>% select(Rooms, Bedroom2, Bathroom) %>%
 
 <br>
 
-Siguiendo con nuestro objetivo principal, es decir predecir el precio de una vivienda en base a sus características, vamos a analizar la relación de las variables del dataset con respecto a la variable *Price*.
+Siguiendo con nuestro objetivo principal, es decir predecir el precio de una vivienda en base a sus características, vamos a analizar la relación de las variables del dataset con respecto a la variable *Price*. En algunos casos, tomamos el logarítmo o la raíz cuadrada de *Price* con el fin de hacer las gráficas más legibles.
 
 <br>
 
@@ -277,7 +273,7 @@ Siguiendo con nuestro objetivo principal, es decir predecir el precio de una viv
 
 <br>
 
-Empezaremos examinando la variable Price en función de las variables categóricas que tenemos.
+Empezaremos examinando la variable Price en función de las variables categóricas que tenemos. 
 
 __Regionname__
 
@@ -369,9 +365,9 @@ VarCuantitativas %>% select(numeric_cols) %>%
 
 numeric_cols2 <- c("Landsize", "YearBuilt", 'Lattitude', 'Longtitude', "Price")
 
-VarCuantitativas %>% select(numeric_cols) %>%
+VarCuantitativas %>% select(numeric_cols2) %>%
   na.omit() %>%
-  ggpairs(columns=1:6)
+  ggpairs(columns=1:5)
 
 ```
 
@@ -515,15 +511,6 @@ p3 <- housesTrain %>% select(Distance) %>%
 grid.arrange(p1, p2, p3, nrow=1)
 ```
 
-
-```{r}
-housesTrain %>% select(Price) %>%
-  filter(Price > 0) %>%
-  mutate(log_price = log10(Price)) %>%
-  ggplot(aes(x=log_price)) +
-  geom_histogram(aes(y=..density..), colour="black", fill="white") +
-  geom_density(fill= colorDensidad , alpha=.2)
-```
 ```{r message=FALSE}
 housesTrainLog <- housesTrain %>%
   select('Distance', 'Price') %>%
@@ -555,25 +542,22 @@ __Sell date__
 Lo primero que hacemos con esta variable será extraer el año, ya que viene en formato dd/MM/yyyy, y probablemente el año nos proporcione más información acerca del precio de venta de la casa.
 
 
-```{r}
-housesTrain$sellYear <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$year
-housesTrain$sellYear <-factor(housesTrain$year, levels=c("2016", "2017"))
-```
-
-Observamos que solo hay 2 años de venta.
-```{r}
+```{r CrearSellYear}
+housesTrain$sellYear <- separate(housesTrain, Date, c('Day','Month', 'Year'), sep = '/')$Year
+#housesTrain$sellYear <- factor(housesTrain$year, levels=c("2016", "2017"))
 describe(housesTrain$sellYear)
 ```
 
-```{r}
+```{r SellYearPrice}
 housesTrain %>% select(c("Price", "sellYear")) %>%
   na.omit() %>%
   ggplot(aes(x=Price, colour=sellYear)) +
   geom_density()
-```
 
-
-```{r}
+housesTrain %>%
+  select(sellYear, Price) %>%
+  ggpairs
+ 
 price2016 <- housesTrain %>% filter(sellYear==2016) %>% select(Price)
 price2017 <- housesTrain %>% filter(sellYear==2017) %>% select(Price)
 
@@ -583,17 +567,16 @@ p2 <- ggplot(price2017, aes(x=Price)) + geom_histogram()
 grid.arrange(p1, p2, nrow=1)
 ```
 
-
 <br>
 
 ## Análisis exploratorio de datos faltantes
+
+<br>
+
 Hemos visto anteriormente que las variables *YearBuilt*, *BuildingArea* y *Car* tenían valores NAs, y que la variable *Landsize* tenía valores sospechosos (0).
 Examinamos primero que % de los registros no tienen estos valores rellenos.
 
 Observamos que cerca del 50% de los registros tienen la variable BuildingArea sin informar, mientras que el 40% no tienen la variable YearBuilt informada. Vemos además que en el 37% de los casos, BuildingArea y YearBuilt faltan simultáneamente. El % de registros con la variable Car vacía es muy pequeño. Además, tenemos 15% de 0 en la variable Landsize, lo que podríamos considerar como valores faltantes.
-
-<br>
-
 
 ```{r HistFaltantes}
 aggr_plot <- aggr(housesTrain, col=c('#666666','#E6AB02'), numbers=TRUE, sortVars=TRUE,
@@ -602,11 +585,9 @@ aggr_plot <- aggr(housesTrain, col=c('#666666','#E6AB02'), numbers=TRUE, sortVar
 
 ```
 
-<<<<<<< HEAD
 La primera decisión que se toma es eliminar la variables *BuildingArea*. Dicha variable hace referencia al area o tamaño de un espacio puesto que los valores iguales a cero han de entenderse como datos faltantes. En este sentido para la variable *BuildingArea* hay un 95.3% de datos faltantes.
 
-=======
-En resumen:
+A modo de resumen respecto a los datos faltantes podemos decir que:
 
 - Para la variable *BuildingArea*, el 47% de los valores (5145 de 10865) son NaNs, y el 0.11% son 0. En total, tendríamos 47.11% de valores informados, de los cuales la mayoría son 0.
 
@@ -616,18 +597,11 @@ En resumen:
 
 - La variable *Car* tiene 49 valores faltantes (0.45%).
 
-<<<<<<< HEAD
 - Para la variable *CounculArea*, el 10% son desconocidos (1098)
 
-```{r}
-housesTrain %>% filter(is.na(Car)) %>% nrow
-```
-=======
-<br>
-
 __Relación entre BuildingArea y Landsize informados__
+
 La variable *BuildingArea* podría ser de gran interés a la hora de predecir el precio de venta de una casa. Sin embargo, la gran cantidad de datos faltantes lleva a pensar que una técnica de imputación puede no ser recomendable. Como también se tiene la variable *Landsize*, se procede a comprobar si existe alguna relación entre los valores informados de *BuildingArea* y esta variable, ya que la podríamos utilizar por su bajo número de datos faltantes.
->>>>>>> 0e3fce4fa65f2209169123da7442e37f855c4e6f
 
 Gráficamente no se ve gran cosa (habría que pasar a log) pero parece que están correladas.
 ```{r}
