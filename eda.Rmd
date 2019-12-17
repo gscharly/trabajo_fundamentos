@@ -243,16 +243,16 @@ aggr_plot <- aggr(housesTrain, col=c('#666666','#E6AB02'), numbers=TRUE, sortVar
 
 ```
 
-La primera decisión que se toma es eliminar las variables *BuildingArea* y *Landsize*. Ambas variables hacen referencia al area o tamaño de un espacio puesto que los valores iguales a cero han de entenderse como datos faltantes. En este sentido para la variable *BuildingArea* hay un 95.3% de datos faltantes y un 0.12% para la variable *Landsize*. De esta manera, para la primera variable, el alto número de datos faltantes hace inviable la imputación de ellos.
+Las variables *BuildingArea* y *Landsize* hacen referencia al area o tamaño de un espacio, los valores iguales a cero han de entenderse como datos faltantes. En este sentido para la variable *BuildingArea* hay un 95.3% de datos faltantes y un 0.12% para la variable *Landsize*. De esta manera, para la primera variable, el alto número de datos faltantes hace inviable la imputación de ellos.
 
 Para las otras variables con datos faltantes (*YearBuilt*, *Car* y *CouncilArea*), vamos a comprobar si dichos datos se distribuyen de manera aleatoria.
 
 
 Examinamos las variables categóricas:
 
-Vemos que Rooms tiene pinta de concentrarse en pocos valores (1, 2, 3?)
+Vemos que *Rooms* tiene pinta de concentrarse en pocos valores (1, 2, 3?)
 Sobre precio y distancia, se concetran en valores pequeños, y son candidatos a aplicar log para convertirlo en normales
-Landize y building area es probable que tengan unos outliers muy grandes, habría que verlo por separado.
+*Landize* y *Buildingarea* es probable que tengan unos outliers muy grandes, habría que verlo por separado.
 
 ```{r message=FALSE}
 numeric_cols <- c("Rooms", "Price", "Distance", "Landsize", "BuildingArea", "Regionname")
