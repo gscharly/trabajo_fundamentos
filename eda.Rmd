@@ -44,7 +44,8 @@ library(GGally)
 library(gridExtra)
 library(car)
 library(tidyverse)
-
+library(mplot)
+library(glmnet)
 set.seed(10)
 
 colorDensidad <- wes_palettes$GrandBudapest1[2]
@@ -553,10 +554,10 @@ Lo primero que hacemos con esta variable será extraer el año, ya que viene en 
 
 ```{r}
 housesTrain$sellYear <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$year
-housesTrain$sellYear <-factor(housesTrain$year, levels=c("2016", "2017"))
+housesTrain$sellYear <-factor(housesTrain$sellYear, levels=c("2016", "2017"))
 ```
 
-Observamos que solo hay 2 años de venta.
+Observamos que solo hay 2 años de venta, y que no tiene demasiada relación con el precio.
 ```{r}
 describe(housesTrain$sellYear)
 ```
@@ -579,6 +580,24 @@ p2 <- ggplot(price2017, aes(x=Price)) + geom_histogram()
 grid.arrange(p1, p2, nrow=1)
 ```
 
+<br>
+¿Y con otras variables?
+```{r message=FALSE}
+housesTrain %>% select(Distance, Lattitude, Longtitude, Price, sellYear) %>% ggpairs(columns=1:5, ggplot2::aes(colour=sellYear, alpha=0.1))
+```
+
+
+
+Probamos a analizar el mes por si nos da información adicional. Vemos que no hay ventas de casas en Enero para ningún año.
+Como una categórica:
+```{r}
+housesTrain$sellMonth <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$month
+housesTrain$sellMonth <- factor(housesTrain$sellMonth)
+```
+
+```{r}
+housesTrain %>% ggplot(aes(y=Price, color=sellMonth)) + geom_boxplot()
+```
 
 <br>
 
@@ -866,12 +885,13 @@ housesTrain$log_landsize <- unlist(log_landsize)
 log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
 housesTrain$log_price <- unlist(log_price)
 
+
 # Discretización de variables cuantitativas
 housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
 
 housesTrain$year_built_cat <- addNA(factor(cut2(housesTrain$YearBuilt, g=2), labels=c("Antigua", "Moderna")))
 
-housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Hasta 1 plaza", "2 o más plazas"), include.lowest = TRUE, right = FALSE)
+housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Hasta_1_plaza", "2_o_mas_plazas"), include.lowest = TRUE, right = FALSE)
 
 # Estandarización de variables
 num_vars <- c('Distance', 'sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude', 'Rooms')
@@ -888,29 +908,30 @@ Comprobamos los niveles de los factores de las variables categóricas. Siempre q
 Teniendo en cuenta esto, reordenamos las variables *Regionname*, *Method* y *Type*, y forzamos el orden en la variable *rooms_cat*.
 
 ```{r}
-housesTrain$Regionname = factor(housesTrain$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 
-                                                                 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
-housesTrain$Method = factor(housesTrain$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
-housesTrain$Type = factor(housesTrain$Type, levels=c('h', 'u', 't'))
+#SI SE EJECUTA ESTO LUEGO EL GLMNET NO FUNCIONA, HAY QUE VERLO
+housesTrainFinal$Regionname = factor(housesTrainFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
+levels(housesTrainFinal$Regionname) <- c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria')
+housesTrainFinal$Method = factor(housesTrainFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
 ```
 
 
 ```{r}
-housesTrain$rooms_cat %>% table()
-housesTrain$year_built_cat %>% table()
-housesTrain$car_cat %>% table()
-housesTrain$Regionname %>% table()
-housesTrain$Method %>% table()
-housesTrain$Type %>% table()
+housesTrainFinal$rooms_cat %>% table()
+housesTrainFinal$year_built_cat %>% table()
+housesTrainFinal$car_cat %>% table()
+housesTrainFinal$Regionname %>% table()
+housesTrainFinal$Method %>% table()
+housesTrainFinal$Type %>% table()
 ```
 
 ```{r}
-levels(housesTrain$rooms_cat)
-levels(housesTrain$year_built_cat)
-levels(housesTrain$car_cat)
-levels(housesTrain$Regionname)
-levels(housesTrain$Method)
-levels(housesTrain$Type)
+levels(housesTrainFinal$rooms_cat)
+levels(housesTrainFinal$year_built_cat)
+levels(housesTrainFinal$car_cat)
+levels(housesTrainFinal$Regionname)
+levels(housesTrainFinal$Method)
+levels(housesTrainFinal$Type)
 ```
 
 ```{r}
@@ -943,7 +964,77 @@ housesTrain %>% select(sqrt_distance, log_price, Type) %>% ggpairs(columns=1:3, 
 housesTrain %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
 ```
 
+```{r}
+housesTrain %>% select(sqrt_distance, log_landsize, log_price, sellYear) %>% ggpairs(columns=1:3, ggplot2::aes(colour=sellYear, alpha=0.05))
+```
+
+
+### Modelo lineal como baseline
+Para empezar y tener un baseline, utilizamos las variables disponibles directamente sobre la salida.
+
+```{r}
+lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude, data=housesTrainFinal)
+summary(lm_model)
+```
+
+```{r}
+check_model <- function(model){
+  # Check normalidad de errores
+  plot(model,1) #Residuos vs predicciones
+  plot(model,2) # qq plot de residuos
+  plot(model,3) #Scale-location: la varianza incrementa en función de la predicción (heterosdicidad?)
+  plot(model,4)
+}
+
+```
+
+
+
+```{r}
+lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude + rooms_cat, data=housesTrainFinal)
+summary(lm_model)
+```
+```{r}
+lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude + rooms_cat + Regionname, data=housesTrainFinal)
+summary(lm_model)
+```
+
+```{r}
+lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude + rooms_cat + car_cat, data=housesTrainFinal)
+summary(lm_model)
+model.matrix(lm_model)
+```
+
 
 ## Selección de variables
 
 En base al exploratorio realizado, hemos visto que no hay ninguna correlación lineal evidente entre las variables cuantitativas y la variable objetivo. Por tanto, vamos a aplicar diversos métodos de selección de variables para encontrar la mejor combinación posible.
+
+```{r}
+x <- model.matrix(log_price ~., data=housesTrainFinal[, !names(housesTrainFinal) %in% c("Price", "Rooms", "Distance")])
+#x <- model.matrix(log_price ~., housesTrainFinal[, -which(names(housesTrainFinal) == 'Price')])
+y <- housesTrainFinal$log_price
+grid <- 10^seq(10,-2,length=100)
+
+cv_result <- cv.glmnet(x,y,alpha=1, nfolds=5, type.measure='mse')
+plot(cv_result)
+```
+```{r}
+best_lam <- cv_result$lambda.min
+out <- glmnet(x,y,alpha=1, lambda=best_lam)
+lasso_coef <- predict(out,type="coefficients",s=best_lam)[1:20,]
+lasso_coef[lasso_coef!=0]
+```
+```{r}
+first_coefs <- max(which(cv_result$nzero == 10))
+my_lam <- cv_result$lambda[first_coefs]
+out_coefs <- glmnet(x,y,alpha=1,lambda = my_lam)
+lasso_coef_first <- predict(out_coefs,type="coefficients")[1:20,]
+lasso_coef_first[lasso_coef_first!=0]
+```
+
+```{r}
+lm_model_13 = lm(log_price ~ sqrt_distance + Lattitude + Longtitude + rooms_catMedianas + rooms_catGrandes + car_cat2 o más plazas + RegionnameNorthern Metropolitan +
+                   RegionnameSouthern Metropolitan + Typet + Typeu)
+```
+
