@@ -206,7 +206,7 @@ Se puede concluir, que las 3 técnicas de selección automática de variables in
 * Longitud.
 * Número de habitaciones.
 * Número de plazas de garaje.
-* Tipo de venta.
+* Tipo de casa.
 * Región.
 
 ```{r}
