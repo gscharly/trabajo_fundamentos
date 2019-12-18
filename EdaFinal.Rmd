@@ -44,8 +44,6 @@ library(gridExtra)
 library(car)
 library(tidyverse)
 library(moments)
-library(mplot)
-library(glmnet)
 ```
 <br>
 
@@ -303,7 +301,7 @@ Empezaremos examinando la variable Price en función de las variables categóric
 
 __Regionname__
 
-Distribución de precio en función de la región. Western Victoria parece que tiene unos precios más bajos, mientras que Southern Metropolitan y Eastern Metropolitan parece que tienen mayores precios.
+Distribución de precio en función de la región. Western Victoria parece que tiene unos precios más bajos, mientras que Southern Metropolitan y Eastern Metropolitan (¿?) parece que tienen mayores precios.
 
 ```{r RegionPrice}
 housesTrain %>% select(c("Price", "Regionname")) %>%
@@ -410,18 +408,7 @@ housesTrain %>%
   select('Rooms', 'Price') %>%
   ggpairs
 ```
-
 Dada la gáfica de distribución de la variable *Rooms* se observa como los valores se concentran en unos puntos. A la hora de discretizarla, probaremos a categorizarla en 3 y 4 grupos para observar cómo se comporta con respecto a *Price*.
-
-```{r}
-housesTrain %>% ggplot(aes(x=Rooms, y=Price)) + geom_point() + geom_smooth(method='lm')
-```
-
-Podemos probar a categorizar la variable Rooms:
-```{r}
-summary(housesTrain$Rooms)
-```
-
 
 ```{r Rooms3Grupos}
 housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>% select(rooms_cat) %>%
@@ -578,19 +565,10 @@ __Sell date y Price__
 
 Lo primero que hacemos con esta variable será extraer el año, ya que viene en formato dd/MM/yyyy, y probablemente el año nos proporcione más información acerca del precio de venta de la casa.
 
-<<<<<<< HEAD
 
 ```{r CrearSellYear}
 housesTrain$sellYear <- separate(housesTrain, Date, c('Day','Month', 'Year'), sep = '/')$Year
 #housesTrain$sellYear <- factor(housesTrain$year, levels=c("2016", "2017"))
-```
-```{r}
-housesTrain$sellYear <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$year
-housesTrain$sellYear <-factor(housesTrain$sellYear, levels=c("2016", "2017"))
-```
-
-Observamos que solo hay 2 años de venta, y que no tiene demasiada relación con el precio.
-```{r}
 describe(housesTrain$sellYear)
 ```
 
@@ -613,23 +591,7 @@ p2 <- ggplot(price2017, aes(x=Price)) + geom_histogram()
 grid.arrange(p1, p2, nrow=1)
 ```
 
-
-¿Y con otras variables?
-```{r message=FALSE}
-housesTrain %>% select(Distance, Lattitude, Longtitude, Price, sellYear) %>% ggpairs(columns=1:5, ggplot2::aes(colour=sellYear, alpha=0.1))
-```
-
-Probamos a analizar el mes por si nos da información adicional. Vemos que no hay ventas de casas en Enero para ningún año.
-Como una categórica:
-```{r}
-housesTrain$sellMonth <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$month
-housesTrain$sellMonth <- factor(housesTrain$sellMonth)
-```
-
-```{r}
-housesTrain %>% ggplot(aes(y=Price, color=sellMonth)) + geom_boxplot()
-```
-
+<br>
 
 ## Análisis exploratorio de datos faltantes
 
@@ -884,7 +846,7 @@ housesTrain %>% select(YearBuilt, Price) %>% na.omit() %>% ggpairs
 Lo primero que hacemos es una rápida comprobación de valores informados. Vemos que hay un outlier en el año 1196. Se establece que cualquier casa que tenga *YearBuilt* por debajo del año de fundación de la ciudad será eliminada.
 ```{r}
 housesTrain %>% select(YearBuilt, Price) %>% na.omit() %>%
-  filter(YearBuilt >= 1850) %>% mutate(log_price=log10(Price)) %>% ggpairs
+  filter(YearBuilt >= 1850) %>% ggpairs
 ```
 
 Después, se convierte a categórica, y se comprueba su relación con *Price*.
@@ -926,22 +888,13 @@ housesTrain$YearBuilt[which(housesTrain$YearBuilt<1850)] <- NA
 housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
 imputationsLandsizeFinal <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
 imputationsCarFinal <- housesTrain %>% select(Rooms, Car) %>% VIM::kNN(variable='Car')
-
 # Transformaciones de variables cuantitativas
-
-
-# Transformaciones de variables cuantitativas
-
-
 sqrt_distance <- housesTrain %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
 housesTrain$sqrt_distance <- unlist(sqrt_distance)
 log_landsize <- imputationsLandsizeFinal %>% mutate(log_landsize=log10(Landsize)) %>% select(log_landsize)
 housesTrain$log_landsize <- unlist(log_landsize)
 log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
 housesTrain$log_price <- unlist(log_price)
-
-
-
 # Discretización de variables cuantitativas
 housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
 housesTrain$year_built_cat <- addNA(factor(cut2(housesTrain$YearBuilt, g=2), labels=c("Antigua", "Moderna")))
@@ -956,22 +909,6 @@ housesTrainFinal <- data.frame(housesTrainNumNorm[,num_vars], housesTrain[,cat_v
 ```
 
 Comprobamos los niveles de los factores de las variables categóricas. Siempre que sea posible, el primer nivel debería asociarse a la categoría con más muestras, ya que previsiblemente será la que menor desviación estándar tenga. Además, si los factores siguen un orden lógico, debería respetarse en los niveles.
-
-```{r}
-housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Hasta_1_plaza", "2_o_mas_plazas"), include.lowest = TRUE, right = FALSE)
-
-# Estandarización de variables
-num_vars <- c('Distance', 'sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude', 'Rooms')
-cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method')
-housesTrainNum <- housesTrain %>% select(num_vars)
-normParam <- preProcess(housesTrainNum)
-housesTrainNumNorm <- predict(normParam, housesTrainNum)
-
-housesTrainFinal <- data.frame(housesTrainNumNorm[,num_vars], housesTrain[,cat_vars], housesTrain[, c('Price', 'log_price')])
-```
-
-Comprobamos los niveles de los factores de las variables categóricas. Siempre que sea posible, el primer nivel debería asociarse a la categoría con más muestras, ya que previsiblemente será la que menor desviación estándar tenga. Además, si los factores siguen un orden lógico, debería respetarse en los niveles.
-
 
 Teniendo en cuenta esto, reordenamos las variables *Regionname*, *Method* y *Type*, y forzamos el orden en la variable *rooms_cat*.
 
@@ -1006,18 +943,8 @@ levels(housesTrainFinal$Type)
 as_tibble(model.matrix(~ housesTrain$sqrt_distance + housesTrain$rooms_cat))
 ```
 
-```{r}
-levels(housesTrainFinal$rooms_cat)
-levels(housesTrainFinal$year_built_cat)
-levels(housesTrainFinal$car_cat)
-levels(housesTrainFinal$Regionname)
-levels(housesTrainFinal$Method)
-levels(housesTrainFinal$Type)
-```
 
-```{r}
-as_tibble(model.matrix(~ housesTrain$sqrt_distance + housesTrain$rooms_cat))
-```
+
 
 ```{r message=FALSE}
 housesTrain %>% select(sqrt_distance, log_landsize, log_price, rooms_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=rooms_cat, alpha=0.1))
@@ -1046,46 +973,6 @@ housesTrain %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpai
 housesTrain %>% select(sqrt_distance, log_landsize, log_price, sellYear) %>% ggpairs(columns=1:3, ggplot2::aes(colour=sellYear, alpha=0.05))
 ```
 
-```{r}
-housesTrain %>% select(sqrt_distance, log_landsize, log_price, sellYear) %>% ggpairs(columns=1:3, ggplot2::aes(colour=sellYear, alpha=0.05))
-```
-
-
-### Modelo lineal como baseline
-Para empezar y tener un baseline, utilizamos las variables disponibles directamente sobre la salida.
-
-```{r}
-lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude, data=housesTrainFinal)
-summary(lm_model)
-```
-
-```{r}
-check_model <- function(model){
-  # Check normalidad de errores
-  plot(model,1) #Residuos vs predicciones
-  plot(model,2) # qq plot de residuos
-  plot(model,3) #Scale-location: la varianza incrementa en función de la predicción (heterosdicidad?)
-  plot(model,4)
-}
-
-```
-
-
-
-```{r}
-lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude + rooms_cat, data=housesTrainFinal)
-summary(lm_model)
-```
-```{r}
-lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude + rooms_cat + Regionname, data=housesTrainFinal)
-summary(lm_model)
-```
-
-```{r}
-lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude + rooms_cat + car_cat, data=housesTrainFinal)
-summary(lm_model)
-model.matrix(lm_model)
-```
 
 ### Modelo lineal como baseline
 Para empezar y tener un baseline, utilizamos las variables disponibles directamente sobre la salida.
@@ -1132,7 +1019,6 @@ x <- model.matrix(log_price ~., data=housesTrainFinal[, !names(housesTrainFinal)
 #x <- model.matrix(log_price ~., housesTrainFinal[, -which(names(housesTrainFinal) == 'Price')])
 y <- housesTrainFinal$log_price
 grid <- 10^seq(10,-2,length=100)
-
 cv_result <- cv.glmnet(x,y,alpha=1, nfolds=5, type.measure='mse')
 plot(cv_result)
 ```
@@ -1154,6 +1040,7 @@ lasso_coef_first[lasso_coef_first!=0]
 lm_model_13 = lm(log_price ~ sqrt_distance + Lattitude + Longtitude + rooms_catMedianas + rooms_catGrandes + car_cat2 o más plazas + RegionnameNorthern Metropolitan +
                    RegionnameSouthern Metropolitan + Typet + Typeu)
 ```
+
 
 # Aplicación de técnicas automáticas de selección de variables
 
@@ -1381,4 +1268,3 @@ out_ridge <- glmnet(x,y,alpha=0,lambda = cv_ridge$lambda.1se)
 #sort(abs(ridge_coef), decreasing = TRUE) -> Para verlas ordenadas
 ```
 En este caso, la información más valiosa que nos aporta Ridge es que le otorga bastante importancia al tipo de vivienda.
-
