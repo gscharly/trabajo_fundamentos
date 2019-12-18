@@ -89,6 +89,7 @@ head(houses, 10)
 Separaremos el archivo en dos subconjuntos: datos de entrenamiento y datos de validación. 
 
 ```{r DivisiónDatos}
+set.seed(10)
 trainIndex <- createDataPartition(houses$Price, p = .8, list = FALSE, times = 1)
 housesTrain <- houses[ trainIndex,]
 housesTest <- houses[-trainIndex,]
@@ -851,6 +852,14 @@ A modo de resumen, se contemplan las siguientes transformaciones de las variable
 * Categorización de *Rooms*, *YearBuilt* y *Car*
 * Reescalado de variables cuantitativas
 
+```{r}
+set.seed(10)
+trainIndex <- createDataPartition(houses$Price, p = .8, list = FALSE, times = 1)
+housesTrain <- houses[ trainIndex,]
+housesTest <- houses[-trainIndex,]
+
+```
+
 ```{r cuantitative_transformations}
 # Filtros e imputaciones
 #housesTrainFinal <- housesTrain
@@ -881,7 +890,9 @@ housesTrain$log_price <- unlist(log_price)
 # Discretización de variables cuantitativas
 housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
 
-housesTrain$year_built_cat <- addNA(factor(cut2(housesTrain$YearBuilt, g=2), labels=c("Antigua", "Moderna")))
+housesTrain$year_built_cat <- factor(cut2(housesTrain$YearBuilt, g=2), labels = c("Antigua", "Moderna"))
+levels(housesTrain$year_built_cat) <- c(levels(housesTrain$year_built_cat), 'Desconocido')
+housesTrain <- housesTrain %>% mutate_at(vars(year_built_cat), ~replace(., is.na(.), 'Desconocido'))
 
 housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Hasta_1_plaza", "2_o_más_plazas"), include.lowest = TRUE, right = FALSE)
 
@@ -894,10 +905,9 @@ housesTrainNumNorm <- predict(normParam, housesTrainNum)
 
 housesTrainFinal <- data.frame(housesTrainNumNorm[,num_vars], housesTrain[,cat_vars], housesTrain[, c('Price', 'log_price')])
 
-housesTrainFinal$Regionname = factor(housesTrainFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 
-                                                                 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
+housesTrainFinal$Regionname = factor(housesTrainFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
 #Utilizo la librería plyr
-housesTrainFinal$Regionname  = mapvalues(housesTrainFinal$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
+housesTrainFinal$Regionname  = mapvalues(housesTrainFinal$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan','South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan','South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
 
 housesTrainFinal$Method = factor(housesTrainFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
 housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
@@ -943,7 +953,12 @@ final_dataset_construction <- function(dataset, standarizer, imputationsCarforTe
   
   # Discretización de variables cuantitativas
   dataset$rooms_cat <- cut(dataset$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
-  dataset$year_built_cat <- addNA(factor(cut2(dataset$YearBuilt, g=2), labels=c("Antigua", "Moderna")))
+  
+  dataset$year_built_cat <- factor(cut2(dataset$YearBuilt, g=2), labels = c("Antigua", "Moderna"))
+  levels(dataset$year_built_cat) <- c(levels(dataset$year_built_cat), 'Desconocido')
+  dataset <- dataset %>% mutate_at(vars(year_built_cat), ~replace(., is.na(.), 'Desconocido'))
+  
+  
   dataset$car_cat <-cut(dataset$Car, breaks = c(0,2,9), labels = c("Hasta_1_plaza", "2_o_más_plazas"), include.lowest = TRUE, right = FALSE)
   
   #Estandarización de variables
@@ -952,13 +967,16 @@ final_dataset_construction <- function(dataset, standarizer, imputationsCarforTe
   datasetNum <- dataset %>% select(num_vars)
   datasetNumNorm <- predict(standarizer, datasetNum)
   
-  #Reordenamiento de variables categóricas
-  dataset$Regionname = factor(dataset$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
-  dataset$Regionname  = mapvalues(dataset$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
-  dataset$Method = factor(dataset$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
-  dataset$Type = factor(dataset$Type, levels=c('h', 'u', 't'))
   
   datasetFinal <- data.frame(datasetNumNorm[,num_vars], dataset[,cat_vars], dataset[, c('Price', 'log_price')])
+  
+  datasetFinal$Regionname = factor(datasetFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
+  #Utilizo la librería plyr
+  datasetFinal$Regionname  = mapvalues(datasetFinal$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan','South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan','South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
+
+  datasetFinal$Method = factor(datasetFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+  datasetFinal$Type = factor(datasetFinal$Type, levels=c('h', 'u', 't'))
+
   
   return(datasetFinal)
   
@@ -1044,6 +1062,30 @@ housesTrain %>% select(sqrt_distance, log_price, Type) %>% ggpairs(columns=1:3, 
 ```{r}
 housesTrain %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
 ```
+
+```{r}
+nrow(housesTrain) - (housesTrain %>% filter(is.na(YearBuilt)) %>% nrow())
+dataseto <- read.csv('train_set.csv')
+dataseto %>% filter(is.na(Regionname)) 
+
+```
+
+```{r}
+#Comprobaciones varias y guardado de trainset
+housesTest %>% filter(Car > 9) %>% nrow()
+housesTrain %>% filter(is.na(car_cat)) 
+imputationsCarFinal %>% filter(is.na(Car)) %>% nrow()
+housesTrainFinal %>% filter(is.na(car_cat)) 
+housesTrainFinal %>% drop_na() %>% nrow()
+
+write.csv(housesTrainFinal, 'train_set.csv', row.names = FALSE)
+
+dat <- read.csv('train_set.csv')
+nrow(dat)
+dat %>% drop_na() %>% nrow()
+dat %>% filter(is.na(year_built_cat)) %>% nrow()
+```
+
 
 
 ## Selección de variables
