@@ -1,0 +1,126 @@
+---
+title: "models"
+author: "Manuel Pertejo"
+date: "12/18/2019"
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+      section_divs: true
+    theme: "spacelab"
+    highlight: "zenburn"
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r librerías, message=FALSE}
+library(caret)
+library(dplyr)
+library(RColorBrewer)
+library(Hmisc)
+library(VIM)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(Hmisc)
+library(gmodels)
+library(RColorBrewer)
+library(VIM)
+library(mice)
+library(wesanderson)
+library(ggplot2)
+library(GGally)
+library(gridExtra)
+library(car)
+library(plyr)
+library(tidyverse)
+library(leaps)
+library(glmnet)
+library(broom)
+library(ggfortify)
+
+set.seed(10)
+
+colorDensidad <- wes_palettes$GrandBudapest1[2]
+colorNormal <- wes_palettes$GrandBudapest1[3]
+```
+
+```{r carga de datos}
+
+train <- read.csv('train_set.csv')
+train <- train %>% select(-log_price) #Voy a usar como target el Price sin transformar
+head(train)
+
+
+```
+
+# Modelo 
+
+En este primer modelo se han utilizado las variables que más se repetían como relevantes para el modelo generalmente en todos los métodos de selección de variables empleados anteriormente. Son las siguientes:
+
+* Distancia al centro.
+* Número de habitaciones.
+* Tipo de vivienda.
+* Latitud.
+* Longitud.
+
+```{r}
+model <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type, data = train)
+summary(model)
+```
+Aquí comentar coeficientes, R cuadrado y tal
+
+```{r  echo=F}
+#Puede ser útil
+model_metrics <- augment(model)
+head(model_metrics)
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(model)
+```
+## Normalidad de los residuos
+
+```{r}
+#Se ve algo mejor con esta librería en este caso 
+autoplot(model, 2)
+```
+Aquí irían las conclusiones del dibujo.
+
+## Homogeneidad de la varianza de los residuos 
+
+```{r}
+plot(model,3)
+```
+
+Se puede ver que la varianza de los errores es mayor cuanto mayor es el precio de la vivienda. Por lo tanto no se cumple la homocedasticity de los residuos.
+
+## Valores influyentes
+
+```{r}
+# Cook's distance
+plot(model, 4, id.n = 5) #Marco los 5 puntos más influyentes según la distancia de Cook
+# Residuals vs Leverage
+plot(model, 5)
+```
+
+```{r}
+# Imprimo los datos de esos 5 puntos más inlfuyentes
+model_metrics %>% top_n(5, wt = .cooksd)
+```
+
+Sería interesante ver si esos puntos tienen algo en común o por qué afectan al modelo.
+
+## Conclusiones finales
+
+Resumen de las características de la performance del modelo.
+
+
+
+
