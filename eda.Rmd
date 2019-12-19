@@ -51,11 +51,6 @@ library(glmnet)
 library(plyr)
 library(tidyverse)
 library(leaps)
-
-set.seed(10)
-
-colorDensidad <- wes_palettes$GrandBudapest1[2]
-colorNormal <- wes_palettes$GrandBudapest1[3]
 ```
 <br>
 
@@ -63,13 +58,21 @@ colorNormal <- wes_palettes$GrandBudapest1[3]
 
 <br>
 ```{r Lectura, echo=FALSE}
-houses <- read.csv('./datasets/melb_data.csv')
+houses <- read.csv('melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
 ```
 
 El presente dataset contiene información acerca del sector inmobiliario en la ciudad de Melbourne. Está compuesto por un total de 21 variables y 13580 observaciones.
 A continuación se muestra una tabla con la descripción de cada variable.
+
+```{r mapaMelbourne, message=FALSE}
+library(sf)
+mapMelbourne <- st_read('UrbanExtent2015_region.shx')
+ggplot(data = mapMelbourne)+
+  geom_sf()
+```
+
 
 ```{r Descripción, echo=FALSE}
 dfcol <- data.frame(
@@ -203,6 +206,9 @@ plot_barras(x = VarCualitativas$Month,bar= VarCualitativas$Year, xlab = 'Month')
 
 Atendiendo a la salida, tanto numérica como gráfica, observamos que la variable *CouncilArea* presenta una categoría vacía y otra llamada *Unavailable*. Los datos de dichas categorías (10%) los consideramos faltantes y serán imputados en el apartado dedicado a esto.
 
+Respecto a la variable *Type*, observamos que el factor más representado en el dataset es el h (house,cottage,villa, semi, terrace) y que no hay viviendas de tipo bedroom.
+
+Siguiendo con la variable *Method*, podemos ver como está muy descompensada con factores que son practicamente nulos. Esta variable hace referencia a la forma en la que se ha vendido una casa. Es una variable muy propia del ámbito de la cual no sabemos leer bien su información y medir su relevancia. Es por este motivo por el que no la tendremos en cuenta en el análisis multivariante con respecto a la variable target. 
 
 ```{r UnavailableCouncil}
 housesTrain$CouncilArea[which(housesTrain$CouncilArea == '')] <- 'Unavailable'
@@ -230,6 +236,7 @@ A continuación obserbamos las distribuciones para cada variable cuantitativa a 
 ```{r HistogramaDensidad, message=FALSE}
 colorDensidad <- brewer.pal(n = 4, name = 'Dark2')[4]
 colorNormal <- wes_palettes$GrandBudapest2[4]
+colorBox <- brewer.pal(n = 4, name = 'Dark2')[1]
 
 plot_histograma <- function(df = housesTrain, dat1, dat2, xlab, ylab = "Densidad", xaes){
   ggplot(df, aes(x=xaes, label = curt), na.omit = TRUE) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) + theme_light () +
@@ -237,20 +244,25 @@ plot_histograma <- function(df = housesTrain, dat1, dat2, xlab, ylab = "Densidad
   args=list(mean=mean(xaes), sd=sd(xaes)))  + labs(x= xlab, y = ylab) + 
   annotate(geom = 'text', label = dat1, x = Inf, y = Inf, hjust = 1.7, vjust = 2, parse = TRUE) +
   annotate(geom = 'text', label = dat2, x = Inf, y = Inf, hjust = 1.7, vjust = 3.5, parse = TRUE)
-
 }
-variables_not_geo <- colnames(VarCuantitativas)[-c(11,12,13)]
+
+plot_box <- function(df = VarCuantitativas, ylab, yaes){
+  ggplot(df, aes(y=yaes)) + geom_boxplot(na.rm = TRUE, colour = colorBox) + 
+    theme_light () + labs(y = ylab)
+}
+
+
+variables_not_geo <- colnames(VarCuantitativas)
 for (var in variables_not_geo){
-  xaes_var <- VarCuantitativas %>% select(var)
+  aes_var <- VarCuantitativas %>% select(var)
   curt <- round(kurtosis(VarCuantitativas[var], na.rm = TRUE), 2)
   asim <- round(skewness(VarCuantitativas[var], na.rm = TRUE), 2)
   dat1 <- paste0("Curtosis == ",curt)
   dat2 <- paste0("Asimetría == ",asim)
-  print(plot_histograma(dat1 = dat1, dat2 = dat2, xlab = var, xaes = unlist(xaes_var)))
+  p1<- plot_histograma(dat1 = dat1, dat2 = dat2, xlab = var, xaes = unlist(aes_var))
+  p2 <- plot_box(ylab = var, yaes = unlist(aes_var))
+  grid.arrange(p1, p2, nrow=1)
 }
-
-
-
 ```
 
 <br>
@@ -262,9 +274,10 @@ for (var in variables_not_geo){
 Es interesante también visualizar los boxplots de estas mismas variables.
 
 ```{r boxplots}
-colorBox <- brewer.pal(n = 4, name = 'Dark2')[3]
-plot_box <- function(df = VarCuantitativas, yaes){
-  ggplot(df, aes(y=yaes)) + geom_boxplot(na.rm = TRUE, colour = colorBox)
+colorBox <- brewer.pal(n = 4, name = 'Dark2')[1]
+plot_box <- function(df = VarCuantitativas, ylab, yaes){
+  ggplot(df, aes(y=yaes)) + geom_boxplot(na.rm = TRUE, colour = colorBox) + 
+    theme_light () + labs(y = ylab)
                                               
 }
 
@@ -272,7 +285,7 @@ cols <- colnames(VarCuantitativas)[-4]
           
 for (col in cols) {
   yaes_var <- VarCuantitativas %>% select(col)
-  print(plot_box(yaes = unlist(yaes_var)))
+  print(plot_box(ylab = col, yaes = unlist(yaes_var)))
 }
 ```
 
@@ -892,7 +905,9 @@ __BuildingArea__
 
 
 __YearBuilt__
+
 Al tener tantos registros sin informar, y ser una variable cuantitativa con una distribución que presenta varios tipos, se pretende transformar a una variable categórica que represente intervalos temporales, añadiendo una categoría Unknown a los valores faltantes.
+
 ```{r}
 housesTrain %>% select(YearBuilt, Price) %>% na.omit() %>% ggpairs
 ```
