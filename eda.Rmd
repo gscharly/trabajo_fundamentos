@@ -17,18 +17,12 @@ output:
     code_folding: "hide"
 ---
 
-<br>
-<center style="color: #5d1451;font-size: 250%">
-**Melbourne Housing**
-</center>
-<br>
-
 ```{r setup, echo=FALSE, eval=TRUE}
 knitr::opts_chunk$set(error = TRUE)
 ```
 
 ```{r imagenMelbourne}
-![Melbourne](melbourne.jpg)
+knitr::include_graphics("melbourneModif.png")
 ```
 
 ```{r librerías, message=FALSE}
@@ -62,12 +56,11 @@ library(leaps)
 
 <br>
 ```{r Lectura, echo=FALSE}
-carlos <- read.csv('kc_house_data_missing.csv', sep = ';')
-summary(carlos)
-hist(carlos$price, freq = FALSE)
 houses <- read.csv('melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
+
+head(houses, 10)
 ```
 
 El presente dataset contiene información acerca del sector inmobiliario en la ciudad de Melbourne. Está compuesto por un total de 21 variables y 13580 observaciones.
@@ -75,18 +68,46 @@ A continuación se muestra una tabla con la descripción de cada variable.
 
 ```{r Descripción, echo=FALSE}
 dfcol <- data.frame(
-  'Variable' = c('Rooms', 'Price', 'Method', 'Type', 'SellerG', 'Date', 'Distance', 'Regionname', 'Propertycount', 'Bedroom2', 'Bathroom', 'Car', 'Landsize', 'BuildingArea', 'CouncilArea'),
-  'Descripción' = c('Number of rooms', 'Price in dollars', 'S - property sold; SP - property sold prior; PI - property passed in; PN - sold prior not disclosed; SN - sold not disclosed; NB - no bid; VB - vendor bid; W - withdrawn prior to auction; SA - sold after auction; SS - sold after auction price not disclosed. N/A - price or highest bid not available', 'br - bedroom(s); h - house,cottage,villa, semi,terrace; u - unit, duplex; t - townhouse; dev site - development site; o res - other residential', 'Real Estate Agent', ' Date sold', 'Distance from CBD', 'General Region (West, North West, North, North east ...etc)', 'Number of properties that exist in the suburb', 'Scraped of Bedrooms (from different source)', 'Number of Bathrooms', 'Number of carspots', 'Land Size', 'Building Size', 'Governing council for the area')
+  'Variable' = c('Rooms', 'Price', 'Method', 'Type', 'SellerG', 'Date', 'Distance', 'Regionname', 'Propertycount', 'Bedroom2', 'Bathroom', 'Car', 'Landsize', 'BuildingArea', 'CouncilArea', 'Suburb', 'Address', 'Postcode', 'YearBuilt', 'Lattitude', 'Longtitude'),
+  'Descripción' = c('Number of rooms', 'Price in dollars', 'S - property sold; SP - property sold prior; PI - property passed in; PN - sold prior not disclosed; SN - sold not disclosed; NB - no bid; VB - vendor bid; W - withdrawn prior to auction; SA - sold after auction; SS - sold after auction price not disclosed. N/A - price or highest bid not available', 'br - bedroom(s); h - house,cottage,villa, semi,terrace; u - unit, duplex; t - townhouse; dev site - development site; o res - other residential', 'Real Estate Agent', ' Date sold', 'Distance from CBD', 'General Region (West, North West, North, North east ...etc)', 'Number of properties that exist in the suburb', 'Scraped of Bedrooms (from different source)', 'Number of Bathrooms', 'Number of carspots', 'Land Size', 'Building Size', 'Governing council for the area', 'Neighborhood', 'House direction', 'Postcode', 'Construction year', 'Lattitude', 'Longtitude')
 )
 #Faltan por añadir a la tabla:
-#Suburb, Address, Rooms, Price, SellerG, Date, Postcode, YearBuilt, Lattitude, Longtitude
+#Suburb, Address, Postcode, YearBuilt, Lattitude, Longtitude
 
 dfcol %>%
   kable() %>%
-  kable_styling(bootstrap_options = c('striped'), position = 'center')
-
-head(houses, 10)
+  kable_styling(bootstrap_options = c('hover'), position = 'center')
 ```
+
+<br>
+
+# Librería empleadas
+
+<br>
+
+* caret
+* dplyr
+* RColorBrewer
+* Hmisc
+* VIM
+* tidyr
+* knitr
+* kableExtra
+* Hmisc
+* gmodels
+* VIM
+* mice
+* wesanderson
+* ggplot2
+* GGally
+* gridExtra
+* car
+* moments
+* mplot
+* glmnet
+* plyr
+* tidyverse
+* leaps
 
 <br>
 
@@ -95,14 +116,16 @@ head(houses, 10)
 <br>
 
 *Objetivo general*
-- Predecir el precio de una vivienda en Melbourne.
+* Predecir el precio de venta de una vivienda en la ciudad de Melbourne.
 
 *Objetivos específicos*
-- Realizar un anáilis exploratorio de datos univariante para las variables cualitativas y cuantitativas.
-- Realizar un análisis explotratorio multivariante de todas las variables con respecto a la variable Price.
-- Detectar y tratar los datos faltantes.
-- Seleccionar las variables adecuadas al modelo.
-- Ajustar el modelo de regresión lineal múltiple.
+* Realizar un anáilis exploratorio de datos univariante para las variables cualitativas y cuantitativas.
+* Realizar un análisis explotratorio multivariante de todas las variables con respecto a la variable Price.
+* Transformar las variables necesarias para su uso adecuado en un modelo de regresión lineal.
+* Detectar y tratar los datos faltantes.
+* Seleccionar las variables adecuadas al modelo.
+* Ajustar el modelo de regresión lineal múltiple.
+
 
 <br>
 
@@ -117,6 +140,16 @@ trainIndex <- createDataPartition(houses$Price, p = .8, list = FALSE, times = 1)
 housesTrain <- houses[ trainIndex,]
 housesTest <- houses[-trainIndex,]
 ```
+```{r DivisiónDatosTabla}
+obsTrain <- housesTrain %>% nrow
+obsTest <- housesTest %>% nrow
+dfDivision <- data.frame(
+  Subconjuntos = c('Test + Validation', 'Test'),
+  Oservaciones = c(obsTrain, obsTest))
+
+dfDivision %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center')
+```
+
 
 Ahora, el subconjunto *housesTrain*, con el que trabajaremos inicialmente, está formado por 10865 observaciones. Más adelante, subdividiremos este mismo archivo para testar el modelo de regresión lineal múltiple. 
 
@@ -152,19 +185,22 @@ VarCualitativas <- VarCualitativas %>% separate(Date, c('Day','Month', 'Year'), 
 
 ```{r FrecuenciasCualitativas}
 tabla_frecuencias <- function(df, columna1, columna2 = 'Frecuencia'){
+  
   if(length(df) > 11){
     knitr::kable(df, col.names = c(columna1, columna2)) %>%
-      kable_styling(bootstrap_options = 'striped', position = 'center',full_width = T)%>%scroll_box(width = "100%", height = "350px")
-  }
-  else{
+      kable_styling(bootstrap_options = 'hover', position = 'center',full_width = T)
+      %>% scroll_box(width = "100%", height = "350px")
+    
+  } else{
     knitr::kable(df, col.names = c(columna1, columna2)) %>%
-      kable_styling(bootstrap_options = 'striped', position = 'center',full_width = T)
+      kable_styling(bootstrap_options = 'hover', position = 'center',full_width = T)
   }
 }
 
 for (var in colnames((VarCualitativas)[c(1,3,4,7,8,9,10)])){
-  print(tabla_frecuencias(df = data.frame(table(VarCualitativas[var])), columna1 = var))
+  print(tabla_frecuencias(columna1 = var, df = data.frame(table(VarCualitativas[var])) ))
 }
+
 ```
 
 <br>
@@ -869,8 +905,33 @@ Para las viviendas donde *CouncilArea* no está registrado, lo imputaremos con u
 
 ```{r imputacionCouncilArea}
 housesTrain$CouncilArea[which(housesTrain$CouncilArea == 'Unavailable')] <- NA
+
 imputationCouncilArea <- housesTrain %>% select(CouncilArea, Lattitude, Longtitude) %>% VIM::kNN(variable='CouncilArea')
 
+imputationCouncilArea$Price <- housesTrain$Price
+
+housesTrain %>% select(Price, CouncilArea)  %>% marginplot
+imputationCouncilArea %>% select(Price, CouncilArea, CouncilArea_imp)  %>% marginplot(., delimiter = '_imp')
+
+ggplot(data=imputationCouncilArea, aes(x=CouncilArea, fill = CouncilArea)) +       geom_bar(stat="count",position=position_dodge()) +
+  scale_fill_manual(values=palette34) +
+  labs(x= 'CouncilArea_imp', y = 'Frecuencias', fill=NULL) + 
+  theme(axis.text.x=element_blank())
+
+
+ggplot(data=imputationCouncilArea, aes(x=CouncilArea, fill = CouncilArea)) +       geom_bar(stat="count",position=position_dodge()) +
+  scale_fill_manual(values=palette34) +
+  labs(x= 'CouncilArea_imp', y = 'Frecuencias', fill=NULL) + 
+  theme(axis.text.x=element_blank())
+
+housesTrain %>% select(c("Price", "CouncilArea")) %>%
+  na.omit() %>%
+  ggplot(aes(y=Price, fill=CouncilArea)) +
+  geom_boxplot()
+
+imputationCouncilArea %>% select(c("Price", "CouncilArea")) %>%
+  ggplot(aes(y=Price, fill=CouncilArea)) +
+  geom_boxplot()
 ```
 
 __YearBuilt__
