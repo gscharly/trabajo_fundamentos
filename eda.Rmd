@@ -917,11 +917,6 @@ year_categoriesImp %>%
           ggplot(aes(x=Price, colour=year_cat2)) +
           geom_density()
 
-year_categories %>%
-    select(Price, year_cat) %>%
-    ggplot(aes(x=Price, colour=year_cat)) +
-    geom_density()
-
 ```
 
 
@@ -1469,4 +1464,132 @@ out_ridge <- glmnet(x,y,alpha=0,lambda = cv_ridge$lambda.1se)
 ```
 En este caso, la información más valiosa que nos aporta Ridge es que le otorga bastante importancia al tipo de vivienda.
 
+```{r carga de datos}
+train <- read.csv('train_set.csv')
+train <- train %>% select(-log_price) #Voy a usar como target el Price sin transformar
+train$year_cat_imputation <- year_categoriesImp$year_cat2
+head(train)
+```
+
+# Modelo 
+
+En este primer modelo se han utilizado las variables que más se repetían como relevantes para el modelo generalmente en todos los métodos de selección de variables empleados anteriormente. Son las siguientes:
+
+* Distancia al centro.
+* Número de habitaciones.
+* Tipo de vivienda.
+* Latitud.
+* Longitud.
+
+```{r}
+model <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type, data = train)
+summary(model)
+```
+Aquí comentar coeficientes, R cuadrado y tal
+
+```{r  echo=F}
+#Puede ser útil
+model_metrics <- augment(model)
+head(model_metrics)
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(model)
+```
+## Normalidad de los residuos
+
+```{r}
+#Se ve algo mejor con esta librería en este caso 
+autoplot(model, 2)
+```
+Aquí irían las conclusiones del dibujo.
+
+## Homogeneidad de la varianza de los residuos 
+
+```{r}
+plot(model,3)
+```
+
+Se puede ver que la varianza de los errores es mayor cuanto mayor es el precio de la vivienda. Por lo tanto no se cumple la homocedasticity de los residuos.
+
+## Valores influyentes
+
+```{r}
+# Cook's distance
+plot(model, 4, id.n = 5) #Marco los 5 puntos más influyentes según la distancia de Cook
+# Residuals vs Leverage
+plot(model, 5)
+```
+
+```{r}
+# Imprimo los datos de esos 5 puntos más inlfuyentes
+model_metrics %>% top_n(5, wt = .cooksd)
+```
+
+Sería interesante ver si esos puntos tienen algo en común o por qué afectan al modelo.
+
+## Conclusiones finales
+
+Resumen de las características de la performance del modelo.
+
+#Modelo 2
+
+El mismo modelo que antes, pero añadiendo la variable Regionname (este lo tengo que completar porque yo creo que es el mejor modelo que se puede conseguir con lo que tenemos)
+
+```{r}
+model2 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train)
+summary(model2)
+```
+
+
+# Modelo 3
+
+Añado la variable YearBuilt como numérica.
+
+```{r}
+#Carga de datos
+train_year <- read_csv('train_yearbuilt.csv') %>% select(-log_price)
+head(train_year)
+```
+
+
+
+
+```{r}
+model_year <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat, data = train_year)
+summary(model_year)
+```
+ Mejora un poco los resultados respecto a lo obtenido 
+ 
+ 
+# Modelo 4
+ 
+ Utilizando year_cat en lugar de YearBuilt:
+ 
+```{r}
+model_yearcat <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + year_cat_imputation, data = train)
+summary(model_yearcat)
+
+
+best_subsets_models <- regsubsets(Price~., data = train, nvmax = 22)
+reg_sum <- summary(best_subsets_models)
+reg_sum
+
+reg_sum$adjr2
+which.max(reg_sum$adjr2)
+```
+A juzgar por los resultados, el mejor modelo es el que consta de 19 variables. 
+
+Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo posible sería a través del siguiente gráfico, donde además del R**2 ajustado se muestran otras estimaciones de la bondad de ajuste de los modelos:
+
+```{r fig.align='center'}
+for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_models, scale=metric)}
+```
+ 
+ Con esto podemos ver que la variable YearBuilt como numérica tiene más importancia que como categórica y el resultado de los modelos es algo mejor. Sin embargo, sigue sin ser de las más relvantes Además, creo que ya tenemos hecho gráficas y tal como categórica entonces no se si nos renta realmente utilizarla como numérica en los modelos o lo dejamos como está.
+ 
+ 
+ 
+ 
 
