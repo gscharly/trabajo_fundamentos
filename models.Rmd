@@ -228,5 +228,21 @@ coefss <- predict(glmnet(x,y,alpha=0.5,lambda = cv_elastic$lambda.1se),type="coe
 sort(abs(coefss), decreasing = T)
 ```
 
+# Scoring best model
+ 
+```{r}
+test_data <- read.csv('test_yearbuilt.csv')
+test_data <- test_data %>% select(-Price)
+best_model <- model4
+preds <- data.frame(cbind(actuals=test_data$log_price, predicteds=predict(best_model,test_data)))
+```
+
+```{r}
+head(preds)
+```
+
+```{r}
+RMSE(test_data$log_price, predict(best_model,test_data))
+```
 
 
