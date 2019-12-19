@@ -27,6 +27,10 @@ output:
 knitr::opts_chunk$set(error = TRUE)
 ```
 
+```{r imagenMelbourne}
+![Melbourne](melbourne.jpg)
+```
+
 ```{r librerías, message=FALSE}
 library(caret)
 library(dplyr)
@@ -65,14 +69,6 @@ rows <- nrow(houses)
 
 El presente dataset contiene información acerca del sector inmobiliario en la ciudad de Melbourne. Está compuesto por un total de 21 variables y 13580 observaciones.
 A continuación se muestra una tabla con la descripción de cada variable.
-
-```{r mapaMelbourne, message=FALSE}
-library(sf)
-mapMelbourne <- st_read('UrbanExtent2015_region.shx')
-ggplot(data = mapMelbourne)+
-  geom_sf()
-```
-
 
 ```{r Descripción, echo=FALSE}
 dfcol <- data.frame(
@@ -265,29 +261,7 @@ for (var in variables_not_geo){
 }
 ```
 
-<br>
-
-### Gráficos de cajas
-
-<br>
-
-Es interesante también visualizar los boxplots de estas mismas variables.
-
-```{r boxplots}
-colorBox <- brewer.pal(n = 4, name = 'Dark2')[1]
-plot_box <- function(df = VarCuantitativas, ylab, yaes){
-  ggplot(df, aes(y=yaes)) + geom_boxplot(na.rm = TRUE, colour = colorBox) + 
-    theme_light () + labs(y = ylab)
-                                              
-}
-
-cols <- colnames(VarCuantitativas)[-4]
-          
-for (col in cols) {
-  yaes_var <- VarCuantitativas %>% select(col)
-  print(plot_box(ylab = col, yaes = unlist(yaes_var)))
-}
-```
+Lo primero que hacemos es una rápida comprobación de valores informados. Vemos que hay un outlier en el año 1196. Se establece que cualquier casa que tenga *YearBuilt* por debajo del año de fundación de la ciudad será eliminada.
 
 Con toda esta información, ya vemos que tanto BuildingArea (por todos sus valores faltantes) como Landsize (por su distribución y algunos valores iguales a 0) van a necesitar tratamiento especial. Lo veremos más en detalle a la hora de imputar datos faltantes.
 
@@ -659,8 +633,9 @@ housesTrain$sellMonth <- factor(housesTrain$sellMonth)
 housesTrain %>% ggplot(aes(y=Price, color=sellMonth)) + geom_boxplot()
 ```
 
+<br>
 
-## Análisis exploratorio de datos faltantes
+# Análisis exploratorio de datos faltantes
 
 <br>
 
@@ -882,11 +857,6 @@ housesTrain$car_cat = housesTrain %>%
 housesTrain$car_cat %>% table
 ```
 
-```{r}
-# ESTO NO ME SALE
-#cols <- c('Regionname', 'car_cat')
-#car_imputed = mice(housesTrain, m=5, method='polyreg', seed=10)
-```
 
 Una vez imputado, previsiblemente no habrá cambiado la distribución de la variable al ser un % tan pequeño de datos faltantes.
 
@@ -900,24 +870,18 @@ imputationCouncilArea <- housesTrain %>% select(CouncilArea, Lattitude, Longtitu
 
 ```
 
-__BuildingArea__
-
-
-
 __YearBuilt__
 
-Al tener tantos registros sin informar, y ser una variable cuantitativa con una distribución que presenta varios tipos, se pretende transformar a una variable categórica que represente intervalos temporales, añadiendo una categoría Unknown a los valores faltantes.
+Retomando el análisis univariante de esta variable hay que recordar que presenta una distribución con varios picos que sugiere su discretización. De esta manera, se pretende transformarla en una variable categórica que represente intervalos temporales a la que añadiremos categoría Unknown para los valores faltantes. También recordamos que para una de las observacions el valor de *YearBuilt* era de 1196 y, dado que es anterior al año de fundación de Melbourne, lo tomaríamos como dato perdido.
 
-```{r}
-housesTrain %>% select(YearBuilt, Price) %>% na.omit() %>% ggpairs
-```
-Lo primero que hacemos es una rápida comprobación de valores informados. Vemos que hay un outlier en el año 1196. Se establece que cualquier casa que tenga *YearBuilt* por debajo del año de fundación de la ciudad será eliminada.
+En la siguiente gráfica se muestra la relación con *Price* y su logaritmo eliminando la observación de 1196.
+
 ```{r}
 housesTrain %>% select(YearBuilt, Price) %>% na.omit() %>%
   filter(YearBuilt >= 1850) %>% mutate(log_price=log10(Price)) %>% ggpairs
 ```
 
-Después, se convierte a categórica, y se comprueba su relación con *Price*.
+Se categoriza en cuatro grupos de manera que los grupos tienen un número de observaciones más o menos similar. Al verla en relación a *Price*, se observa que los datos faltantes no se distribuyen de manera aleatoria sino que, siguiendo la distribución para los otros factores, se concentran entorno al 1970/1960 aproximadante.
 
 ```{r}
 year_categories <- housesTrain %>% 
@@ -926,23 +890,47 @@ year_categories <- housesTrain %>%
 
 year_categories %>%
   select(year_cat) %>% table()
-```
 
-```{r}
 year_categories %>%
   select(Price, year_cat) %>%
   ggplot(aes(x=Price, colour=year_cat)) +
   geom_density()
-```
-```{r}
+
 year_categories %>%
   select(Price, year_cat) %>%
   ggplot(aes(y=Price, fill=year_cat)) +
   geom_boxplot()
 ```
 
+```{r imputarYearBuilt}
+imputationsYearBuilt <- housesTrain %>% select(Lattitude, Longtitude, YearBuilt) %>% VIM::kNN(variable='YearBuilt')
 
-## Transformaciones y procesado de variables
+year_categoriesImp <- imputationsYearBuilt %>% mutate(year_cat2 = cut2(YearBuilt, g=4))
+
+year_categoriesImp %>%
+  select(year_cat2) %>% table()
+
+year_categoriesImp$Price <- housesTrain$Price
+
+year_categoriesImp %>%
+          select(Price, year_cat2) %>%
+          ggplot(aes(x=Price, colour=year_cat2)) +
+          geom_density()
+
+year_categories %>%
+    select(Price, year_cat) %>%
+    ggplot(aes(x=Price, colour=year_cat)) +
+    geom_density()
+
+```
+
+
+<br>
+
+# Transformaciones y procesado de variables
+
+<br>
+
 A modo de resumen, se contemplan las siguientes transformaciones de las variables cuantitativas disponibles:
 * Transformación logarítmica de *Landsize* y *Price* (variable target, cambiaría interpretabilidad, pero puede mejorar predicción)
 * Transformación de raíz cuadrada de *Distance*
@@ -1154,8 +1142,18 @@ dat %>% drop_na() %>% nrow()
 dat %>% filter(is.na(year_built_cat)) %>% nrow()
 ```
 
+<br>
 
-### Modelo lineal como baseline
+# Selección de variables
+
+<br>
+
+<br>
+
+## Modelo lineal como baseline
+
+<br>
+
 Para empezar y tener un baseline, utilizamos las variables disponibles directamente sobre la salida.
 
 ```{r}
@@ -1187,8 +1185,11 @@ lm_model = lm(Price ~ sqrt_distance + log_landsize + Lattitude + Longtitude + ro
 summary(lm_model)
 model.matrix(lm_model)
 ```
+<br>
 
 ## Selección de variables
+
+<br>
 
 En base al exploratorio realizado, hemos visto que no hay ninguna correlación lineal evidente entre las variables cuantitativas y la variable objetivo. Por tanto, vamos a aplicar diversos métodos de selección de variables para encontrar la mejor combinación posible.
 
@@ -1219,8 +1220,11 @@ lasso_coef_first[lasso_coef_first!=0]
 lm_model_13 = lm(log_price ~ sqrt_distance + Lattitude + Longtitude + rooms_catMedianas + rooms_catGrandes + car_cat2_o_mas_plazas + RegionnameNorthern_Metropolitan +
                    RegionnameSouthern_Metropolitan + Typet + Typeu)
 ```
+<br>
 
-# Aplicación de técnicas automáticas de selección de variables
+## Aplicación de técnicas automáticas de selección de variables
+
+<br>
 
 Anteriormente hemos preseleccionado ciertas variables después de la limpieza y análisis inicial de nuestro conjunto de datos. Actualmente disponemos de un total de 10 variables explicativas:
 
@@ -1242,7 +1246,11 @@ train$year_built_cat = factor(train$year_built_cat, levels = c('Antigua', 'Moder
 train$rooms_cat = factor(train$rooms_cat, levels = c('Pequeñas','Medianas','Grandes'))
 ```
 
-## Best subsets
+<br>
+
+### Best subsets
+
+<br>
 
 El primer método que hemos utilizado es el de best subset selección. El resumen de todos los modelos examinados se muestra a continuación:
 
@@ -1297,7 +1305,11 @@ Para el modelo de 8 predictores, los coeficientes son los siguientes:
 coef(object = best_subsets_models, id = 10)
 ```
 
-## Forward Selection
+<br>
+
+### Forward Selection
+
+<br>
 
 Otra de las técnicas utilizadas es la de *Forward Selection*, en la que se parte de un modelo vacío y se van añadiendo variables. Los resultados obtenidos han sido los siguientes:
 
@@ -1336,7 +1348,11 @@ reg_forward_sum$adjr2[12]
 coef(object = best_forward_models, id = 12)
 ```
 
-## Backward Selection
+<br>
+
+### Backward Selection
+
+<br>
 
 El último método de selección automática de variables que se ha puesto en práctica es el de *Backward Selection*. En este caso se parte de un modelo con todos los predictores y se van eliminando uno a uno (en cada paso se elimina la variable más significativa para el modelo):
 
@@ -1384,11 +1400,17 @@ reg_backward_sum$cp
 reg_forward_sum$cp
 ```
 
+<br>
+
 # Técnicas de regularización 
 
+<br>
+
+<br>
 
 ## Regularización Lasso
 
+<br>
 
 ```{r}
  x <- model.matrix(Price~., data = train)[, -1]
