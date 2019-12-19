@@ -72,71 +72,9 @@ En este primer modelo se han utilizado las variables que más se repetían como 
 Los resultados del modelo han sido los siguientes:
 
 ```{r  echo=F}
-model <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train)
-summary(model)
+model1 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train)
+summary(model1)
 ```
-
-
-```{r  echo=F}
-#Puede ser útil
-model_metrics <- augment(model)
-```
-
-Las siguientes gráficas nos ayudan a estudiar los residuos resultantes tras aplicar el modelo:
-
-```{r}
-par(mfrow = c(2, 2))
-plot(model)
-```
-## Normalidad de los residuos
-
-A continuación se muestra el diagrama Q-Q de los residuos para comprobar su normalidad:
-
-```{r}
-#Se ve algo mejor con esta librería en este caso 
-autoplot(model, 2)
-```
-
-Se puede ver que para los valores más altos es cuando se empiezan a desviar de una normal. Esto no se muy bien como interpretarlo
-
-
-## Homogeneidad de la varianza de los residuos 
-
-```{r}
-plot(model,3)
-```
-
-En esta gráfica se ve claramente que la varianza de los residuos no es para nada constante. Esta varianza empieza a aumentar bastante para los valores más altos. Por lo tanto no se cumple el principio de homodedasticity de los mismos.
-
-## Valores influyentes
-
-La siguiente gráfica muestra los puntos más influyentes para el modelo según la distancia de Cook:
-
-```{r}
-# Cook's distance
-plot(model, 4, id.n = 5) #Marco los 5 puntos más influyentes según la distancia de Cook
-# Residuals vs Leverage
-plot(model, 5)
-```
-
-```{r}
-# Imprimo los datos de esos 5 puntos más inlfuyentes
-model_metrics %>% top_n(5, wt = .cooksd)
-```
-
-```{r}
-train[9669,]
-```
-
-EL punto más influyente para el modelo con diferencia es el siguiente:
-
-```{r}
-original_data <- read.csv('./datasets/melb_data.csv')
-
-original_data %>% filter(Price == 9000000)
-```
-Se puede ver que está bastante alejado del centro para ser tan cara.
-
 
 # Eliminación puntos influyentes (Yo creo que no lo debemos incluir)
 
@@ -186,15 +124,71 @@ En este tercer caso, se ha introducido de nuevo la variable YearBuilt, pero en e
 #Carga de datos
 
 train_year <- read_csv('train_yearbuilt.csv') %>% select(-log_price)
-model_year <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat + Regionname, data = train_year)
-summary(model_year)
+model3 <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat + Regionname, data = train_year)
+summary(model3)
 
 ```
 
 Se puede ver que en este caso si que mejora ligeramente la performance del modelo.
 
+```{r  echo=F}
+#Puede ser útil
+model_metrics <- augment(model3)
+```
+
+Las siguientes gráficas nos ayudan a estudiar los residuos resultantes tras aplicar el modelo:
+
+```{r}
+par(mfrow = c(2, 2))
+plot(model3)
+```
+
+## Normalidad de los residuos
+
+A continuación se muestra el diagrama Q-Q de los residuos para comprobar su normalidad:
+
+```{r}
+#Se ve algo mejor con esta librería en este caso 
+autoplot(model3, 2)
+```
+ 
+ Se puede ver que para los valores más altos es cuando se empiezan a desviar de una normal. Esto no se muy bien como interpretarlo
 
 
- 
- 
- 
+## Homogeneidad de la varianza de los residuos 
+
+```{r}
+plot(model3,3)
+```
+
+En esta gráfica se ve claramente que la varianza de los residuos no es para nada constante. Esta varianza empieza a aumentar bastante para los valores más altos. Por lo tanto no se cumple el principio de homodedasticity de los mismos.
+
+## Valores influyentes
+
+La siguiente gráfica muestra los puntos más influyentes para el modelo según la distancia de Cook:
+
+```{r}
+# Cook's distance
+plot(model3, 4, id.n = 5) #Marco los 5 puntos más influyentes según la distancia de Cook
+# Residuals vs Leverage
+plot(model3, 5)
+```
+
+```{r}
+# Imprimo los datos de esos 5 puntos más inlfuyentes
+model_metrics %>% top_n(5, wt = .cooksd)
+```
+
+```{r}
+train[9669,]
+```
+
+EL punto más influyente para el modelo con diferencia es el siguiente:
+
+```{r}
+original_data <- read.csv('./datasets/melb_data.csv')
+
+original_data %>% filter(Price == 9000000)
+```
+
+Se puede ver que está bastante alejado del centro para ser tan cara.
