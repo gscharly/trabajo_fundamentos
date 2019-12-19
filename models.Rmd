@@ -59,27 +59,30 @@ head(train)
 
 ```
 
-# Modelo 
+# Modelo 1
 
 En este primer modelo se han utilizado las variables que más se repetían como relevantes para el modelo generalmente en todos los métodos de selección de variables empleados anteriormente. Son las siguientes:
 
 * Distancia al centro.
 * Número de habitaciones.
 * Tipo de vivienda.
-* Latitud.
+* Nombre de la región.
 * Longitud.
 
-```{r}
-model <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type, data = train)
+Los resultados del modelo han sido los siguientes:
+
+```{r  echo=F}
+model <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train)
 summary(model)
 ```
-Aquí comentar coeficientes, R cuadrado y tal
+
 
 ```{r  echo=F}
 #Puede ser útil
 model_metrics <- augment(model)
-head(model_metrics)
 ```
+
+Las siguientes gráficas nos ayudan a estudiar los residuos resultantes tras aplicar el modelo:
 
 ```{r}
 par(mfrow = c(2, 2))
@@ -87,11 +90,15 @@ plot(model)
 ```
 ## Normalidad de los residuos
 
+A continuación se muestra el diagrama Q-Q de los residuos para comprobar su normalidad:
+
 ```{r}
 #Se ve algo mejor con esta librería en este caso 
 autoplot(model, 2)
 ```
-Aquí irían las conclusiones del dibujo.
+
+Se puede ver que para los valores más altos es cuando se empiezan a desviar de una normal. Esto no se muy bien como interpretarlo
+
 
 ## Homogeneidad de la varianza de los residuos 
 
@@ -99,9 +106,11 @@ Aquí irían las conclusiones del dibujo.
 plot(model,3)
 ```
 
-Se puede ver que la varianza de los errores es mayor cuanto mayor es el precio de la vivienda. Por lo tanto no se cumple la homocedasticity de los residuos.
+En esta gráfica se ve claramente que la varianza de los residuos no es para nada constante. Esta varianza empieza a aumentar bastante para los valores más altos. Por lo tanto no se cumple el principio de homodedasticity de los mismos.
 
 ## Valores influyentes
+
+La siguiente gráfica muestra los puntos más influyentes para el modelo según la distancia de Cook:
 
 ```{r}
 # Cook's distance
@@ -115,57 +124,77 @@ plot(model, 5)
 model_metrics %>% top_n(5, wt = .cooksd)
 ```
 
-Sería interesante ver si esos puntos tienen algo en común o por qué afectan al modelo.
+```{r}
+train[9669,]
+```
 
-## Conclusiones finales
+EL punto más influyente para el modelo con diferencia es el siguiente:
 
-Resumen de las características de la performance del modelo.
+```{r}
+original_data <- read.csv('./datasets/melb_data.csv')
+
+original_data %>% filter(Price == 9000000)
+```
+Se puede ver que está bastante alejado del centro para ser tan cara.
+
+
+# Eliminación puntos influyentes (Yo creo que no lo debemos incluir)
+
+Comprobación de cómo funcionaría el modelo eliminando esos 5 puntos más influyentes. Vemos que mejora ligeramente, aunque la mejora no sea muy relevante. 
+
+```{r}
+train2 <- train[-c(10609, 9669, 8818, 7666, 6140),]
+dim(train2)
+model_sin_out <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train2)
+summary(model_sin_out)
+```
+
+Sería interesante ver si esos puntos tienen algo en común o por qué afectan al modelo. Habría que irse al dataset original donde están las variables sin transformar y ver qué pueden tener en común.
 
 #Modelo 2
 
-El mismo modelo que antes, pero añadiendo la variable Regionname (este lo tengo que completar porque yo creo que es el mejor modelo que se puede conseguir con lo que tenemos)
+Es el mismo que el primer modelo probado, pero añadiendo la variable year_cat, a pesar de que en vista a los resultados obtenidos en la parte de selección de variables no parece que sea muy influyente para los modelos. Con lo cual, las variables utilizadas por el modelo son las siguientes:
+
+* Distancia al centro.
+* Número de habitaciones.
+* Tipo de vivienda.
+* Nombre de la región.
+* Longitud.
+* Latitud.
+* Año de construcción como categórica.
 
 ```{r}
-model2 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train)
+model2 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname + year_built_cat, data = train)
 summary(model2)
 ```
-
+El resultado obtenido es prácticamente el mismo. De hecho, a pesar de que como era evidente el R^2 aumenta, el R^ajustado no varía respecto al modelo anterior. Además, se puede observar que los p-valores asociados a los coeficientes de las categorías de year_built son bastante altos. 
 
 # Modelo 3
 
-Añado la variable YearBuilt como numérica.
+En este tercer caso, se ha introducido de nuevo la variable YearBuilt, pero en este caso como númerica (previa imputación), para poder ver como varía el funcionamiento del modelo. Por lo tanto, las variables utilizadas han sido las siguientes:
 
-```{r}
+
+* Distancia al centro.
+* Número de habitaciones.
+* Tipo de vivienda.
+* Nombre de la región.
+* Longitud.
+* Latitud.
+* Año de construcción como numérica.
+
+```{r echo=F, message=F}
 #Carga de datos
 
 train_year <- read_csv('train_yearbuilt.csv') %>% select(-log_price)
-head(train_year)
-
-
-```
-
-
-
-
-```{r}
-model_year <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat, data = train_year)
-
+model_year <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat + Regionname, data = train_year)
 summary(model_year)
+
 ```
- Mejora un poco los resultados respecto a lo obtenido 
- 
- 
-# Modelo 4
- 
- Utilizando year_cat en lugar de YearBuilt:
- 
-```{r}
-model_yearcat <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + year_built_cat, data = train)
-summary(model_yearcat)
-```
- 
- Con esto podemos ver que la variable YearBuilt como numérica tiene más importancia que como categórica y el resultado de los modelos es algo mejor. Sin embargo, sigue sin ser de las más relvantes Además, creo que ya tenemos hecho gráficas y tal como categórica entonces no se si nos renta realmente utilizarla como numérica en los modelos o lo dejamos como está.
- 
+
+Se puede ver que en este caso si que mejora ligeramente la performance del modelo.
+
+
+
  
  
  
