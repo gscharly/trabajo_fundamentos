@@ -49,6 +49,8 @@ library(glmnet)
 library(plyr)
 library(tidyverse)
 library(leaps)
+library(broom)
+library(ggfortify)
 ```
 <br>
 
