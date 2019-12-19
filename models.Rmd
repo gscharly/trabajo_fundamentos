@@ -121,6 +121,51 @@ Sería interesante ver si esos puntos tienen algo en común o por qué afectan a
 
 Resumen de las características de la performance del modelo.
 
+#Modelo 2
+
+El mismo modelo que antes, pero añadiendo la variable Regionname (este lo tengo que completar porque yo creo que es el mejor modelo que se puede conseguir con lo que tenemos)
+
+```{r}
+model2 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train)
+summary(model2)
+```
+
+
+# Modelo 3
+
+Añado la variable YearBuilt como numérica.
+
+```{r}
+#Carga de datos
+
+train_year <- read_csv('train_yearbuilt.csv') %>% select(-log_price)
+head(train_year)
+
+
+```
 
 
 
+
+```{r}
+model_year <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat, data = train_year)
+
+summary(model_year)
+```
+ Mejora un poco los resultados respecto a lo obtenido 
+ 
+ 
+# Modelo 4
+ 
+ Utilizando year_cat en lugar de YearBuilt:
+ 
+```{r}
+model_yearcat <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + year_built_cat, data = train)
+summary(model_yearcat)
+```
+ 
+ Con esto podemos ver que la variable YearBuilt como numérica tiene más importancia que como categórica y el resultado de los modelos es algo mejor. Sin embargo, sigue sin ser de las más relvantes Además, creo que ya tenemos hecho gráficas y tal como categórica entonces no se si nos renta realmente utilizarla como numérica en los modelos o lo dejamos como está.
+ 
+ 
+ 
+ 
