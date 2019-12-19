@@ -62,6 +62,9 @@ library(leaps)
 
 <br>
 ```{r Lectura, echo=FALSE}
+carlos <- read.csv('kc_house_data_missing.csv', sep = ';')
+summary(carlos)
+hist(carlos$price, freq = FALSE)
 houses <- read.csv('melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
@@ -905,7 +908,7 @@ year_categories %>%
 ```{r imputarYearBuilt}
 imputationsYearBuilt <- housesTrain %>% select(Lattitude, Longtitude, YearBuilt) %>% VIM::kNN(variable='YearBuilt')
 
-year_categoriesImp <- imputationsYearBuilt %>% mutate(year_cat2 = cut2(YearBuilt, g=4))
+year_categoriesImp <- imputationsYearBuilt %>% mutate(year_cat2 = cut2(YearBuilt, g=2))
 
 year_categoriesImp %>%
   select(year_cat2) %>% table()
@@ -1467,7 +1470,8 @@ En este caso, la información más valiosa que nos aporta Ridge es que le otorga
 ```{r carga de datos}
 train <- read.csv('train_set.csv')
 train <- train %>% select(-log_price) #Voy a usar como target el Price sin transformar
-train$year_cat_imputation <- year_categoriesImp$year_cat2
+train$year_cat_imputation <- year_categoriesImp$year_cat2 #añado la nueva imputada
+train$YearBuilt <- year_categoriesImp$YearBuilt
 head(train)
 ```
 
@@ -1547,17 +1551,9 @@ summary(model2)
 
 Añado la variable YearBuilt como numérica.
 
-```{r}
-#Carga de datos
-train_year <- read_csv('train_yearbuilt.csv') %>% select(-log_price)
-head(train_year)
-```
-
-
-
 
 ```{r}
-model_year <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat, data = train_year)
+model_year <- lm(Price~sqrt_distance + Lattitude + Longtitude + Type + rooms_cat + Regionname, data = train)
 summary(model_year)
 ```
  Mejora un poco los resultados respecto a lo obtenido 
@@ -1568,7 +1564,7 @@ summary(model_year)
  Utilizando year_cat en lugar de YearBuilt:
  
 ```{r}
-model_yearcat <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + year_cat_imputation, data = train)
+model_yearcat <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + year_cat_imputation + Regionname, data = train)
 summary(model_yearcat)
 
 
