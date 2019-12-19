@@ -279,5 +279,68 @@ out_ridge <- glmnet(x,y,alpha=0,lambda = cv_ridge$lambda.1se)
 ```
 En este caso, la información más valiosa que nos aporta Ridge es que le otorga bastante importancia al tipo de vivienda.
 
+# Prueba de selección de variables 
 
+En este caso añado YearBuilt imputada y numérica para ver su importancia.
+
+```{r}
+train_year <- read_csv('train_yearbuilt.csv') %>% select(-log_price)
+
+train_year$Regionname = factor(train_year$Regionname, levels=c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
+train_year$Method = factor(train_year$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+train_year$Type = factor(train_year$Type, levels=c('h', 'u', 't'))
+train_year$car_cat = factor(train_year$car_cat, levels = c('Hasta_1_plaza', '2_o_más_plazas'))
+train_year$rooms_cat = factor(train_year$rooms_cat, levels = c('Pequeñas','Medianas','Grandes'))
+```
+
+
+```{r}
+subset <- regsubsets(Price~., data = train_year, nvmax = 21)
+
+(sub_sum <- summary(subset))
+
+sub_sum$adjr2
+which.max(sub_sum$adjr2)
+```
+```{r}
+for (metric in c("r2", "adjr2", "Cp", "bic")){plot(subset, scale=metric)}
+```
+```{r}
+p <- ggplot(data = data.frame(n_predictores = 1:21,
+                              R_ajustado = sub_sum$adjr2),
+            aes(x = n_predictores, y = R_ajustado)) +
+    geom_line() +
+    geom_point()
+
+p <- p + geom_point(aes(
+                    x = n_predictores[which.max(sub_sum$adjr2)],
+                    y = R_ajustado[which.max(sub_sum$adjr2)]),
+                    colour = "red", size = 3)
+p <- p +  scale_x_continuous(breaks = c(0:21)) + 
+          theme_bw() +
+          labs(title = 'R2_ajustado vs número de predictores (Best Subset)', 
+               x =  'número predictores')
+p
+```
+
+
+```{r}
+sub_sum$adjr2[10]
+```
+```{r}
+set.seed(10)
+x2 <- model.matrix(Price~., data = train_year)[, -1]
+y2 <- train_year$Price
+cv_lasso_year <- cv.glmnet(x = x2, y = y2, alpha = 1)
+par(mfrow = c(1,2))
+plot(cv_lasso_year)
+plot(cv_lasso)
+```
+
+```{r}
+set.seed(10)
+out_2 <- glmnet(x2,y2,alpha=1,lambda = cv_lasso_year$lambda.1se)
+lasso_coef_eleven2 <- predict(out_2,type="coefficients")[1:22,]
+sort(abs(lasso_coef_eleven2[lasso_coef_eleven2!=0]), decreasing = TRUE)
+```
 
