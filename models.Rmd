@@ -192,3 +192,41 @@ original_data %>% filter(Price == 9000000)
 ```
 
 Se puede ver que está bastante alejado del centro para ser tan cara.
+
+# Modelo 4
+
+En este caso, vamos a cambiar el target del modelo, utilizando la transformación logaritmica del mismo. Vamos a utilizar las mismas variables que en el caso anterior:
+
+
+
+```{r}
+train_year2 <- read_csv('train_yearbuilt.csv') %>% select(-Price)
+model4 <- lm(log_price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat + Regionname, data = train_year2)
+summary(model4)
+```
+
+```{r}
+best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
+reg_sum_log <- summary(best_subsets_log)
+for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_log, scale=metric)}
+```
+
+
+```{r}
+which.max(reg_sum_log$adjr2)
+```
+```{r}
+x <- model.matrix(log_price~., data = train_year2)[, -1]
+y <- train_year2$log_price
+set.seed(10)
+cv_elastic <- cv.glmnet(x = x, y = y, alpha = 0.5)
+plot(cv_elastic)
+```
+
+```{r}
+coefss <- predict(glmnet(x,y,alpha=0.5,lambda = cv_elastic$lambda.1se),type="coefficients")[1:22,]
+sort(abs(coefss), decreasing = T)
+```
+
+
+
