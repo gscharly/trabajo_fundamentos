@@ -1155,8 +1155,6 @@ housesTrainFinal %>% select(sqrt_distance, log_price, Type) %>% ggpairs(columns=
 housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
 ```
 
-
-
 ```{r}
 nrow(housesTrain) - (housesTrain %>% filter(is.na(YearBuilt)) %>% nrow())
 dataseto <- read.csv('train_set.csv')
@@ -1171,12 +1169,156 @@ imputationsCarFinal %>% filter(is.na(Car)) %>% nrow()
 housesTrainFinal %>% filter(is.na(car_cat)) 
 housesTrainFinal %>% drop_na() %>% nrow()
 
-write.csv(housesTrainFinal, 'train_set.csv', row.names = FALSE)
+#write.csv(housesTrainFinal, 'train_set.csv', row.names = FALSE)
 
 dat <- read.csv('train_set.csv')
 nrow(dat)
 dat %>% drop_na() %>% nrow()
 dat %>% filter(is.na(year_built_cat)) %>% nrow()
+```
+
+
+```{r}
+# Prueba imputación YearBuilt y no categórica
+# Filtros e imputaciones
+#housesTrainFinal <- housesTrain
+housesTrain$YearBuilt[which(housesTrain$YearBuilt<1850)] <- NA
+housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
+imputationsLandsizeFinal <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
+imputationsCarFinal <- housesTrain %>% select(Rooms, Car) %>% VIM::kNN(variable='Car')
+imputationYearBuilt <- housesTrain %>% select(Lattitude, Longtitude, Distance, YearBuilt) %>% VIM::kNN(variable='YearBuilt')
+
+#Necesario para la función de construcción del dataset
+housesTrain$YearBuilt <- imputationYearBuilt %>% select(YearBuilt) %>% unlist()
+housesTrain$LandsizeImp <- imputationsLandsizeFinal %>% select(Landsize) %>% unlist()
+housesTrain$CarImp <- imputationsCarFinal %>% select(Car) %>% unlist()
+imputationsLandsizeforTest <- housesTrain %>% select(Suburb, Address, Rooms, Type, Price, Method, SellerG, Date, Distance, Postcode, Bedroom2, Bathroom, Car, LandsizeImp, BuildingArea, YearBuilt, CouncilArea, Lattitude, Longtitude, Regionname, Propertycount) 
+names(imputationsLandsizeforTest)[names(imputationsLandsizeforTest) == "LandsizeImp"] <- "Landsize"
+imputationsCarforTest <- housesTrain %>% select(Suburb, Address, Rooms, Type, Price, Method, SellerG, Date, Distance, Postcode, Bedroom2, Bathroom, CarImp, Landsize, BuildingArea, YearBuilt, CouncilArea, Lattitude, Longtitude, Regionname, Propertycount) 
+names(imputationsCarforTest)[names(imputationsCarforTest) == "CarImp"] <- "Car"
+imputationsYearforTest <- housesTrain %>% select(Suburb, Address, Rooms, Type, Price, Method, SellerG, Date, Distance, Postcode, Bedroom2, Bathroom, Car, Landsize, BuildingArea, YearBuilt, CouncilArea, Lattitude, Longtitude, Regionname, Propertycount) 
+
+
+
+# Transformaciones de variables cuantitativas
+
+sqrt_distance <- housesTrain %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
+housesTrain$sqrt_distance <- unlist(sqrt_distance)
+
+log_landsize <- imputationsLandsizeFinal %>% mutate(log_landsize=log10(Landsize)) %>% select(log_landsize)
+housesTrain$log_landsize <- unlist(log_landsize)
+log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
+housesTrain$log_price <- unlist(log_price)
+
+# Discretización de variables cuantitativas
+housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
+
+housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Hasta_1_plaza", "2_o_más_plazas"), include.lowest = TRUE, right = FALSE)
+
+# Estandarización de variables
+num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude', 'YearBuilt')
+cat_vars <- c('rooms_cat', 'car_cat', 'Regionname', 'Type', 'Method')
+housesTrainNum <- housesTrain %>% select(num_vars)
+normParam <- preProcess(housesTrainNum)
+housesTrainNumNorm <- predict(normParam, housesTrainNum)
+
+housesTrainFinal <- data.frame(housesTrainNumNorm[,num_vars], housesTrain[,cat_vars], housesTrain[, c('Price', 'log_price')])
+
+housesTrainFinal$Regionname = factor(housesTrainFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
+#Utilizo la librería plyr
+housesTrainFinal$Regionname  = mapvalues(housesTrainFinal$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan','South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan','South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
+
+housesTrainFinal$Method = factor(housesTrainFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
+
+```
+
+```{r  modeldatasetfunctionyearbuiltnocategorica}
+
+#Función que preprocesa y limpia un dataset dado 
+final_dataset_construction_year <- function(dataset, standarizer, imputationsCarforTest, imputationsLandsizeforTest, imputationsYearforTest){
+  
+  #Preprocesado 
+  dataset$YearBuilt[which(dataset$YearBuilt<1850)] <- NA
+  dataset$Landsize[which(dataset$Landsize == 0)] <- NA
+  datasetCarNARows <- dataset %>% filter(is.na(Car)) %>% nrow()
+  datasetCarNA <- dataset %>% filter(is.na(Car))
+  datasetLandsizeNARows <- dataset %>% filter(is.na(Landsize)) %>% nrow()
+  datasetLandsizeNA <- dataset %>% filter(is.na(Landsize)) 
+  datasetYearBuiltNA <- dataset %>% filter(is.na(YearBuilt))
+  datasetYearBuiltNARows <- dataset %>% filter(is.na(YearBuilt)) %>% nrow()
+  
+  #Imputación para Car
+  imputationsCarforTest <- rbind(imputationsCarforTest,datasetCarNA) 
+  imputationsCarFinal <- imputationsCarforTest  %>% select(Rooms, Car) %>% VIM::kNN(variable='Car')
+  imputationsCarFinal <- tail(imputationsCarFinal,datasetCarNARows)
+  datasetCarNA$Car <- imputationsCarFinal %>% select(Car) %>% unlist()
+  dataset <- dataset %>% drop_na(Car)
+  dataset <- rbind(dataset,datasetCarNA)
+  
+  #Imputación para Landsize
+  imputationsLandsizeforTest <- rbind(imputationsLandsizeforTest,datasetLandsizeNA) 
+  imputationsLandsizeFinal <- imputationsLandsizeforTest  %>% select(Lattitude, Longtitude, Distance, Landsize) %>%        VIM::kNN(variable='Landsize')
+  imputationsLandsizeFinal <- tail(imputationsLandsizeFinal,datasetLandsizeNARows)
+  datasetLandsizeNA$Landsize <- imputationsLandsizeFinal %>% select(Landsize) %>% unlist()
+  dataset <- dataset %>% drop_na(Landsize)
+  dataset <- rbind(dataset,datasetLandsizeNA)
+  
+  #Imputación para YearBuilt
+  imputationsYearforTest <- rbind(imputationsYearforTest,datasetYearBuiltNA)
+  imputationsYearBuiltFinal <- imputationsYearforTest %>% select(Lattitude, Longtitude, Distance, YearBuilt) %>% VIM::kNN(variable='YearBuilt')
+  imputationsYearBuiltFinal <- tail(imputationsYearBuiltFinal,datasetYearBuiltNARows)
+  datasetYearBuiltNA$YearBuilt <- imputationsYearBuiltFinal %>% select(YearBuilt) %>% unlist()
+  dataset <- dataset %>% drop_na(YearBuilt)
+  dataset <- rbind(dataset,datasetYearBuiltNA)
+  
+  #Transformación de variables
+  sqrt_distance <- dataset %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
+  dataset$sqrt_distance <- unlist(sqrt_distance)
+  dataset <- dataset %>% mutate(log_landsize=log10(Landsize))
+  log_price <- dataset %>% mutate(log_price = log10(Price)) %>% select(log_price)
+  dataset$log_price <- unlist(log_price)
+  
+  # Discretización de variables cuantitativas
+  dataset$rooms_cat <- cut(dataset$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
+  
+  
+  dataset$car_cat <-cut(dataset$Car, breaks = c(0,2,9), labels = c("Hasta_1_plaza", "2_o_más_plazas"), include.lowest = TRUE, right = FALSE)
+  
+  #Estandarización de variables
+  num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude', 'YearBuilt')
+  cat_vars <- c('rooms_cat', 'car_cat', 'Regionname', 'Type', 'Method')
+  datasetNum <- dataset %>% select(num_vars)
+  datasetNumNorm <- predict(standarizer, datasetNum)
+  
+  
+  datasetFinal <- data.frame(datasetNumNorm[,num_vars], dataset[,cat_vars], dataset[, c('Price', 'log_price')])
+  
+  datasetFinal$Regionname = factor(datasetFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
+  #Utilizo la librería plyr
+  datasetFinal$Regionname  = mapvalues(datasetFinal$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan','South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan','South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
+
+  datasetFinal$Method = factor(datasetFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+  datasetFinal$Type = factor(datasetFinal$Type, levels=c('h', 'u', 't'))
+
+  
+  return(datasetFinal)
+  
+}
+
+```
+
+
+```{r}
+test <- final_dataset_construction_year(housesTest,normParam, imputationsCarforTest, imputationsLandsizeforTest, imputationsYearforTest)
+```
+
+
+```{r}
+test %>% filter(is.na(log_landsize)) %>% nrow()
+test %>% drop_na() %>% nrow()
+nrow(test)
+#write.csv(test, 'test_yearbuilt.csv', row.names = F)
 ```
 
 <br>
