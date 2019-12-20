@@ -51,6 +51,9 @@ library(tidyverse)
 library(leaps)
 library(broom)
 library(ggfortify)
+library(olsrr)
+library(nortest)
+library(Metrics)
 ```
 <br>
 
@@ -1817,7 +1820,7 @@ Al aplicar el test de normalidad de Lilliefors sobre los residuos del modelo, el
 ```{r}
 lillie.test(model4$residuals)
 ```
-En este caso, los puntos más influyen
+
 ```{r}
 plot(model4, 4, id.n = 5)
 ```
@@ -1860,7 +1863,7 @@ Este último modelo parace ser el que consigue ajustarse de una mejor manera a l
 test_data <- read.csv('test_yearbuilt.csv')
 test_data <- test_data %>% select(-Price)
 best_model <- model4
-(preds <- data.frame(cbind(actual_values=test_data$log_price, predicted_values=predict(best_model,test_data))))
+(preds <- data.frame(cbind(actual_values=test_data$log_price, predicted_values=predict(best_model,test_data))))[1:5,]
 ```
 
 En la siguiente tabla se muestran los valores de diferentes medidas para el error:
