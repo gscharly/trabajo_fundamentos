@@ -1649,11 +1649,72 @@ Se puede ver que está bastante alejado del centro para ser tan cara.
 
 En este caso, vamos a cambiar el target del modelo, utilizando la transformación logaritmica del mismo. Vamos a utilizar las mismas variables que en el caso anterior:
 
-```{r}
+
+
+```{r message=F}
 train_year2 <- read_csv('train_yearbuilt.csv') %>% select(-Price)
 model4 <- lm(log_price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat + Regionname, data = train_year2)
 summary(model4)
 ```
+Vemos que en este caso el porcentaje de varianza del precio que nuestro modelo es capaz de explicar es algo más alto. La mayoría de las variables tienen p-valores muy bajos. Las únicas que no serían estadísticamente siginificativas serían las dummies de algunas regiones.
+
+En el siguiente gráfico se puede ver como la varianza de los residuos es más o menos uniforme para los valores predichos:
+
+```{r echo=F}
+plot(model4, 1)
+```
+
+En cuanto a la normalidad de los residuos, podemos ver que en esta ocasión sí que se ajustan bastante a una distribución normal:
+
+```{r}
+plot(model4, 2)
+```
+
+Al aplicar el test de normalidad de Lilliefors sobre los residuos del modelo, el p-valor devuelto es muy pequeño, lo que no nos permite rechazar la hipótesis de normalidad de estos:
+
+```{r}
+lillie.test(model4$residuals)
+```
+En este caso, los puntos más influyen
+```{r}
+plot(model4, 4, id.n = 5)
+```
+
+```{r}
+model_metrics_2 <- augment(model4)
+model_metrics_2 %>% top_n(5, wt = .cooksd)
+```
+
+# Scoreo sobre test
+
+Este último modelo parace ser el que consigue ajustarse de una mejor manera a los datos. Para poder evaluar correctamente su correcto funcionamiento, es necesario ver su rendimiento sobre datos nuevos, es decir, el conjunto de test.
+
+```{r}
+test_data <- read.csv('test_yearbuilt.csv')
+test_data <- test_data %>% select(-Price)
+best_model <- model4
+(preds <- data.frame(cbind(actual_values=test_data$log_price, predicted_values=predict(best_model,test_data))))
+```
+
+En la siguiente tabla se muestran los valores de diferentes medidas para el error:
+
+```{r echo=F}
+rmse <- RMSE(predict(best_model,test_data), test_data$log_price)
+r2 <- R2(predict(best_model,test_data), test_data$log_price)
+mae <- mae(predict(best_model,test_data), test_data$log_price)
+model_metrics <- data.frame(error_metrics = c('R2','RMSE','MAE'), value = c(r2, rmse, mae))
+
+model_metrics
+
+```
+
+Se puede observar por el valor que toma R2 (superior que en train), que nuestro modelo, a pesar de que no logra un gran acierto, no sufre ningún tipo de sobreajuste.
+
+
+
+
+
+## Selección de variables con log_price como target
 
 ```{r}
 best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
