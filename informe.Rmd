@@ -168,10 +168,10 @@ tabla_frecuencias <- function(df, columna1, columna2 = 'Frecuencia'){
       kable_styling(bootstrap_options = 'hover', position = 'center',full_width = T)
   }
 }
-for (var in colnames((VarCualitativas)[c(1,3,4,7,8,9,10)])){
-  print(tabla_frecuencias(columna1 = var, df = data.frame(table(VarCualitativas[var])) ))
-}
+
 ```
+
+`r for (var in colnames((VarCualitativas)[c(1,3,4,7,8,9,10)])){print(tabla_frecuencias(columna1 = var, df = data.frame(table(VarCualitativas[var]))))}`
 
 <br>
 
