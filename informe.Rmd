@@ -1034,6 +1034,10 @@ housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
 housesTrainFinal %>% drop_na() %>% nrow()
 housesTrainFinal %>% select(year_built_cat) %>% head()
 ```
+```{r}
+housesTrainFinal %>% drop_na() %>% nrow()
+```
+
 
 
 
@@ -1083,16 +1087,6 @@ housesTrainFinal %>% select(sqrt_distance, log_price, Type) %>% ggpairs(columns=
 ```
 ```{r}
 housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
-```
-
-
-```{r}
-train_set = read.csv('train_set.csv')
-```
-
-
-```{r}
-train_set %>% drop_na() %>% nrow()
 ```
 
 <br>
@@ -1178,7 +1172,7 @@ lm_model_13 = lm(log_price ~ sqrt_distance + Lattitude + Longtitude + rooms_catM
 
 <br>
 
-Anteriormente hemos preseleccionado ciertas variables después de la limpieza y análisis inicial de nuestro conjunto de datos. Actualmente disponemos de un total de 10 variables explicativas:
+Anteriormente hemos preseleccionado ciertas variables después de la limpieza y análisis inicial de nuestro conjunto de datos. En base al exploratorio realizado, hemos visto que no hay ninguna correlación lineal evidente entre las variables cuantitativas y la variable objetivo. Por tanto, vamos a aplicar diversos métodos de selección de variables para encontrar la mejor combinación posible.Actualmente disponemos de un total de 10 variables explicativas:
 
 ```{r cargadatos, echo=F}
 train <- read.csv('train_set.csv')
@@ -1217,7 +1211,7 @@ Para evaluar los resultados obtenidos, se ha observado el coeficiente {R{2}} aju
 reg_sum$adjr2
 which.max(reg_sum$adjr2)
 ```
-A juzgar por los resultados, el mejor modelo es el que consta de 19 variables. 
+A juzgar por los resultados, el mejor modelo es el que consta de 20 variables. 
 
 Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo posible sería a través del siguiente gráfico, donde además del R**2 ajustado se muestran otras estimaciones de la bondad de ajuste de los modelos:
 
@@ -1245,10 +1239,10 @@ p
 ```
 
 
-En la anterior gráfica se puede observar que, aunque el modelo con el mayor R^2 ajustado se consigue con 19 predictores (como ya habíamos visto), a partir de 10 predictores aproximadamente la mejoría es inapreciable. Como siempre va a ser mejor un modelo más explicable.
+En la anterior gráfica se puede observar que, aunque el modelo con el mayor R^2 ajustado se consigue con 20 predictores (como ya habíamos visto), a partir de 10 predictores aproximadamente la mejoría es inapreciable. Como siempre va a ser mejor un modelo más explicable.
 
 ```{r}
-reg_sum$adjr2[19]
+reg_sum$adjr2[20]
 reg_sum$adjr2[10]
 ```
 Para el modelo de 8 predictores, los coeficientes son los siguientes:
@@ -1293,7 +1287,7 @@ p <- p +  scale_x_continuous(breaks = c(0:22)) +
                x =  'número predictores')
 p
 ```
-De nuevo se cumple que el modelo que ofrece un mayor R^2 ajustado es el que utiliza 19 predictores. Ahora se necesitaría mínimo unos 12 predictores para alcanzar un valor similar.
+De nuevo se cumple que el modelo que ofrece un mayor R^2 ajustado es el que utiliza 20 predictores. Ahora se necesitaría mínimo unos 12 predictores para alcanzar un valor similar.
 
 ```{r}
 reg_forward_sum$adjr2[12]
@@ -1340,17 +1334,11 @@ Se puede concluir, que las 3 técnicas de selección automática de variables in
 
 * Distancia al centro.
 * Longitud.
+* Latitud.
 * Número de habitaciones.
 * Número de plazas de garaje.
 * Tipo de venta.
 * Región.
-
-```{r}
-# MENOS EN EL SEGUNDO COEFICIENTE, LOS RESULTADOS OBTENIDOS SON LOS MISMOS (PRÁCTICAMENTE) PARA TODAS LAS MÉTRICAS
-reg_sum$cp
-reg_backward_sum$cp
-reg_forward_sum$cp
-```
 
 <br>
 
@@ -1416,8 +1404,8 @@ En este caso, se muestran los coeficientes que se obtienen del modelo cuyo error
 
 ```{r}
 out_ridge <- glmnet(x,y,alpha=0,lambda = cv_ridge$lambda.1se)
-(ridge_coef <- predict(out_ridge,type="coefficients")[1:23,])
-#sort(abs(ridge_coef), decreasing = TRUE) -> Para verlas ordenadas
+ridge_coef <- predict(out_ridge,type="coefficients")[1:23,]
+sort(abs(ridge_coef), decreasing = TRUE) 
 ```
 En este caso, la información más valiosa que nos aporta Ridge es que le otorga bastante importancia al tipo de vivienda.
 
@@ -1426,6 +1414,10 @@ train <- read.csv('train_set.csv')
 train <- train %>% select(-log_price) #Voy a usar como target el Price sin transformar
 head(train)
 ```
+
+# Modelos
+
+Una vez ya hemos analizado completamente nuestras variables, se ha procedido ha entrenar diversos modelos y evaluar sus resultados. A continuación se van mostrando los resultados obtenidos.
 
 # Modelo 1
 
@@ -1436,6 +1428,7 @@ En este primer modelo se han utilizado las variables que más se repetían como 
 * Tipo de vivienda.
 * Nombre de la región.
 * Longitud.
+* Latitud.
 
 Los resultados del modelo han sido los siguientes:
 
@@ -1443,19 +1436,6 @@ Los resultados del modelo han sido los siguientes:
 model1 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train)
 summary(model1)
 ```
-
-## Eliminación puntos influyentes
-
-Comprobación de cómo funcionaría el modelo eliminando esos 5 puntos más influyentes. Vemos que mejora ligeramente, aunque la mejora no sea muy relevante. 
-
-```{r}
-train2 <- train[-c(10609, 9669, 8818, 7666, 6140),]
-dim(train2)
-model_sin_out <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train2)
-summary(model_sin_out)
-```
-
-Sería interesante ver si esos puntos tienen algo en común o por qué afectan al modelo. Habría que irse al dataset original donde están las variables sin transformar y ver qué pueden tener en común.
 
 # Modelo 2
 
@@ -1488,6 +1468,7 @@ En este tercer caso, se ha introducido de nuevo la variable YearBuilt, pero en e
 * Latitud.
 * Año de construcción como numérica.
 
+
 ```{r echo=F, message=F}
 #Carga de datos
 
@@ -1497,7 +1478,7 @@ summary(model3)
 
 ```
 
-Se puede ver que en este caso si que mejora ligeramente la performance del modelo.
+Se puede ver que en este caso si que se mejora ligeramente la performance del modelo al añadir la variable YearBuilt como numérica.
 
 ```{r  echo=F}
 #Puede ser útil
@@ -1516,8 +1497,7 @@ plot(model3)
 A continuación se muestra el diagrama Q-Q de los residuos para comprobar su normalidad:
 
 ```{r}
-#Se ve algo mejor con esta librería en este caso 
-autoplot(model3, 2)
+plot(model3, 2)
 ```
  
 Se puede ver que para los valores más altos es cuando se empiezan a desviar de una normal. Los errores NO son normales.
@@ -1538,8 +1518,6 @@ La siguiente gráfica muestra los puntos más influyentes para el modelo según 
 ```{r}
 # Cook's distance
 plot(model3, 4, id.n = 5) #Marco los 5 puntos más influyentes según la distancia de Cook
-# Residuals vs Leverage
-plot(model3, 5)
 ```
 
 ```{r}
@@ -1547,19 +1525,43 @@ plot(model3, 5)
 model_metrics %>% top_n(5, wt = .cooksd)
 ```
 
-```{r}
-train[9669,]
-```
-
 EL punto más influyente para el modelo con diferencia es el siguiente:
 
 ```{r}
-original_data <- read.csv('./datasets/melb_data.csv')
-
-original_data %>% filter(Price == 9000000)
+housesTrain %>% filter(Price == 9000000)
 ```
 
-Se puede ver que está bastante alejado del centro para ser tan cara.
+Se puede ver que está bastante alejado del centro para ser tan cara. También el número de habitaciones es bastante bajo y teniendo en cuenta que estas son dos de las variables más siginificativas para el modelo, nos podemos hacer una idea de por qué este punto influye tanto en el resultado.
+
+
+## Selección de variables con log_price como target
+
+En vista a que los resultados obtenidos utilizando Price sin transformar como variable objetivo no han sido especialmente buenos, se ha decido probar a utilizar su transformación logaritmica como target. Primeramente, hemos aplicado de nuevo un par de técnicas de selección de variables para asegurarnos de que las variables más relevantes siguen siendo las mismas a pesar de cambiar de target:
+
+
+```{r message=F}
+train_year2 <- read_csv('train_yearbuilt.csv')
+best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
+reg_sum_log <- summary(best_subsets_log)
+for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_log, scale=metric)}
+```
+
+
+```{r}
+which.max(reg_sum_log$adjr2)
+```
+```{r}
+x <- model.matrix(log_price~., data = train_year2)[, -1]
+y <- train_year2$log_price
+set.seed(10)
+cv_elastic <- cv.glmnet(x = x, y = y, alpha = 0.5)
+plot(cv_elastic)
+```
+
+```{r}
+coefss <- predict(glmnet(x,y,alpha=0.5,lambda = cv_elastic$lambda.1se),type="coefficients")[1:22,]
+sort(abs(coefss), decreasing = T)
+```
 
 # Modelo 4
 
@@ -1601,30 +1603,7 @@ model_metrics_2 <- augment(model4)
 model_metrics_2 %>% top_n(5, wt = .cooksd)
 ```
 
-## Selección de variables con log_price como target
 
-```{r}
-best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
-reg_sum_log <- summary(best_subsets_log)
-for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_log, scale=metric)}
-```
-
-
-```{r}
-which.max(reg_sum_log$adjr2)
-```
-```{r}
-x <- model.matrix(log_price~., data = train_year2)[, -1]
-y <- train_year2$log_price
-set.seed(10)
-cv_elastic <- cv.glmnet(x = x, y = y, alpha = 0.5)
-plot(cv_elastic)
-```
-
-```{r}
-coefss <- predict(glmnet(x,y,alpha=0.5,lambda = cv_elastic$lambda.1se),type="coefficients")[1:22,]
-sort(abs(coefss), decreasing = T)
-```
 
 # Scoreo sobre test
 
