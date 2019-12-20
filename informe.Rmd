@@ -1685,6 +1685,31 @@ model_metrics_2 <- augment(model4)
 model_metrics_2 %>% top_n(5, wt = .cooksd)
 ```
 
+## Selección de variables con log_price como target
+
+```{r}
+best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
+reg_sum_log <- summary(best_subsets_log)
+for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_log, scale=metric)}
+```
+
+
+```{r}
+which.max(reg_sum_log$adjr2)
+```
+```{r}
+x <- model.matrix(log_price~., data = train_year2)[, -1]
+y <- train_year2$log_price
+set.seed(10)
+cv_elastic <- cv.glmnet(x = x, y = y, alpha = 0.5)
+plot(cv_elastic)
+```
+
+```{r}
+coefss <- predict(glmnet(x,y,alpha=0.5,lambda = cv_elastic$lambda.1se),type="coefficients")[1:22,]
+sort(abs(coefss), decreasing = T)
+```
+
 # Scoreo sobre test
 
 Este último modelo parace ser el que consigue ajustarse de una mejor manera a los datos. Para poder evaluar correctamente su correcto funcionamiento, es necesario ver su rendimiento sobre datos nuevos, es decir, el conjunto de test.
@@ -1712,34 +1737,6 @@ Se puede observar por el valor que toma R2 (superior que en train), que nuestro 
 
 
 
-
-
-## Selección de variables con log_price como target
-
-```{r}
-best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
-reg_sum_log <- summary(best_subsets_log)
-for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_log, scale=metric)}
-```
-
-
-```{r}
-which.max(reg_sum_log$adjr2)
-```
-```{r}
-x <- model.matrix(log_price~., data = train_year2)[, -1]
-y <- train_year2$log_price
-set.seed(10)
-cv_elastic <- cv.glmnet(x = x, y = y, alpha = 0.5)
-plot(cv_elastic)
-```
-
-```{r}
-coefss <- predict(glmnet(x,y,alpha=0.5,lambda = cv_elastic$lambda.1se),type="coefficients")[1:22,]
-sort(abs(coefss), decreasing = T)
-```
-
- 
 # Conclusiones y líneas futuras
 - El análisis nos ha mostrado que no hay una relación lineal evidente entre las variables predictoras y el precio de la vivienda. Esta es una de las razones principales por las que se considera que el modelo da malos resultados.
 - Muchas de las variables cuantitativas disponibles se han tenido que convertir a categóricas, lo que dificulta el modelado de una regresión lineal múltiple.
