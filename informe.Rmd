@@ -336,9 +336,10 @@ housesTrain %>% select(c("Price", "Regionname")) %>%
 
 __Type__
 Recordemos los distintos tipos de casas que hay:
-- h: houses, cottage, villa, semi, terrace
-- t: townhouse
-- u: unit
+
+* h: houses, cottage, villa, semi, terrace
+* t: townhouse
+* u: unit
 
 Observando las ráficas podemos apreciar como las viviendas de tipo u (unit) y t townhouse tienen menor dispersión en el precio y son más baratas. Sin embargo, para las viviendas tipo h cuenta con precios más caros y la varianza es mayor, lo cual tiene sentido ya que este tipo engloba tipos de viviendas más diversos.
 Presumiblemente, parece que el typo si discrima con respecto al precio de la vivienda.
