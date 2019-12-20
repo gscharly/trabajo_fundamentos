@@ -95,6 +95,10 @@ housesTrain <- houses[ trainIndex,]
 housesTest <- houses[-trainIndex,]
 ```
 
+```{r}
+housesTrain %>% select(Price) %>% ggplot(aes(x = Price)) + geom_density()
+```
+
 Ahora, el subconjunto *Train*, con el que trabajaremos inicialmente, está formado por 10865 observaciones. 
 
 <br>
