@@ -54,6 +54,7 @@ library(ggfortify)
 library(olsrr)
 library(nortest)
 library(Metrics)
+library(ggmap)
 ```
 <br>
 
@@ -102,6 +103,23 @@ dfcol %>%
   kable() %>%
   kable_styling(bootstrap_options = c('hover'), position = 'center')
 ```
+
+Se muestra a modo informativo las casas por cada región:
+
+```{r message=FALSE, warning=FALSE}
+melbourne_map <- get_map(location = "melbourne", zoom = 11)
+houses$region_colours <- revalue(houses$Regionname, c("Southern Metropolitan" = "#1B9E77",
+                                                                "Western Metropolitan" = "#D95F02",
+                                                           "Northern Metropolitan" = "#7570B3",
+                                                           "Eastern Metropolitan" = "#E7298A",
+                                                           "South-Eastern Metropolitan" = "#66A61E",
+                                                           "Eastern Victoria" = "#A6761D", 
+                                                           "Northern Victoria" = "#1DA632",
+                                                           "Western Victoria" = "#1B849E"))
+  
+ggmap(melbourne_map) + geom_point(aes(x = houses$Longtitude, y = houses$Lattitude), colour=houses$region_colours , data = houses, alpha=0.5, size = 0.5)
+```
+
 
 <br>
 
@@ -284,7 +302,7 @@ Respecto a esta última variable, *YearBuilt*, vemos que hay un outlier que se c
 
 Por otro lado, debido a que tenemos variables que representan habitaciones dentro de una casa (*Rooms*, *Bedroom2*, *Bathroom*), vamos a comprobar primero si *Rooms* incluye a las demás. 
 
-```{r ComprobacionRooms}
+```{r ComprobacionRooms, echo=FALSE}
 housesTrain %>% select(Rooms, Bedroom2, Bathroom) %>%
   filter(Rooms < Bedroom2+Bathroom) %>%
   nrow
@@ -1049,7 +1067,7 @@ housesTrainFinal$Method = factor(housesTrainFinal$Method, levels=c('S', 'SP', 'P
 housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
 ```
 
-```{r}
+```{r echo=FALSE}
 housesTrainFinal %>% drop_na() %>% nrow()
 housesTrainFinal %>% select(year_built_cat) %>% head()
 ```
@@ -1067,7 +1085,7 @@ housesTrainFinal$Method %>% table()
 housesTrainFinal$Type %>% table()
 ```
 
-```{r}
+```{r echo=FALSE}
 levels(housesTrainFinal$rooms_cat)
 levels(housesTrainFinal$year_built_cat)
 levels(housesTrainFinal$car_cat)
@@ -1153,7 +1171,7 @@ Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo 
 for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_models, scale=metric)}
 ```
 
-En los anteriores gráficos se puede observarque las variables que más aparecen en general son la distancia al centro (*sqrt_distance*), el número de habitaciones y el tipo de venta. También se puede observar que la mejoría del modelo es casi imperceptible a partir de un determinado número de variables.
+En los anteriores gráficos se puede observarque las variables que más aparecen en general son la distancia al centro (*sqrt_distance*), el número de habitaciones y el tipo de vivienda. También se puede observar que la mejoría del modelo es casi imperceptible a partir de un determinado número de variables.
 
 ```{r}
 p <- ggplot(data = data.frame(n_predictores = 1:22,
@@ -1271,7 +1289,7 @@ Se puede concluir, que las 3 técnicas de selección automática de variables in
 * Latitud.
 * Número de habitaciones.
 * Número de plazas de garaje.
-* Tipo de venta.
+* Tipo de vivienda.
 * Región.
 
 <br>
