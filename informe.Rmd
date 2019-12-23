@@ -106,18 +106,13 @@ dfcol %>%
 
 Se muestra a modo informativo las casas por cada región:
 
-```{r message=FALSE, warning=FALSE}
-melbourne_map <- get_map(location = "melbourne", zoom = 11)
-houses$region_colours <- revalue(houses$Regionname, c("Southern Metropolitan" = "#1B9E77",
-                                                                "Western Metropolitan" = "#D95F02",
-                                                           "Northern Metropolitan" = "#7570B3",
-                                                           "Eastern Metropolitan" = "#E7298A",
-                                                           "South-Eastern Metropolitan" = "#66A61E",
-                                                           "Eastern Victoria" = "#A6761D", 
-                                                           "Northern Victoria" = "#1DA632",
-                                                           "Western Victoria" = "#1B849E"))
+```{r message=FALSE, warning=FALSE, fig.width=15}
+melbourne_map <- get_map(location = "melbourne", zoom = 10)
+houses$region_colours <- revalue(houses$Regionname, c("Southern Metropolitan" = "#1B9E77", "Western Metropolitan" = "#D95F02", "Northern Metropolitan" = "#7570B3",
+                                                      "Eastern Metropolitan" = "#E7298A", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#A6761D", 
+                                                      "Northern Victoria" = "#1DA632", "Western Victoria" = "#1B849E"))
   
-ggmap(melbourne_map) + geom_point(aes(x = houses$Longtitude, y = houses$Lattitude), colour=houses$region_colours , data = houses, alpha=0.5, size = 0.5)
+ggmap(melbourne_map) + geom_point(aes(x = houses$Longtitude, y = houses$Lattitude), colour=houses$region_colours , data = houses, alpha=0.5, size = 0.75)
 ```
 
 
@@ -241,6 +236,14 @@ Por último, atendiendo a *Month* y *Year*, en este dataset solo están las vivi
 
 ```{r UnavailableCouncil}
 housesTrain$CouncilArea[which(housesTrain$CouncilArea == '')] <- 'Unavailable'
+```
+
+
+```{r}
+water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
+housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
+
+housesTrain %>% ggplot(aes(x=log_price, color=may_have_water)) + geom_density()
 ```
 
 
@@ -507,7 +510,7 @@ Lo primero que hacemos es comprobar las correlaciones de las variables numérica
 
 ```{r heatmapCorr, fig.width=10}
 library(reshape2)
-numeric_cols <- c("Rooms", "Distance", "sqrt_distance", "Bedroom2", "Bathroom", "Car", "Lattitude", "Longtitude", "YearBuilt", "Landsize", "BuildingArea", 'log_price')
+numeric_cols <- c("Rooms", "Distance", "sqrt_distance", "Bedroom2", "Bathroom", "Car", "Lattitude", "Longtitude", "YearBuilt", "Landsize", "BuildingArea", "Propertycount", 'log_price')
 cormat <- round(cor(na.omit(housesTrain[,numeric_cols])), 2)
 
 # Get lower triangle of the correlation matrix
@@ -774,6 +777,29 @@ housesTrain$sellMonth <- factor(housesTrain$sellMonth)
 ```{r message=FALSE}
 housesTrain %>% ggplot(aes(y=Price, color=sellMonth)) + geom_boxplot() + scale_fill_manual(values=palette34)
 ```
+
+__PropertyCount__
+
+Esta variable nos informa de todas las propiedades que hay en cada barrio. Se puede prueba lo siguiente:
+
+- Categorizar esta variable para diferenciar entre barrios muy poblados y menos poblados, y ver si tiene relación con el precio.
+- Combinar esta información con el número de casas vendidas por barrio, obtener la tasa de venta en cada barrio, y ver si hay barrios más populares que otros en cuanto a ventas.
+
+Diviendo en 3 grupos parecidos, la primera opción no parece arrojar ninguna luz sobre el precio de la vivienda.
+```{r}
+housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=3)) %>% select(property_count_cat) %>% table()
+housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=3)) %>% ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
+```
+
+Con la tasa de casas vendidas por barrio tampoco se diferencia demasiado. En todo caso, habría que probar con más categorías, pero se acabaría alcanzando el número distinto de barrios que hay.
+
+```{r propertyCount}
+suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
+#housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=5)) %>% select(property_count_cat) %>% table() 
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=5)) %>%  ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
+```
+
 
 <br>
 
