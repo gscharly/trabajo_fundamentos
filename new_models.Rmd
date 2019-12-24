@@ -315,6 +315,15 @@ model5 <- lm(log_price~sqrt_distance + log_landsize + Lattitude + Longtitude + T
 summary(model5)
 ```
 ```{r}
+RSS <- c(crossprod(model5$residuals))
+MSE <- RSS / length(model5$residuals)
+RMSE <- sqrt(MSE)
+RMSE
+```
+
+
+
+```{r}
 qplot(model5$residuals, geom = "histogram",
      bins = 30) +
      labs(title = "Histograma de residuos",x = "residual")
@@ -332,3 +341,127 @@ plot(model5, 2)
 ```{r}
 lillie.test(model5$residuals)
 ```
+
+```{r}
+final_dataset_construction <- function(dataset, standarizer, imputationsCarforTest, imputationsLandsizeforTest){
+  
+  #Preprocesado 
+  dataset$YearBuilt[which(dataset$YearBuilt<1850)] <- NA
+  dataset$Landsize[which(dataset$Landsize == 0)] <- NA
+  datasetCarNARows <- dataset %>% filter(is.na(Car)) %>% nrow()
+  datasetCarNA <- dataset %>% filter(is.na(Car))
+  datasetLandsizeNARows <- dataset %>% filter(is.na(Landsize)) %>% nrow()
+  datasetLandsizeNA <- dataset %>% filter(is.na(Landsize)) 
+  
+  #Imputación para Car
+  imputationsCarforTest <- rbind(imputationsCarforTest,datasetCarNA) 
+  imputationsCarFinal <- imputationsCarforTest  %>% select(Rooms, Distance, Car) %>% VIM::kNN(variable='Car')
+  imputationsCarFinal <- tail(imputationsCarFinal,datasetCarNARows)
+  datasetCarNA$Car <- imputationsCarFinal %>% select(Car) %>% unlist()
+  dataset <- dataset %>% drop_na(Car)
+  dataset <- rbind(dataset,datasetCarNA)
+  
+  #Imputación para Landsize
+  imputationsLandsizeforTest <- rbind(imputationsLandsizeforTest,datasetLandsizeNA) 
+  imputationsLandsizeFinal <- imputationsLandsizeforTest  %>% select(Lattitude, Longtitude, Distance, Landsize) %>%        VIM::kNN(variable='Landsize')
+  imputationsLandsizeFinal <- tail(imputationsLandsizeFinal,datasetLandsizeNARows)
+  datasetLandsizeNA$Landsize <- imputationsLandsizeFinal %>% select(Landsize) %>% unlist()
+  dataset <- dataset %>% drop_na(Landsize)
+  dataset <- rbind(dataset,datasetLandsizeNA)
+  
+  #Transformación de variables
+  sqrt_distance <- dataset %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
+  dataset$sqrt_distance <- unlist(sqrt_distance)
+  dataset <- dataset %>% mutate(log_landsize=log10(Landsize))
+  log_price <- dataset %>% mutate(log_price = log10(Price)) %>% select(log_price)
+  dataset$log_price <- unlist(log_price)
+  
+  # Discretización de variables cuantitativas
+  dataset$rooms_cat <- cut(dataset$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
+  
+  dataset$year_built_cat <- factor(cut2(dataset$YearBuilt, g=2), labels = c("Antigua", "Moderna"))
+  levels(dataset$year_built_cat) <- c(levels(dataset$year_built_cat), 'Desconocido')
+  dataset <- dataset %>% mutate_at(vars(year_built_cat), ~replace(., is.na(.), 'Desconocido'))
+  #0-1 y 2 o más
+  dataset$car_cat <-cut(dataset$Car, breaks = c(0,2,9), labels = c("Pocas_plazas", "Muchas_plazas"), include.lowest = TRUE, right = FALSE)
+  # Hasta 1 baño
+  dataset$bath_cat <- factor(cut2(dataset$Bathroom, g=2), labels=c("Pocos_baños", "Muchos_baños"))
+  #De 0 a 3 dormitorios
+  dataset$bed_cat <- factor(cut2(dataset$Bedroom2, g=2), labels=c("Pocos_dormitorios", "Muchos_dormitorios"))
+  
+  
+  #El join solo se debe ejecutar una vez
+  suburbs_count <- dataset %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
+  dataset <- dataset %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
+  # Hasta 1.47% de tasa de venta por barrio
+  dataset$sell_rate_cat <- factor(cut2(dataset$sell_rate_suburb, g=2), labels=c("Menos_populares", "Más_populares"))
+  
+  
+  
+  #Estandarización de variables
+  num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude')
+  cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method', 'bath_cat', 'bed_cat', 'sell_rate_cat')
+  datasetNum <- dataset %>% select(num_vars)
+  datasetNumNorm <- predict(standarizer, datasetNum)
+  
+  
+  datasetFinal <- data.frame(datasetNumNorm[,num_vars], dataset[,cat_vars], dataset[, c('Price', 'log_price')])
+  
+  datasetFinal$Regionname = factor(datasetFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
+  #Utilizo la librería plyr
+  datasetFinal$Regionname  = mapvalues(datasetFinal$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan','South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan','South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
+  datasetFinal$Method = factor(datasetFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+  datasetFinal$Type = factor(datasetFinal$Type, levels=c('h', 'u', 't'))
+  
+  return(datasetFinal)
+  
+}
+```
+
+```{r}
+#Ejemplo de uso de la función
+dataTest <- final_dataset_construction(housesTest, normParam,imputationsCarforTest, imputationsLandsizeforTest)
+```
+
+```{r}
+write.csv(housesTrainFinal, 'test_set_new_variables.csv', row.names=FALSE)
+```
+```{r}
+test_data = read.csv('test_set_new_variables.csv')
+```
+
+```{r}
+test_data <- test_data %>% select(-Price)
+best_model <- model5
+(preds <- data.frame(cbind(actual_values=test_data$log_price, predicted_values=predict(best_model,test_data))))[1:5,]
+```
+
+```{r}
+rmse <- RMSE(predict(best_model,test_data), test_data$log_price)
+r2 <- R2(predict(best_model,test_data), test_data$log_price)
+mae <- mae(predict(best_model,test_data), test_data$log_price)
+model_metrics <- data.frame(error_metrics = c('R2','RMSE','MAE'), value = c(r2, rmse, mae))
+
+model_metrics
+```
+
+```{r}
+mean_target <- mean(test_data$log_price)
+var_target <- var(test_data$log_price)
+predictions <- predict(best_model, test_data)
+mean_predict <- mean(predictions)
+var_predict <- var(predictions)
+
+(comparison_metrics <- data.frame(metrics=c('Mean', 'Variance'), target=c(mean_target, var_target), predict=c(mean_predict, var_predict)))
+```
+
+```{r}
+p1<- test_data %>% ggplot(aes(x=log_price)) + geom_density() + labs(title='Target values')
+predictions_df <- data.frame(log_price=predictions)
+p2 <- predictions_df %>% ggplot(aes(x=log_price)) + geom_density() + labs(title='Predictions')
+
+grid.arrange(p1, p2, nrow=1)
+```
+
+
+

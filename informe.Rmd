@@ -111,11 +111,12 @@ Se muestra a modo informativo las casas por cada región:
 
 ```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
 melbourne_map <- get_map(location = "melbourne", zoom = 10)
-houses$region_colours <- revalue(houses$Regionname, c("Southern Metropolitan" = "#1B9E77", "Western Metropolitan" = "#D95F02", "Northern Metropolitan" = "#7570B3",
+houses_map <- houses[,c("Regionname", "Lattitude", "Longtitude")]
+houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#1B9E77", "Western Metropolitan" = "#D95F02", "Northern Metropolitan" = "#7570B3",
                                                       "Eastern Metropolitan" = "#E7298A", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#A6761D", 
                                                       "Northern Victoria" = "#1DA632", "Western Victoria" = "#1B849E"))
   
-ggmap(melbourne_map) + geom_point(aes(x = houses$Longtitude, y = houses$Lattitude), colour=houses$region_colours , data = houses, alpha=0.5, size = 0.75)
+ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75)
 ```
 
 
