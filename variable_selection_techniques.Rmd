@@ -53,21 +53,25 @@ colorNormal <- wes_palettes$GrandBudapest1[3]
 Anteriormente hemos preseleccionado ciertas variables después de la limpieza y análisis inicial de nuestro conjunto de datos. Actualmente disponemos de un total de 10 variables explicativas:
 
 ```{r cargadatos, echo=F}
-train <- read.csv('train_set.csv')
+train <- read.csv('train_set_new_variables.csv')
 train %>% select(-c(log_price,Price)) %>% names()
 ```
 
 Inicialmente vamos a utilizar como target la variable *Price* en lugar de su transformación logarítmica:
 
 ```{r echo=F}
-train <- train %>% select(-log_price)
+train <- train %>% select(-Price)
 # Necesito redefinirlos porque se me descolocaban los niveles al cargar el trainset
 train$Regionname = factor(train$Regionname, levels=c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
 train$Method = factor(train$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
 train$Type = factor(train$Type, levels=c('h', 'u', 't'))
-train$car_cat = factor(train$car_cat, levels = c('Hasta_1_plaza', '2_o_más_plazas'))
+train$car_cat = factor(train$car_cat, levels = c("Pocas_plazas", "Muchas_plazas"))
 train$year_built_cat = factor(train$year_built_cat, levels = c('Antigua', 'Moderna', 'Desconocido'))
 train$rooms_cat = factor(train$rooms_cat, levels = c('Pequeñas','Medianas','Grandes'))
+
+train$bed_cat = factor(train$bed_cat, levels=c("Pocos_dormitorios", "Muchos_dormitorios"))
+train$bath_cat = factor(train$bath_cat, levels=c("Pocos_baños", "Muchos_baños"))
+train$sell_rate_cat = factor(train$sell_rate_cat, levels=c("Menos_populares", "Más_populares"))
 ```
 
 ## Best subsets
@@ -75,7 +79,7 @@ train$rooms_cat = factor(train$rooms_cat, levels = c('Pequeñas','Medianas','Gra
 El primer método que hemos utilizado es el de best subset selección. El resumen de todos los modelos examinados se muestra a continuación:
 
 ```{r}
-best_subsets_models <- regsubsets(Price~., data = train, nvmax = 22)
+best_subsets_models <- regsubsets(log_price~., data = train, nvmax = 25)
 reg_sum <- summary(best_subsets_models)
 reg_sum
 ```
@@ -85,7 +89,7 @@ Para evaluar los resultados obtenidos, se ha observado el coeficiente {R{2}} aju
 reg_sum$adjr2
 which.max(reg_sum$adjr2)
 ```
-A juzgar por los resultados, el mejor modelo es el que consta de 19 variables. 
+A juzgar por los resultados, el mejor modelo es el que consta de 22 variables. 
 
 Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo posible sería a través del siguiente gráfico, donde además del R**2 ajustado se muestran otras estimaciones de la bondad de ajuste de los modelos:
 
@@ -93,10 +97,10 @@ Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo 
 for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_models, scale=metric)}
 ```
 
-En los anteriores gráficos se puede observarque las variables que más aparecen en general son la distancia al centro (*sqrt_distance*), el número de habitaciones y el tipo de venta. También se puede observar que la mejoría del modelo es casi imperceptible a partir de un determinado número de variables.
+En los anteriores gráficos se puede observar que las variables que más aparecen en general son la distancia al centro (*sqrt_distance*), el número de habitaciones y el tipo de venta. También se puede observar que la mejoría del modelo es casi imperceptible a partir de un determinado número de variables.
 
 ```{r}
-p <- ggplot(data = data.frame(n_predictores = 1:22,
+p <- ggplot(data = data.frame(n_predictores = 1:25,
                               R_ajustado = reg_sum$adjr2),
             aes(x = n_predictores, y = R_ajustado)) +
     geom_line() +
@@ -106,7 +110,7 @@ p <- p + geom_point(aes(
                     x = n_predictores[which.max(reg_sum$adjr2)],
                     y = R_ajustado[which.max(reg_sum$adjr2)]),
                     colour = "red", size = 3)
-p <- p +  scale_x_continuous(breaks = c(0:22)) + 
+p <- p +  scale_x_continuous(breaks = c(0:25)) + 
           theme_bw() +
           labs(title = 'R2_ajustado vs número de predictores (Best Subset)', 
                x =  'número predictores')
@@ -114,17 +118,16 @@ p
 ```
 
 
-En la anterior gráfica se puede observar que, aunque el modelo con el mayor R^2 ajustado se consigue con 19 predictores (como ya habíamos visto), a partir de 10 predictores aproximadamente la mejoría es inapreciable. Como siempre va a ser mejor un modelo más explicable.
+En la anterior gráfica se puede observar que, aunque el modelo con el mayor R^2 ajustado se consigue con 22 predictores (como ya habíamos visto), a partir de 15 predictores aproximadamente la mejoría es inapreciable. Como siempre va a ser mejor un modelo más explicable.
 
 ```{r}
-reg_sum$adjr2[19]
-
-reg_sum$adjr2[10]
+reg_sum$adjr2[22]
+reg_sum$adjr2[15]
 ```
 Para el modelo de 8 predictores, los coeficientes son los siguientes:
 
 ```{r}
-coef(object = best_subsets_models, id = 10)
+coef(object = best_subsets_models, id = 22)
 ```
 
 ## Forward Selection
@@ -133,7 +136,7 @@ Otra de las técnicas utilizadas es la de *Forward Selection*, en la que se part
 
 
 ```{r}
-best_forward_models <- regsubsets(Price~., data = train, nvmax = 22, method = 'forward')
+best_forward_models <- regsubsets(log_price~., data = train, nvmax = 25, method = 'forward')
 reg_forward_sum <- summary(best_forward_models)
 reg_forward_sum
 ```
@@ -144,7 +147,7 @@ for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_forward_models, scale=me
 ```
 
 ```{r}
-p <- ggplot(data = data.frame(n_predictores = 1:22,
+p <- ggplot(data = data.frame(n_predictores = 1:25,
                               R_ajustado = reg_forward_sum$adjr2),
             aes(x = n_predictores, y = R_ajustado)) +
     geom_line() +
@@ -154,17 +157,17 @@ p <- p + geom_point(aes(
                     x = n_predictores[which.max(reg_forward_sum$adjr2)],
                     y = R_ajustado[which.max(reg_forward_sum$adjr2)]),
                     colour = "red", size = 3)
-p <- p +  scale_x_continuous(breaks = c(0:22)) + 
+p <- p +  scale_x_continuous(breaks = c(0:25)) + 
           theme_bw() +
           labs(title = 'R2_ajustado vs número de predictores (Forward Selection)', 
                x =  'número predictores')
 p
 ```
-De nuevo se cumple que el modelo que ofrece un mayor R^2 ajustado es el que utiliza 19 predictores. Ahora se necesitaría mínimo unos 12 predictores para alcanzar un valor similar.
+De nuevo se cumple que el modelo que ofrece un mayor R^2 ajustado es el que utiliza 22 predictores. Ahora se necesitaría mínimo unos 12 predictores para alcanzar un valor similar.
 
 ```{r}
-reg_forward_sum$adjr2[12]
-coef(object = best_forward_models, id = 12)
+reg_forward_sum$adjr2[22]
+coef(object = best_forward_models, id = 22)
 ```
 
 ## Backward Selection
@@ -172,7 +175,7 @@ coef(object = best_forward_models, id = 12)
 El último método de selección automática de variables que se ha puesto en práctica es el de *Backward Selection*. En este caso se parte de un modelo con todos los predictores y se van eliminando uno a uno (en cada paso se elimina la variable más significativa para el modelo):
 
 ```{r}
-best_backward_models <- regsubsets(Price~., data = train, nvmax = 22, method = 'backward')
+best_backward_models <- regsubsets(log_price~., data = train, nvmax = 25, method = 'backward')
 reg_backward_sum <- summary(best_backward_models)
 reg_backward_sum
 ```
@@ -180,7 +183,7 @@ reg_backward_sum
 for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_backward_models, scale=metric)}
 ```
 ```{r}
-p <- ggplot(data = data.frame(n_predictores = 1:22,
+p <- ggplot(data = data.frame(n_predictores = 1:25,
                               R_ajustado = reg_backward_sum$adjr2),
             aes(x = n_predictores, y = R_ajustado)) +
     geom_line() +
@@ -190,15 +193,15 @@ p <- p + geom_point(aes(
                     x = n_predictores[which.max(reg_backward_sum$adjr2)],
                     y = R_ajustado[which.max(reg_backward_sum$adjr2)]),
                     colour = "red", size = 3)
-p <- p +  scale_x_continuous(breaks = c(0:22)) + 
+p <- p +  scale_x_continuous(breaks = c(0:25)) + 
           theme_bw() +
           labs(title = 'R2_ajustado vs número de predictores (Forward Selection)', 
                x =  'número predictores')
 p
 ```
 ```{r}
-reg_forward_sum$adjr2[10]
-coef(object = best_forward_models, id = 10)
+reg_forward_sum$adjr2[19]
+coef(object = best_forward_models, id = 19)
 ```
 Se puede concluir, que las 3 técnicas de selección automática de variables indican que el número óptimo de predictores es alrededor de 10. Además, según estas técnicas, las variables más significativas para el modelo serían:
 
@@ -216,6 +219,15 @@ reg_backward_sum$cp
 reg_forward_sum$cp
 ```
 
+
+Si probamos un modelo con las variables que más aparecen en estos métodos:
+
+```{r}
+set.seed(10)
+summary(lm(log_price ~ sqrt_distance + log_landsize + Lattitude + Longtitude + rooms_cat + year_built_cat + car_cat + Regionname + Type + Method + bath_cat + sell_rate_cat, train))
+```
+
+
 # Técnicas de regularización 
 
 
@@ -223,8 +235,8 @@ reg_forward_sum$cp
 
 
 ```{r}
- x <- model.matrix(Price~., data = train)[, -1]
-y <- train$Price
+x <- model.matrix(log_price~., data = train)[, -1]
+y <- train$log_price
 ```
 
 En la siguiente gráfica se muestra como varía el valor de los coeficientes para diferentes valores de lambda, hasta que finalmente se hacen todos 0 (esto con Ridge no ocurriría).
@@ -242,12 +254,12 @@ plot(cv_lasso)
 
 En la gráfica podemos apreciar dos líneas de puntos. La primera marca el lambda para el cual se consigue el modelo con un error cuadrático medio más bajo. La segunda, marca el lambda para el cual se consigue el modelo más sencillo cuyo error se encuentra a 1 desviación estándar del mínimo.  
 
-En esta misma gráfica, podemos ver que se podría obtener un modelo con 14 predictores aproximadamente, cuyo error sería muy similar al del mejor modelo (que utiliza los 22).
+En esta misma gráfica, podemos ver que se podría obtener un modelo con 21 predictores aproximadamente, cuyo error sería muy similar al del mejor modelo (que utiliza los 24).
 
 ```{r}
 set.seed(10)
 out_eleven <- glmnet(x,y,alpha=1,lambda = cv_lasso$lambda.1se)
-lasso_coef_eleven <- predict(out_eleven,type="coefficients")[1:23,]
+lasso_coef_eleven <- predict(out_eleven,type="coefficients")[1:26,]
 lasso_coef_eleven[lasso_coef_eleven!=0]
 ```
 
@@ -273,11 +285,26 @@ plot(cv_ridge)
 En este caso, se muestran los coeficientes que se obtienen del modelo cuyo error se encuentra a 1 desviación estándar del mínimo (y donde empieza a incrementarse el error cuadrático medio):
 
 ```{r}
+set.seed(10)
 out_ridge <- glmnet(x,y,alpha=0,lambda = cv_ridge$lambda.1se)
 (ridge_coef <- predict(out_ridge,type="coefficients")[1:23,])
 #sort(abs(ridge_coef), decreasing = TRUE) -> Para verlas ordenadas
 ```
 En este caso, la información más valiosa que nos aporta Ridge es que le otorga bastante importancia al tipo de vivienda.
+
+Con elasticnet:
+```{r}
+set.seed(10)
+cv_elastic <- cv.glmnet(x = x, y = y, alpha = 0.5)
+plot(cv_elastic)
+```
+
+
+
+
+
+
+
 
 # Prueba de selección de variables 
 

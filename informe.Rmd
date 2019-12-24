@@ -55,6 +55,7 @@ library(olsrr)
 library(nortest)
 library(Metrics)
 library(ggmap)
+library(reshape2)
 ```
 <br>
 
@@ -84,7 +85,9 @@ Enlace a Github: https://github.com/gscharly/trabajo_fundamentos
 houses <- read.csv('./datasets/melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
+```
 
+```{r}
 kable(head(houses, 5)) %>%
   kable_styling() %>%
   scroll_box(width = "100%", height = TRUE)
@@ -106,7 +109,7 @@ dfcol %>%
 
 Se muestra a modo informativo las casas por cada región:
 
-```{r message=FALSE, warning=FALSE, fig.width=15}
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
 melbourne_map <- get_map(location = "melbourne", zoom = 10)
 houses$region_colours <- revalue(houses$Regionname, c("Southern Metropolitan" = "#1B9E77", "Western Metropolitan" = "#D95F02", "Northern Metropolitan" = "#7570B3",
                                                       "Eastern Metropolitan" = "#E7298A", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#A6761D", 
@@ -200,6 +203,9 @@ En este apartado se muestran las gráficas de barras correspondientes a las frec
 ```{r paleta32, echo=FALSE}
 #Paleta creada a partir de Brewer Dark2
 palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+colorDensidad <- brewer.pal(n = 4, name = 'Dark2')[4]
+colorNormal <- wes_palettes$GrandBudapest2[4]
+colorBox <- brewer.pal(n = 4, name = 'Dark2')[1]
 ```
 
 ```{r GráficaBarras}
@@ -267,10 +273,6 @@ VarCuantitativas %>% describe()
 A continuación obserbamos las distribuciones para cada variable cuantitativa a través de sus histogramas.
 
 ```{r HistogramaDensidad, message=FALSE, warning=FALSE}
-colorDensidad <- brewer.pal(n = 4, name = 'Dark2')[4]
-colorNormal <- wes_palettes$GrandBudapest2[4]
-colorBox <- brewer.pal(n = 4, name = 'Dark2')[1]
-
 plot_histograma <- function(df = housesTrain, dat1, dat2, xlab, ylab = "Densidad", xaes){
   ggplot(df, aes(x=xaes, label = curt), na.omit = TRUE) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) + theme_light () +
   stat_function(fun=dnorm, color=colorNormal, lwd = 1.3,
@@ -430,11 +432,11 @@ __Regionname__
 Distribución de precio en función de la región. Western Victoria parece que tiene unos precios más bajos, mientras que Southern Metropolitan y Eastern Metropolitan parece que tienen mayores precios.
 
 ```{r RegionPrice}
-housesTrain %>% select(c("Price", "Regionname")) %>%
+housesTrain %>% 
   ggplot(aes(x=log_price, colour=Regionname)) +
   geom_density() + scale_fill_manual(values=palette34)
 
-housesTrain %>% select(c("Price", "Regionname")) %>%
+housesTrain %>%
   ggplot(aes(y=log_price, fill=Regionname)) +
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
@@ -451,11 +453,11 @@ Observando las gráficas podemos apreciar como las viviendas de tipo u (unit) y 
 Presumiblemente, parece que el tipo de vivienda sí discrimina con respecto al precio de la vivienda.
 
 ```{r TypePrice}
-housesTrain %>% select(c("Price", "Type")) %>%
+housesTrain %>%
   ggplot(aes(x=log_price, colour=Type)) +
   geom_density() + scale_fill_manual(values=palette34)
 
-housesTrain %>% select(c("Price", "Type")) %>%
+housesTrain %>% 
   ggplot(aes(y=log_price, fill=Type)) +
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
@@ -464,7 +466,6 @@ Como comprobación, se compara la variable numérica *Rooms* con *Type*, para ve
 ```{r roomsType}
 housesTrain %>% ggplot(aes(x=Rooms, fill=Type)) + geom_histogram()
 ```
-
 
 
 __Method__
@@ -480,11 +481,11 @@ Los métodos de venta son los siguientes:
 La gráfica tomando el logaritmo permite una visualización mejor donde vemos precios con bastante variabilidad para todos los métodos de venta excepto para SA. Estas viviendas se han vendido después de una subasta, lo cual puede explicar que el precio esté más regulado. Atendiendo a los Boxplots, se observan rangos intercuantiles parecidos para algunos métodos (por ejemplo: S y SA) y diferentes para otros (por ejemplo: SP y VB). En este sentido queda por ver si el método resulta útil en el modelo a la hora de diferenciar el precio.
 
 ```{r PriceMethod}
-housesTrain %>% select(c("Price", "Method")) %>%
+housesTrain %>% 
   ggplot(aes(x=log_price, colour=Method)) +
   geom_density() + scale_fill_manual(values=palette34)
 
-housesTrain %>% select(c("Price", "Method")) %>%
+housesTrain %>%
   ggplot(aes(y=log_price, fill=Method)) +
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
@@ -494,7 +495,7 @@ __CouncilArea__
 Por el número de niveles que tiene esta variable, resulta dificil apreciar algunas diferencias con respecto al precio, pero sí observamos diferencias en cuanto a la variabilidad del precio. También llama la atención algunos de los outliers, donde hay viviendas con precios muy altos y otras muy bajos.
 
 ```{r fig.width=15, fig.height=4}
-housesTrain %>% select(c("Price", "CouncilArea")) %>%
+housesTrain %>% 
   ggplot(aes(y=log_price, fill=CouncilArea)) +
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
@@ -508,8 +509,7 @@ housesTrain %>% select(c("Price", "CouncilArea")) %>%
 A continuación, examinaremos las distintas variables numéricas, y su relación con la que será nuestra columna objetivo (Price).
 Lo primero que hacemos es comprobar las correlaciones de las variables numéricas.
 
-```{r heatmapCorr, fig.width=10}
-library(reshape2)
+```{r heatmapCorr, fig.width=15, fig.height=10, message=FALSE}
 numeric_cols <- c("Rooms", "Distance", "sqrt_distance", "Bedroom2", "Bathroom", "Car", "Lattitude", "Longtitude", "YearBuilt", "Landsize", "BuildingArea", "Propertycount", 'log_price')
 cormat <- round(cor(na.omit(housesTrain[,numeric_cols])), 2)
 
@@ -661,18 +661,18 @@ housesTrain %>%
 ```{r}
 housesTrain %>%
   filter(Bedroom2!=20) %>%
-  mutate(bed_cat = cut2(Bedroom2, g=4)) %>% select(bed_cat) %>%
+  mutate(bed_cat = cut2(Bedroom2, g=3)) %>% select(bed_cat) %>%
   table()
 
 housesTrain %>%
   filter(Bedroom2!=20) %>%
-  mutate(bed_cat = cut2(Bedroom2, g=4))  %>%
+  mutate(bed_cat = cut2(Bedroom2, g=3))  %>%
   ggplot(aes(x=log_price, colour=bed_cat)) +
   geom_density() + scale_fill_manual(values=palette34)
 
 housesTrain %>%
   filter(Bedroom2!=20) %>%
-  mutate(bed_cat = cut2(Bedroom2, g=4)) %>% 
+  mutate(bed_cat = cut2(Bedroom2, g=3)) %>% 
   ggplot(aes(y=log_price, fill=bed_cat)) +
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
@@ -787,8 +787,8 @@ Esta variable nos informa de todas las propiedades que hay en cada barrio. Se pu
 
 Diviendo en 3 grupos parecidos, la primera opción no parece arrojar ninguna luz sobre el precio de la vivienda.
 ```{r}
-housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=3)) %>% select(property_count_cat) %>% table()
-housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=3)) %>% ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
+housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=10)) %>% select(property_count_cat) %>% table()
+housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=10)) %>% ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
 ```
 
 Con la tasa de casas vendidas por barrio tampoco se diferencia demasiado. En todo caso, habría que probar con más categorías, pero se acabaría alcanzando el número distinto de barrios que hay.
@@ -796,8 +796,8 @@ Con la tasa de casas vendidas por barrio tampoco se diferencia demasiado. En tod
 ```{r propertyCount}
 suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
 #housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
-housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=5)) %>% select(property_count_cat) %>% table() 
-housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=5)) %>%  ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>% select(property_count_cat) %>% table() 
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>%  ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
 ```
 
 
@@ -1078,7 +1078,6 @@ names(imputationsCarforTest)[names(imputationsCarforTest) == "CarImp"] <- "Car"
 
 sqrt_distance <- housesTrain %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
 housesTrain$sqrt_distance <- unlist(sqrt_distance)
-
 log_landsize <- imputationsLandsizeFinal %>% mutate(log_landsize=log10(Landsize)) %>% select(log_landsize)
 housesTrain$log_landsize <- unlist(log_landsize)
 log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
@@ -1086,16 +1085,25 @@ housesTrain$log_price <- unlist(log_price)
 
 # Discretización de variables cuantitativas
 housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
-
 housesTrain$year_built_cat <- factor(cut2(housesTrain$YearBuilt, g=2), labels = c("Antigua", "Moderna"))
 levels(housesTrain$year_built_cat) <- c(levels(housesTrain$year_built_cat), 'Desconocido')
 housesTrain <- housesTrain %>% mutate_at(vars(year_built_cat), ~replace(., is.na(.), 'Desconocido'))
+# Hasta 1 baño
+housesTrain$bath_cat <- factor(cut2(housesTrain$Bathroom, g=2), labels=c("Pocos_baños", "Muchos_baños"))
+#De 0 a 3 dormitorios
+housesTrain$bed_cat <- factor(cut2(housesTrain$Bedroom2, g=2), labels=c("Pocos_dormitorios", "Muchos_dormitorios"))
+#0-1 y 2 o más
+housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Pocas_plazas", "Muchas_plazas"), include.lowest = TRUE, right = FALSE)
 
-housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Hasta_1_plaza", "2_o_más_plazas"), include.lowest = TRUE, right = FALSE)
+#El join solo se debe ejecutar una vez
+suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
+housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
+# Hasta 1.47% de tasa de venta por barrio
+housesTrain$sell_rate_cat <- factor(cut2(housesTrain$sell_rate_suburb, g=2), labels=c("Menos_populares", "Más_populares"))
 
 # Estandarización de variables
 num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude')
-cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method')
+cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method', 'bath_cat', 'bed_cat', 'sell_rate_cat')
 housesTrainNum <- housesTrain %>% select(num_vars)
 normParam <- preProcess(housesTrainNum)
 housesTrainNumNorm <- predict(normParam, housesTrainNum)
@@ -1130,6 +1138,9 @@ levels(housesTrainFinal$car_cat)
 levels(housesTrainFinal$Regionname)
 levels(housesTrainFinal$Method)
 levels(housesTrainFinal$Type)
+levels(housesTrainFinal$bath_cat)
+levels(housesTrainFinal$bed_cat)
+levels(housesTrainFinal$sell_rate_cat)
 ```
 
 <br>
@@ -1160,6 +1171,11 @@ housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Type) %>% gg
 ```{r}
 housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
 ```
+
+```{r}
+#write.csv(housesTrainFinal, file='train_set_new_variables.csv', row.names = FALSE)
+```
+
 
 # Aplicación de técnicas automáticas de selección de variables
 

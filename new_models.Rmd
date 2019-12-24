@@ -1,0 +1,334 @@
+---
+title: "models"
+author: "Manuel Pertejo"
+date: "12/18/2019"
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+      section_divs: true
+    theme: "spacelab"
+    highlight: "zenburn"
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r librerías, message=FALSE}
+library(caret)
+library(dplyr)
+library(RColorBrewer)
+library(Hmisc)
+library(VIM)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(Hmisc)
+library(gmodels)
+library(RColorBrewer)
+library(VIM)
+library(mice)
+library(wesanderson)
+library(ggplot2)
+library(GGally)
+library(gridExtra)
+library(car)
+library(plyr)
+library(tidyverse)
+library(leaps)
+library(glmnet)
+library(broom)
+library(ggfortify)
+library(olsrr)
+library(nortest)
+library(Metrics)
+
+set.seed(10)
+
+colorDensidad <- wes_palettes$GrandBudapest1[2]
+colorNormal <- wes_palettes$GrandBudapest1[3]
+```
+
+```{r cargadatos, echo=F}
+train <- read.csv('train_set_new_variables.csv')
+train %>% select(-c(log_price,Price)) %>% names()
+```
+
+```{r}
+train <- train %>% select(-Price)
+# Necesito redefinirlos porque se me descolocaban los niveles al cargar el trainset
+train$Regionname = factor(train$Regionname, levels=c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
+train$Method = factor(train$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+train$Type = factor(train$Type, levels=c('h', 'u', 't'))
+train$car_cat = factor(train$car_cat, levels = c("Pocas_plazas", "Muchas_plazas"))
+train$year_built_cat = factor(train$year_built_cat, levels = c('Antigua', 'Moderna', 'Desconocido'))
+train$rooms_cat = factor(train$rooms_cat, levels = c('Pequeñas','Medianas','Grandes'))
+
+train$bed_cat = factor(train$bed_cat, levels=c("Pocos_dormitorios", "Muchos_dormitorios"))
+train$bath_cat = factor(train$bath_cat, levels=c("Pocos_baños", "Muchos_baños"))
+```
+
+
+
+# Modelo 1
+
+En este primer modelo se han utilizado las variables que más se repetían como relevantes para el modelo generalmente en todos los métodos de selección de variables empleados anteriormente. Son las siguientes:
+
+* Distancia al centro.
+* Número de habitaciones.
+* Tipo de vivienda.
+* Nombre de la región.
+* Longitud.
+
+Los resultados del modelo han sido los siguientes:
+
+```{r  echo=F}
+model1 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train)
+summary(model1)
+```
+
+# Eliminación puntos influyentes (Yo creo que no lo debemos incluir)
+
+Comprobación de cómo funcionaría el modelo eliminando esos 5 puntos más influyentes. Vemos que mejora ligeramente, aunque la mejora no sea muy relevante. 
+
+```{r}
+train2 <- train[-c(10609, 9669, 8818, 7666, 6140),]
+dim(train2)
+model_sin_out <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname, data = train2)
+summary(model_sin_out)
+```
+
+Sería interesante ver si esos puntos tienen algo en común o por qué afectan al modelo. Habría que irse al dataset original donde están las variables sin transformar y ver qué pueden tener en común.
+
+#Modelo 2
+
+Es el mismo que el primer modelo probado, pero añadiendo la variable year_cat, a pesar de que en vista a los resultados obtenidos en la parte de selección de variables no parece que sea muy influyente para los modelos. Con lo cual, las variables utilizadas por el modelo son las siguientes:
+
+* Distancia al centro.
+* Número de habitaciones.
+* Tipo de vivienda.
+* Nombre de la región.
+* Longitud.
+* Latitud.
+* Año de construcción como categórica.
+
+```{r}
+model2 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + Regionname + year_built_cat, data = train)
+summary(model2)
+```
+El resultado obtenido es prácticamente el mismo. De hecho, a pesar de que como era evidente el R^2 aumenta, el R^ajustado no varía respecto al modelo anterior. Además, se puede observar que los p-valores asociados a los coeficientes de las categorías de year_built son bastante altos. 
+
+# Modelo 3
+
+En este tercer caso, se ha introducido de nuevo la variable YearBuilt, pero en este caso como númerica (previa imputación), para poder ver como varía el funcionamiento del modelo. Por lo tanto, las variables utilizadas han sido las siguientes:
+
+
+* Distancia al centro.
+* Número de habitaciones.
+* Tipo de vivienda.
+* Nombre de la región.
+* Longitud.
+* Latitud.
+* Año de construcción como numérica.
+
+```{r echo=F, message=F}
+#Carga de datos
+
+train_year <- read_csv('train_yearbuilt.csv') %>% select(-log_price)
+model3 <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat + Regionname, data = train_year)
+summary(model3)
+
+```
+
+Se puede ver que en este caso si que mejora ligeramente la performance del modelo.
+
+```{r  echo=F}
+#Puede ser útil
+model_metrics <- augment(model3)
+```
+
+Las siguientes gráficas nos ayudan a estudiar los residuos resultantes tras aplicar el modelo:
+
+```{r}
+par(mfrow = c(2, 2))
+plot(model3)
+```
+
+
+```{r}
+plot(model3, 1)
+```
+
+
+## Normalidad de los residuos
+
+A continuación se muestra el diagrama Q-Q de los residuos para comprobar su normalidad:
+
+```{r}
+#Se ve algo mejor con esta librería en este caso 
+plot(model3, 2)
+```
+ 
+ Se puede ver que para los valores más altos es cuando se empiezan a desviar de una normal. Esto no se muy bien como interpretarlo
+
+
+## Homogeneidad de la varianza de los residuos 
+
+```{r}
+plot(model3,3)
+```
+
+En esta gráfica se ve claramente que la varianza de los residuos no es para nada constante. Esta varianza empieza a aumentar bastante para los valores más altos. Por lo tanto no se cumple el principio de homodedasticity de los mismos.
+
+## Valores influyentes
+
+La siguiente gráfica muestra los puntos más influyentes para el modelo según la distancia de Cook:
+
+```{r}
+# Cook's distance
+plot(model3, 4, id.n = 5) #Marco los 5 puntos más influyentes según la distancia de Cook
+# Residuals vs Leverage
+plot(model3, 5)
+```
+
+```{r}
+# Imprimo los datos de esos 5 puntos más inlfuyentes
+model_metrics %>% top_n(5, wt = .cooksd)
+```
+
+```{r}
+train[9669,]
+```
+
+EL punto más influyente para el modelo con diferencia es el siguiente:
+
+```{r}
+original_data <- read.csv('./datasets/melb_data.csv')
+
+original_data %>% filter(Price == 9000000)
+```
+
+Se puede ver que está bastante alejado del centro para ser tan cara.
+
+# Modelo 4
+
+En este caso, vamos a cambiar el target del modelo, utilizando la transformación logaritmica del mismo. Vamos a utilizar las mismas variables que en el caso anterior:
+
+
+
+```{r message=F}
+train_year2 <- read_csv('train_yearbuilt.csv') %>% select(-Price)
+model4 <- lm(log_price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat + Regionname, data = train_year2)
+summary(model4)
+```
+Vemos que en este caso el porcentaje de varianza del precio que nuestro modelo es capaz de explicar es algo más alto. La mayoría de las variables tienen p-valores muy bajos. Las únicas que no serían estadísticamente siginificativas serían las dummies de algunas regiones.
+
+En el siguiente gráfico se puede ver como la varianza de los residuos es más o menos uniforme para los valores predichos:
+
+```{r echo=F}
+plot(model4, 1)
+```
+
+En cuanto a la normalidad de los residuos, podemos ver que en esta ocasión sí que se ajustan bastante a una distribución normal:
+
+```{r}
+plot(model4, 2)
+```
+
+Al aplicar el test de normalidad de Lilliefors sobre los residuos del modelo, el p-valor devuelto es muy pequeño, lo que no nos permite rechazar la hipótesis de normalidad de estos:
+
+```{r}
+lillie.test(model4$residuals)
+```
+En este caso, los puntos más influyen
+```{r}
+plot(model4, 4, id.n = 5)
+```
+
+```{r}
+model_metrics_2 <- augment(model4)
+model_metrics_2 %>% top_n(5, wt = .cooksd)
+```
+
+# Scoreo sobre test
+
+Este último modelo parace ser el que consigue ajustarse de una mejor manera a los datos. Para poder evaluar correctamente su correcto funcionamiento, es necesario ver su rendimiento sobre datos nuevos, es decir, el conjunto de test.
+
+```{r}
+test_data <- read.csv('test_yearbuilt.csv')
+test_data <- test_data %>% select(-Price)
+best_model <- model4
+(preds <- data.frame(cbind(actual_values=test_data$log_price, predicted_values=predict(best_model,test_data))))
+```
+
+En la siguiente tabla se muestran los valores de diferentes medidas para el error:
+
+```{r echo=F}
+rmse <- RMSE(predict(best_model,test_data), test_data$log_price)
+r2 <- R2(predict(best_model,test_data), test_data$log_price)
+mae <- mae(predict(best_model,test_data), test_data$log_price)
+model_metrics <- data.frame(error_metrics = c('R2','RMSE','MAE'), value = c(r2, rmse, mae))
+
+model_metrics
+
+```
+
+Se puede observar por el valor que toma R2 (superior que en train), que nuestro modelo, a pesar de que no logra un gran acierto, no sufre ningún tipo de sobreajuste.
+
+
+
+
+
+# Selección de variables con log_price como target
+
+```{r}
+best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
+reg_sum_log <- summary(best_subsets_log)
+for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_log, scale=metric)}
+```
+
+
+```{r}
+which.max(reg_sum_log$adjr2)
+```
+```{r}
+x <- model.matrix(log_price~., data = train_year2)[, -1]
+y <- train_year2$log_price
+set.seed(10)
+cv_elastic <- cv.glmnet(x = x, y = y, alpha = 0.5)
+plot(cv_elastic)
+```
+
+```{r}
+coefss <- predict(glmnet(x,y,alpha=0.5,lambda = cv_elastic$lambda.1se),type="coefficients")[1:22,]
+sort(abs(coefss), decreasing = T)
+```
+
+
+# Modelo 5
+```{r}
+model5 <- lm(log_price~sqrt_distance + log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model5)
+```
+```{r}
+qplot(model5$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+
+```
+
+
+```{r}
+plot(model5, 1)
+```
+```{r}
+plot(model5, 2)
+```
+
+```{r}
+lillie.test(model5$residuals)
+```
