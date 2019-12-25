@@ -1271,7 +1271,7 @@ Se puede concluir, que las 3 técnicas de selección automática de variables in
 * Latitud.
 * Número de habitaciones.
 * Número de plazas de garaje.
-* Tipo de venta.
+* Tipo de vivienda.
 * Región.
 
 <br>
@@ -1343,10 +1343,9 @@ sort(abs(ridge_coef), decreasing = TRUE)
 ```
 En este caso, la información más valiosa que nos aporta Ridge es que le otorga bastante importancia al tipo de vivienda.
 
-```{r carga de datos}
+```{r carga de datos, echo=F}
 train <- read.csv('train_set.csv')
 train <- train %>% select(-log_price) #Voy a usar como target el Price sin transformar
-head(train)
 ```
 
 # Modelos
@@ -1475,9 +1474,9 @@ En vista a que los resultados obtenidos utilizando Price sin transformar como va
 
 ```{r message=F}
 train_year2 <- read_csv('train_yearbuilt.csv') %>% select(-Price)
-best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
-reg_sum_log <- summary(best_subsets_log)
-for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_log, scale=metric)}
+#best_subsets_log <- regsubsets(log_price~., data = train_year2, nvmax = 22)
+#reg_sum_log <- summary(best_subsets_log)
+#for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_log, scale=metric)}
 ```
 
 ```{r}
@@ -1521,7 +1520,10 @@ plot(model4, 2)
 
 Al aplicar el test de normalidad de Lilliefors sobre los residuos del modelo, el p-valor devuelto es muy pequeño, lo que no nos permite rechazar la hipótesis de normalidad de estos:
 
+
+
 ```{r}
+#Revisar este test 
 lillie.test(model4$residuals)
 ```
 
@@ -1568,8 +1570,9 @@ Se puede observar por el valor que toma R2 (superior que en train), que nuestro 
 - La transformación de la variable de salida ha mejorado la performance del modelo, a costa de perder interpretabilidad.
 
 Como líneas de trabajo futuras se propone:
-- Intentar utilizar regularización Elastic net.
-- Estudiar más interacciones entre variables, o generación de nuevas variables a partir de las actuales para ver si correlan en mayor medida con el target.
+
+* Estudiar interacciones entre variables. 
+* Generación de nuevas variables a partir de las actuales para ver si correlan en mayor medida con el target.
 
 
  
