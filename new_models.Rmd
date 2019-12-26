@@ -321,6 +321,21 @@ RMSE <- sqrt(MSE)
 RMSE
 ```
 
+```{r}
+check_residuals_normality <- function(model){
+  # Residuals histogram
+  qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+  # Residuals vs predictions
+  plot(model, 1)
+  # Residuals qq plot
+  plot(model, 2)
+  # Normality test
+  lillie.test(model$residuals)
+}
+```
+
 
 
 ```{r}
@@ -463,5 +478,19 @@ p2 <- predictions_df %>% ggplot(aes(x=log_price)) + geom_density() + labs(title=
 grid.arrange(p1, p2, nrow=1)
 ```
 
+## Interacciones entre variables
+Se realizan distintas pruebas con interacciones entre las diferentes variables cuantitativas, tomando como base las del mejor modelo obtenido hasta ahora (R2=0.6948)
+```{r}
+summary(lm(log_price~sqrt_distance:log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train))
+```
 
+```{r}
+summary(lm(log_price~sqrt_distance*log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train))
+```
 
+```{r}
+summary(lm(log_price~sqrt_distance + log_landsize + Lattitude:Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train))
+```
+```{r}
+summary(lm(log_price~sqrt_distance + log_landsize + Lattitude*Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train))
+```

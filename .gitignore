@@ -42,5 +42,4 @@ GTAGS
 *.synctex.gz
 .tex
 *.html
-*.csv
 datasets/
