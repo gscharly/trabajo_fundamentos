@@ -356,6 +356,15 @@ RMSE <- sqrt(MSE)
 RMSE
 ```
 
+```{r}
+RSS
+```
+
+```{r}
+prueb <- sum(model5$residuals^2) 
+prueb
+```
+
 
 ```{r}
 final_dataset_construction <- function(dataset, standarizer, imputationsCarforTest, imputationsLandsizeforTest){
@@ -533,6 +542,20 @@ qplot(model$residuals, geom = "histogram",
      bins = 30) +
      labs(title = "Histograma de residuos",x = "residual")
 ```
+```{r Regionname:rooms_cat}
+model <- lm(log_price~ log_landsize + Lattitude + sqrt_distance + Longtitude + Type + rooms_cat*Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+```{r}
+interaction.plot(x.factor = train$rooms_cat, trace.factor = train$Regionname, response = train$log_price)
+```
+
+
 
 ```{r lat:distance}
 model <- lm(log_price~ log_landsize + Lattitude:sqrt_distance + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
