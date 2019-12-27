@@ -88,6 +88,11 @@ cols <- ncol(houses)
 rows <- nrow(houses)
 ```
 
+
+```{r log_price_creation}
+houses <- houses %>% mutate(log_price = log10(Price))
+```
+
 ```{r}
 kable(head(houses, 5)) %>%
   kable_styling() %>%
@@ -110,15 +115,15 @@ dfcol %>%
 
 En el siguiente mapa podemos ver, en un solo golpe, cómo se distribuyen las viviendas vendidas según su región. Vemos que hay zonas de Melbourne, como la zona oeste de la bahía donde no hay viviendas registradas en nuestro data set.
 
-# ```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
-# melbourne_map <- get_map(location = "melbourne", zoom = 10)
-# houses_map <- houses[,c("Regionname", "Lattitude", "Longtitude")]
-# houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#E6AB02", "Western Metropolitan" = "#A6761D", "Northern Metropolitan" = "#7570B3",
-#                                                       "Eastern Metropolitan" = "#1B9E77", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#D95F02", 
-#                                                       "Northern Victoria" = "#E7298A", "Western Victoria" = "#666666"))
-# 
-# ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75)
-# ```
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
+melbourne_map <- get_map(location = "melbourne", zoom = 10)
+houses_map <- houses[,c("Regionname", "Lattitude", "Longtitude")]
+houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#E6AB02", "Western Metropolitan" = "#A6761D", "Northern Metropolitan" = "#7570B3",
+                                                      "Eastern Metropolitan" = "#1B9E77", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#D95F02",
+                                                      "Northern Victoria" = "#E7298A", "Western Victoria" = "#666666"))
+
+ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75)
+```
 
 
 <br>
@@ -240,18 +245,6 @@ Por otra parte, de las 8 regiones de Melbourne, hay 4 que representan el 95% de 
 
 Por último, atendiendo a *Month* y *Year*, en este dataset solo están las viviendas vendidas en los años 2016 y 2017 donde observamos una frecuencia similar en ambos años pero con diferencias según el mes.
 
-```{r UnavailableCouncil}
-housesTrain$CouncilArea[which(housesTrain$CouncilArea == '')] <- 'Unavailable'
-```
-
-
-```{r}
-water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
-housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
-
-housesTrain %>% ggplot(aes(x=log_price, color=may_have_water)) + geom_density()
-```
-
 
 <br>
 
@@ -364,11 +357,11 @@ grid.arrange(p1, p2, nrow=1)
 Comprobamos si sigue una distribución normal con un diagrama QQ y un test de normalidad. El diagrama QQ se asemeja al de una distribución normal; sin embargo el p-valor obtenido en el test de normalidad es muy bajo, con lo que se puede rechazar la hipótesis nula de normalidad de la variable *log_price*.
 
 ```{r normalidadPrice}
-housesTrain %>% mutate(log_price = log10(Price)) %>%
-ggplot(aes(sample=log_price)) + stat_qq() + stat_qq_line() + labs(title='qq-plot log_price')
+housesTrain %>% ggplot(aes(sample=log_price)) + stat_qq() + stat_qq_line() + labs(title='qq-plot log_price')
 
 lillie.test(housesTrain$log_price)
 ```
+
 
 __Distance__
 
@@ -414,6 +407,7 @@ housesTrain %>%
 ggplot(aes(sample=Lattitude)) + stat_qq() + stat_qq_line() + labs(title='qq-plot Lattitude')
 lillie.test(housesTrain$Lattitude)
 ```
+
 ```{r normalidadLongtitude}
 housesTrain %>% 
 ggplot(aes(sample=Longtitude)) + stat_qq() + stat_qq_line() + labs(title='qq-plot Longtitude')
@@ -508,6 +502,18 @@ Por el número de niveles que tiene esta variable, resulta dificil apreciar algu
 housesTrain %>% 
   ggplot(aes(y=log_price, fill=CouncilArea)) +
   geom_boxplot() + scale_fill_manual(values=palette34)
+```
+
+
+```{r}
+water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
+housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
+
+housesTrain %>% ggplot(aes(x=log_price, color=may_have_water)) + geom_density()
+```
+
+```{r}
+housesTrain %>% ggplot(aes(x = Price, color = may_have_water)) + geom_density()
 ```
 
 <br>
@@ -697,7 +703,7 @@ Por las gráficas obtenidas tras la categorización, parece que el número de pl
 
 ```{r CarPrice}
 housesTrain %>%
-  select('Car', 'Price') %>%
+  select('Car', 'log_price') %>%
   na.omit() %>%
   ggpairs
 ```
@@ -747,10 +753,6 @@ Lo primero que hacemos con esta variable será extraer el año, ya que viene en 
 
 
 ```{r CrearSellYear}
-housesTrain$sellYear <- separate(housesTrain, Date, c('Day','Month', 'Year'), sep = '/')$Year
-#housesTrain$sellYear <- factor(housesTrain$year, levels=c("2016", "2017"))
-```
-```{r}
 housesTrain$sellYear <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$year
 housesTrain$sellYear <-factor(housesTrain$sellYear, levels=c("2016", "2017"))
 ```
@@ -813,14 +815,21 @@ housesTrain %>% ggplot(aes(y=Price, color=sellMonth)) + geom_boxplot() + scale_c
 
 __PropertyCount__
 
+```{r}
+housesTrain %>% select(Propertycount)
+```
+
+
 Esta variable nos informa de todas las propiedades que hay en cada barrio. Se puede prueba lo siguiente:
 
 - Categorizar esta variable para diferenciar entre barrios muy poblados y menos poblados, y ver si tiene relación con el precio.
 - Combinar esta información con el número de casas vendidas por barrio, obtener la tasa de venta en cada barrio, y ver si hay barrios más populares que otros en cuanto a ventas.
 
 Diviendo en 3 grupos parecidos, la primera opción no parece arrojar ninguna luz sobre el precio de la vivienda.
+
 ```{r}
 housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=10)) %>% select(property_count_cat) %>% table()
+
 housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=10)) %>% ggplot(aes(x=log_price, color=property_count_cat)) + geom_density() + scale_colour_manual(values=palette34)
 ```
 
@@ -828,11 +837,12 @@ Con la tasa de casas vendidas por barrio tampoco se diferencia demasiado. En tod
 
 ```{r propertyCount}
 suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
-#housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
+housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
 housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>% select(property_count_cat) %>% table() 
 housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>%  ggplot(aes(x=log_price, color=property_count_cat)) + geom_density() + scale_colour_manual(values=palette34)
 ```
 
+Tampoco parece que el hecho de que el barrio sea más "popular" (en cuanto a número de viviendas vendidas) sea influyente para el precio de venta de las mismas.
 
 <br>
 
@@ -841,7 +851,7 @@ housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>%  gg
 <br>
 
 Hemos visto anteriormente que las variables *YearBuilt*, *BuildingArea* y *Car* tenían valores NAs, y que la variable *Landsize* tenía valores sospechosos (0).
-Examinamos primero que % de los registros no tienen estos valores rellenos.
+Examinamos primero qué % de los registros no tienen estos valores rellenos.
 
 Observamos que cerca del 50% de los registros tienen la variable BuildingArea sin informar, mientras que el 40% no tienen la variable YearBuilt informada. Vemos además que en el 37% de los casos, BuildingArea y YearBuilt faltan simultáneamente. El % de registros con la variable Car vacía es muy pequeño. Además, tenemos 15% de 0 en la variable Landsize, lo que podríamos considerar como valores faltantes.
 
@@ -853,7 +863,7 @@ housesTrain$YearBuilt[which(housesTrain$YearBuilt<1800)] <- NA
 cols_na <- c('BuildingArea', 'Landsize', 'YearBuilt', 'Car', 'CouncilArea')
 aggr_plot <- aggr(housesTrain[,cols_na], col=c('#666666','#E6AB02'), numbers=TRUE, sortVars=TRUE,
                   labels=names(housesTrain[,cols_na]), cex.axis=0.6, gap=3, 
-                  ylab=c("Histogram of missing data","Patrón de co-ocurrencia"))
+                  ylab=c("Histograma de datos faltantes","Patrón de co-ocurrencia"))
 
 ```
 ```{r porcentajeFaltantes, echo=FALSE}
@@ -898,7 +908,7 @@ housesTrain %>% select(BuildingArea, Landsize) %>%
   select(log_landsize, log_buildingArea) %>% ggpairs()
 ```
 
-La relación entre los logaritmos tiene una correlación menor que lo visto anteriormente. Pese a ello, y la gran cantidad de valores faltantes que tienen, decidimos eliminar la variable y quedarnos con *Landsize*.
+La relación entre los logaritmos tiene una correlación menor que lo visto anteriormente. Pese a ello, y la gran cantidad de valores faltantes que tienen, decidimos eliminar la variable *BuidingArea* y quedarnos con *Landsize*.
 
 __Landsize__
 
@@ -971,11 +981,11 @@ p1 <- housesTrain %>% select(Landsize) %>%
   na.omit() %>%
   mutate(log_landsize = log10(Landsize)) %>%
   ggplot(aes(y=log_landsize)) +
-  geom_boxplot()
+  geom_boxplot(colour = colorBox) + labs(y = 'log_landsize inicial')
 
 p2 <- imputationsLogLandsize %>% select(log_landsize) %>%
   ggplot(aes(y=log_landsize)) +
-  geom_boxplot()
+  geom_boxplot(colour = colorBox) + labs(y = 'log_landsize imputado')
 
 grid.arrange(p1, p2, nrow=1)
 ```
@@ -1038,9 +1048,12 @@ ggplot(data=imputationCouncilArea, aes(x=CouncilArea, fill = CouncilArea)) +    
   theme(axis.text.x=element_blank())
 
 
-imputationCouncilArea %>% select(c("Price", "CouncilArea")) %>%
+box_coun <- imputationCouncilArea %>% select(c("Price", "CouncilArea")) %>%
   ggplot(aes(y=Price, fill=CouncilArea)) +
-  geom_boxplot()
+  geom_boxplot() +
+  scale_fill_manual(values=palette34) 
+
+# fig.width=15, fig.height=4
 ```
 
 __YearBuilt__
@@ -1054,7 +1067,7 @@ housesTrain <- housesTrain
 housesTrain %>% select(YearBuilt, log_price) %>% na.omit() %>% ggpairs
 ```
 
-Se categoriza en cuatro grupos de manera que los grupos tienen un número de observaciones más o menos similar. Al verla en relación a *Price*, se observa que los datos faltantes quedan entre la categoría de casas más antiguas (hasta 1951) y las más modernas.
+Se categoriza en dos grupos (además del desconocido) de manera que los grupos tienen un número de observaciones más o menos similar. Al verla en relación a *Price*, se observa que los datos faltantes quedan entre la categoría de casas más antiguas (hasta 1971) y las más modernas.
 
 ```{r}
 year_categories <- housesTrain %>% 
@@ -1071,7 +1084,8 @@ year_categories %>%
   ggplot(aes(y=log_price, fill=year_cat)) +
   geom_boxplot() + scale_fill_manual(values = palette34)
 ```
-Si se prueba a imputar respecto a las coordenadas
+
+Si se prueba a imputar respecto a las coordenadas:
 
 ```{r imputarYearBuilt}
 imputationsYearBuilt <- housesTrain %>% select(Lattitude, Longtitude, YearBuilt) %>% VIM::kNN(variable='YearBuilt')
