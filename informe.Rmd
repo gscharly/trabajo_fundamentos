@@ -27,7 +27,6 @@ knitr::include_graphics("melbourneModif.png")
 
 ```{r librerías, message=FALSE}
 library(caret)
-library(dplyr)
 library(RColorBrewer)
 library(Hmisc)
 library(VIM)
@@ -56,6 +55,7 @@ library(nortest)
 library(Metrics)
 library(ggmap)
 library(reshape2)
+library(dplyr)
 ```
 <br>
 
@@ -107,7 +107,9 @@ dfcol %>%
   kable_styling(bootstrap_options = c('hover'), position = 'center')
 ```
 
-Se muestra a modo informativo las casas por cada región:
+A modo de introducción, se muestran una serie de mapas de Melbourne.
+
+En el primero, se puede observar que la mayoría de casas vendidas se concentran en el centro de la ciudad de Melbourne, pero hay casas en regiones (Victoria) que se encuentran bastante alejadas. Se ve que estas regiones son amplias, y que posiblemente el precio no solo varíe de unas a otras, si no también dentro de la misma región. Además, la ciudad destaca por la bahía de Port Phillip, hay casas vendidas que rodean esta bahía sin estar cerca del centro. Esto puede hacer pensar que el precio no tiene por qué estar directamente relacionado con la distancia al centro (variable disponible en el dataset), si no que también pueda estar influido por la posición respecto a la bahía.
 
 ```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
 melbourne_map <- get_map(location = "melbourne", zoom = 10)
@@ -116,9 +118,31 @@ houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropol
                                                       "Eastern Metropolitan" = "#E7298A", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#A6761D", 
                                                       "Northern Victoria" = "#1DA632", "Western Victoria" = "#1B849E"))
   
-ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75)
+ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75) + labs(title='Casas vendidas por región')
 ```
 
+Si pintamos el precio medio por cada región, se puede observar que hay regiones más caras que otras en media. Sin embargo, dentro de una misma región puede haber bastante variabilidad de precio. Si se representa el precio medio por barrio, se observa que en la región más cara efectivamente se encuentran las casas más caras, pero también otras que son más baratas. Parece que se confirma que los barrios pegados a la bahía tienen un precio más alto, aunque hay viviendas caras en el interior.
+
+
+```{r mapsPrice, warning=FALSE}
+housesMeanPriceRegion <- houses %>% group_by(Regionname) %>% summarise(mean_price_region = mean(Price), sd_price_region = sd(Price))
+housesMeanPriceSuburb <- houses %>% group_by(Suburb) %>% summarise(mean_price_suburb = mean(Price), sd_price_suburb = sd(Price))
+
+housesPrice <- houses %>% inner_join(housesMeanPriceSuburb, by='Suburb') %>% inner_join(housesMeanPriceRegion, by='Regionname')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$mean_price_region), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Precio medio en función de la región')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$mean_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Precio medio en función del barrio')
+```
+
+A pesar de que el barrio parece indicativo y distintivo de precios más baratos y más caros, dentro de los barrios "caros" sigue habiendo variedad de precios. Esto se puede ver si se representa la desviación típica del precio por barrio:
+
+
+```{r mapsSdPrice, warning=FALSE}
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$sd_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Desviación típica del precio en función del barrio')
+```
+
+Con estos mapas, aunque más adelante se analizan las distribuciones del precio en función de estas y otras variables categóricas, se pretende introducir el hecho de que el precio de venta varía con la zona en la que está situada la vivienda y que puede ayudar a distinguir entre viviendas caras y baratas, aunque serán necesarias otras variables que expliquen el precio en aquellas zonas en las que la variabilidad del mismo sea elevada.
 
 <br>
 
@@ -796,9 +820,9 @@ Con la tasa de casas vendidas por barrio tampoco se diferencia demasiado. En tod
 
 ```{r propertyCount}
 suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
-#housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
+housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
 housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>% select(property_count_cat) %>% table() 
-housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>%  ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>% ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
 ```
 
 
