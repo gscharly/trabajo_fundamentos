@@ -83,13 +83,13 @@ best_subsets_models <- regsubsets(log_price~., data = train, nvmax = 25)
 reg_sum <- summary(best_subsets_models)
 reg_sum
 ```
-Para evaluar los resultados obtenidos, se ha observado el coeficiente {R{2}} ajustado asociado a cada modelo:
+Para evaluar los resultados obtenidos, se ha observado el coeficiente R{2} ajustado asociado a cada modelo:
 
 ```{r}
 reg_sum$adjr2
 which.max(reg_sum$adjr2)
 ```
-A juzgar por los resultados, el mejor modelo es el que consta de 22 variables. 
+A juzgar por los resultados, el mejor modelo es el que consta de 23 variables, aunque a partir de 17 variables el R2 se mantiene parecido.
 
 Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo posible sería a través del siguiente gráfico, donde además del R**2 ajustado se muestran otras estimaciones de la bondad de ajuste de los modelos:
 
@@ -97,7 +97,7 @@ Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo 
 for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_models, scale=metric)}
 ```
 
-En los anteriores gráficos se puede observar que las variables que más aparecen en general son la distancia al centro (*sqrt_distance*), el número de habitaciones y el tipo de venta. También se puede observar que la mejoría del modelo es casi imperceptible a partir de un determinado número de variables.
+En los anteriores gráficos se puede observar que las variables que más aparecen en general son la distancia al centro (*sqrt_distance*), el número de habitaciones y el tipo de venta. También se puede observar que la mejoría del modelo es casi imperceptible a partir de un determinado número de variables. Además, para el mejor modelo solo se quedan sin incluir ciertas categorías de variables cualitativas (año de venta desconocido y una región). También se puede apreciar como *log_landsize* podría ser quitada del modelo sin mayor significancia en la métrica.
 
 ```{r}
 p <- ggplot(data = data.frame(n_predictores = 1:25,
@@ -118,11 +118,11 @@ p
 ```
 
 
-En la anterior gráfica se puede observar que, aunque el modelo con el mayor R^2 ajustado se consigue con 22 predictores (como ya habíamos visto), a partir de 15 predictores aproximadamente la mejoría es inapreciable. Como siempre va a ser mejor un modelo más explicable.
+En la anterior gráfica se puede observar que, aunque el modelo con el mayor R^2 ajustado se consigue con 23 predictores (como ya habíamos visto), a partir de 17 predictores aproximadamente la mejoría es inapreciable. Como siempre va a ser mejor un modelo más explicable.
 
 ```{r}
-reg_sum$adjr2[22]
-reg_sum$adjr2[15]
+reg_sum$adjr2[23]
+reg_sum$adjr2[17]
 ```
 Para el modelo de 8 predictores, los coeficientes son los siguientes:
 

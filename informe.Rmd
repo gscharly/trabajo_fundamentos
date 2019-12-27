@@ -1140,7 +1140,7 @@ housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c
 
 #El join solo se debe ejecutar una vez
 suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
-housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
+#housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
 # Hasta 1.47% de tasa de venta por barrio
 housesTrain$sell_rate_cat <- factor(cut2(housesTrain$sell_rate_suburb, g=2), labels=c("Menos_populares", "Más_populares"))
 
