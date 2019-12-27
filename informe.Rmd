@@ -531,17 +531,21 @@ housesTrain %>%
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
 
+Teniendo en cuenta el ámbito de aplicación, pensamos que aquellas viviendas que estén en la bahía serán más caras. Utilizando la variable *CouncilArea*, se han seleccionado aquellas zonas que rodean la bahía. 
+
+En vista de los gráficos, observamos que no hay mucha diferencia en el valor medio de las viviendas según esta variable. Además, para aquellas que no se concentran en la zona de la bahía, hay outliers, es decir, casa mucho más caras y mucho más baratas. Con esto concluímos que hay casas cuyo valor es muy alto y no se debe a que esté cercana a la bahía.
 
 ```{r}
 water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
 housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
 
-housesTrain %>% ggplot(aes(x=log_price, color=may_have_water)) + geom_density()
+p1 <- housesTrain %>% ggplot(aes(x=log_price, color=may_have_water)) + geom_density() + scale_color_manual(values = palette34)
+
+p2 <- housesTrain %>% ggplot(aes(y=log_price, fill=may_have_water)) + geom_boxplot() + scale_fill_manual(values=palette34)
+
+grid.arrange(p1, p2, nrow=1)
 ```
 
-```{r}
-housesTrain %>% ggplot(aes(x = Price, color = may_have_water)) + geom_density()
-```
 
 <br>
 
