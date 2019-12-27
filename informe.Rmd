@@ -69,7 +69,7 @@ library(reshape2)
 
 *Objetivos específicos*
 
-- Realizar un anáilis exploratorio de datos univariante para las variables cualitativas y cuantitativas.
+- Realizar un análisis exploratorio de datos univariante para las variables cualitativas y cuantitativas.
 - Realizar un análisis explotratorio multivariante de todas las variables con respecto a la variable Price.
 - Transformar las variables necesarias para su uso adecuado en un modelo de regresión lineal.
 - Detectar y tratar los datos faltantes.
@@ -1200,6 +1200,7 @@ train$Type = factor(train$Type, levels=c('h', 'u', 't'))
 train$car_cat = factor(train$car_cat, levels = c('Hasta_1_plaza', '2_o_más_plazas'))
 train$year_built_cat = factor(train$year_built_cat, levels = c('Antigua', 'Moderna', 'Desconocido'))
 train$rooms_cat = factor(train$rooms_cat, levels = c('Pequeñas','Medianas','Grandes'))
+train$sell_rate_cat = factor(train$sell_rate_cat, levels=c("Menos_populares", "Más_populares"))
 ```
 
 <br>
