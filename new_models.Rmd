@@ -70,6 +70,7 @@ train$rooms_cat = factor(train$rooms_cat, levels = c('Pequeñas','Medianas','Gra
 
 train$bed_cat = factor(train$bed_cat, levels=c("Pocos_dormitorios", "Muchos_dormitorios"))
 train$bath_cat = factor(train$bath_cat, levels=c("Pocos_baños", "Muchos_baños"))
+train$sell_rate_cat = factor(train$sell_rate_cat, levels=c("Menos_populares", "Más_populares"))
 ```
 
 
@@ -309,11 +310,45 @@ sort(abs(coefss), decreasing = T)
 ```
 
 
+```{r}
+train %>% ggplot(aes(x=sqrt_distance)) + geom_density()
+```
+
+
 # Modelo 5
 ```{r}
-model5 <- lm(log_price~sqrt_distance + log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
-summary(model5)
+check_residuals_normality <- function(model){
+  # Residuals histogram
+  qplot(model$residuals, geom = "histogram", bins = 30) + labs(title = "Histograma de residuos",x = "residual")
+  # Residuals vs predictions
+  plot(model, 1)
+  # Residuals qq plot
+  plot(model, 2)
+  # Normality test
+  lillie.test(model$residuals)
+}
 ```
+
+
+```{r}
+model5 <- lm(log_price~ sqrt_distance + log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model5)
+check_residuals_normality(model5)
+qplot(model5$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+Si probamos sin la variable de distancia el centro, observamos que el modelo falla más, pero los residuos se asemejan más a una distribución normal.
+```{r}
+model5 <- lm(log_price~log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model5)
+check_residuals_normality(model5)
+qplot(model5$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+
 ```{r}
 RSS <- c(crossprod(model5$residuals))
 MSE <- RSS / length(model5$residuals)
@@ -321,26 +356,6 @@ RMSE <- sqrt(MSE)
 RMSE
 ```
 
-
-
-```{r}
-qplot(model5$residuals, geom = "histogram",
-     bins = 30) +
-     labs(title = "Histograma de residuos",x = "residual")
-
-```
-
-
-```{r}
-plot(model5, 1)
-```
-```{r}
-plot(model5, 2)
-```
-
-```{r}
-lillie.test(model5$residuals)
-```
 
 ```{r}
 final_dataset_construction <- function(dataset, standarizer, imputationsCarforTest, imputationsLandsizeforTest){
@@ -463,5 +478,76 @@ p2 <- predictions_df %>% ggplot(aes(x=log_price)) + geom_density() + labs(title=
 grid.arrange(p1, p2, nrow=1)
 ```
 
+# Interacciones entre variables
+Se realizan distintas pruebas con interacciones entre las diferentes variables cuantitativas, tomando como base las del mejor modelo obtenido hasta ahora (R2=0.6948 con distance, 0.5868 sin distance)
+```{r distance:landsize}
+model <- lm(log_price~sqrt_distance:log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+```{r distance*landsize}
+model <- lm(log_price~sqrt_distance*log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+```{r lat:long}
+model <- lm(log_price~sqrt_distance + log_landsize + Lattitude:Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+```{r lat*long}
+model <- lm(log_price~sqrt_distance + log_landsize + Lattitude*Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+```{r lat*long_no_distance}
+model <- lm(log_price~ log_landsize + Lattitude*Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
 
 
+```{r long:distance}
+model <- lm(log_price~ log_landsize + Lattitude + Longtitude:sqrt_distance + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+```{r lat:distance}
+model <- lm(log_price~ log_landsize + Lattitude:sqrt_distance + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+```{r lat:distance}
+model <- lm(log_price~ log_landsize + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
