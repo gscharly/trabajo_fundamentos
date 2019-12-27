@@ -56,6 +56,8 @@ library(Metrics)
 library(ggmap)
 library(reshape2)
 library(dplyr)
+library(DataExplorer)
+library(foreach)
 ```
 <br>
 
@@ -82,7 +84,7 @@ Enlace a Github: https://github.com/gscharly/trabajo_fundamentos
 
 <br>
 ```{r Lectura, echo=FALSE}
-houses <- read.csv('./datasets/melb_data.csv')
+houses <- read.csv('melb_data.csv')
 cols <- ncol(houses)
 rows <- nrow(houses)
 ```
@@ -112,16 +114,18 @@ dfcol %>%
   kable_styling(bootstrap_options = c('hover'), position = 'center')
 ```
 
+
 A modo de introducción, se muestran una serie de mapas de Melbourne.
 
-En el primero, se puede observar que la mayoría de casas vendidas se concentran en el centro de la ciudad de Melbourne, pero hay casas en regiones (Victoria) que se encuentran bastante alejadas. Se ve que estas regiones son amplias, y que posiblemente el precio no solo varíe de unas a otras, si no también dentro de la misma región. Además, la ciudad destaca por la bahía de Port Phillip, hay casas vendidas que rodean esta bahía sin estar cerca del centro. Esto puede hacer pensar que el precio no tiene por qué estar directamente relacionado con la distancia al centro (variable disponible en el dataset), si no que también pueda estar influido por la posición respecto a la bahía.
+En el primero, podemos ver, de un solo golpe, cómo se distribuyen las viviendas vendidas según su región. Vemos que hay zonas de Melbourne, como la zona oeste de la bahía donde no hay viviendas registradas en nuestro data set. Se puede observar que la mayoría de casas vendidas se concentran en el centro de la ciudad de Melbourne, pero hay casas en regiones (Victoria) que se encuentran bastante alejadas. Se ve que estas regiones son amplias, y que posiblemente el precio no solo varíe de unas a otras, si no también dentro de la misma región. Además, la ciudad destaca por la bahía de Port Phillip, hay casas vendidas que rodean esta bahía sin estar cerca del centro. Esto puede hacer pensar que el precio no tiene por qué estar directamente relacionado con la distancia al centro (variable disponible en el dataset), si no que también pueda estar influido por la posición respecto a la bahía.
+
 
 ```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
 melbourne_map <- get_map(location = "melbourne", zoom = 10)
 houses_map <- houses[,c("Regionname", "Lattitude", "Longtitude")]
-houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#1B9E77", "Western Metropolitan" = "#D95F02", "Northern Metropolitan" = "#7570B3",
-                                                      "Eastern Metropolitan" = "#E7298A", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#A6761D", 
-                                                      "Northern Victoria" = "#1DA632", "Western Victoria" = "#1B849E"))
+houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#E6AB02", "Western Metropolitan" = "#A6761D", "Northern Metropolitan" = "#7570B3",
+                                                      "Eastern Metropolitan" = "#1B9E77", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#D95F02",
+                                                      "Northern Victoria" = "#E7298A", "Western Victoria" = "#666666"))
   
 ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75) + labs(title='Casas vendidas por región')
 ```
@@ -163,6 +167,7 @@ trainIndex <- createDataPartition(houses$Price, p = .8, list = FALSE, times = 1)
 housesTrain <- houses[ trainIndex,]
 housesTest <- houses[-trainIndex,]
 ```
+
 ```{r DivisiónDatosTabla}
 obsTrain <- housesTrain %>% nrow
 obsTest <- housesTest %>% nrow
@@ -230,12 +235,9 @@ tabla_frecuencias(df = data.frame(table(VarCualitativas$Month)), columna1 = 'Mon
 <br>
 En este apartado se muestran las gráficas de barras correspondientes a las frecuencias anteriores excepto para la variable *Suburb* ya que presenta 314 niveles y no ofrecería una gráfica legible.
 
-```{r paleta32, echo=FALSE}
+```{r paleta34}
 #Paleta creada a partir de Brewer Dark2
 palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
-colorDensidad <- brewer.pal(n = 4, name = 'Dark2')[4]
-colorNormal <- wes_palettes$GrandBudapest2[4]
-colorBox <- brewer.pal(n = 4, name = 'Dark2')[1]
 ```
 
 ```{r GráficaBarras}
@@ -270,22 +272,6 @@ Por otra parte, de las 8 regiones de Melbourne, hay 4 que representan el 95% de 
 
 Por último, atendiendo a *Month* y *Year*, en este dataset solo están las viviendas vendidas en los años 2016 y 2017 donde observamos una frecuencia similar en ambos años pero con diferencias según el mes.
 
-```{r UnavailableCouncil}
-housesTrain$CouncilArea[which(housesTrain$CouncilArea == '')] <- 'Unavailable'
-```
-
-
-```{r}
-water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
-housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
-
-housesTrain %>% ggplot(aes(x=log_price, color=may_have_water)) + geom_density()
-```
-
-```{r}
-housesTrain %>% ggplot(aes(x = Price, color = may_have_water)) + geom_density()
-```
-
 
 <br>
 
@@ -298,6 +284,10 @@ VarCuantitativas <- housesTrain %>% select_if(is.numeric)
 VarCuantitativas %>% describe()
 ```
 
+
+Uno de los primeros datos en el que nos fijamos en la existencia de missings en las variables de YearBuilt y BuildingArea.
+
+
 <br>
 
 ### Histogramas, densidad, asimetría y apuntamiento
@@ -307,6 +297,11 @@ VarCuantitativas %>% describe()
 A continuación obserbamos las distribuciones para cada variable cuantitativa a través de sus histogramas.
 
 ```{r HistogramaDensidad, message=FALSE, warning=FALSE}
+colorDensidad <- brewer.pal(n = 4, name = 'Dark2')[4]
+colorNormal <- palette34[14]
+colorBox <- palette34[13]
+
+
 plot_histograma <- function(df = housesTrain, dat1, dat2, xlab, ylab = "Densidad", xaes){
   ggplot(df, aes(x=xaes, label = curt), na.omit = TRUE) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) + theme_light () +
   stat_function(fun=dnorm, color=colorNormal, lwd = 1.3,
@@ -356,7 +351,7 @@ Por último,observamos que son varias las distribuciones con una fuerte curtósi
 
 __Price__
 
-Para la variable objetivo *Price*, observamos que tiene valores muy extremos, lo que hace que la distribución quede muy sesgada a la izquierda. Esta variable es claramente candidata a una transformación del tipo logaritmo, ya que además no presenta valores iguales a 0.
+Para la variable objetivo *Price*, observamos que tiene valores muy extremos, lo que hace que la distribución quede muy sesgada a la izquierda. La transformación que parece más indicada para esta variable es de tipo logaritmo, ya que, además, no presenta valores iguales a 0.
 
 ```{r transformacionPrice, message=FALSE}
 housesTrain <- housesTrain %>% mutate(log_price = log10(Price))
@@ -377,11 +372,11 @@ grid.arrange(p1, p2, nrow=1)
 ```{r transformacionPriceBox, message=FALSE}
 p1 <- housesTrain %>%
   ggplot(aes(y=Price)) +
-  geom_boxplot()
+  geom_boxplot(colour = colorBox)
 
 p2 <- housesTrain %>%
   ggplot(aes(y=log_price)) +
-  geom_boxplot()
+  geom_boxplot(colour = colorBox)
   
 grid.arrange(p1, p2, nrow=1)
 ```
@@ -393,9 +388,7 @@ housesTrain %>% ggplot(aes(sample=log_price)) + stat_qq() + stat_qq_line() + lab
 
 lillie.test(housesTrain$log_price)
 ```
-```{r warning=F}
-ks.test(housesTrain$log_price, pnorm, mean(housesTrain$log_price), sd(housesTrain$log_price))
-```
+
 
 __Distance__
 
@@ -420,11 +413,11 @@ grid.arrange(p1, p2, nrow=1)
 ```{r transformacionDistanceBox, message=FALSE}
 p1 <- housesTrain %>%
   ggplot(aes(y=Distance)) +
-  geom_boxplot()
+  geom_boxplot(colour = colorBox)
 
 p2 <- housesTrain %>%
   ggplot(aes(y=sqrt_distance)) +
-  geom_boxplot()
+  geom_boxplot(colour = colorBox)
   
 grid.arrange(p1, p2, nrow=1)
 ```
@@ -441,6 +434,7 @@ housesTrain %>%
 ggplot(aes(sample=Lattitude)) + stat_qq() + stat_qq_line() + labs(title='qq-plot Lattitude')
 lillie.test(housesTrain$Lattitude)
 ```
+
 ```{r normalidadLongtitude}
 housesTrain %>% 
 ggplot(aes(sample=Longtitude)) + stat_qq() + stat_qq_line() + labs(title='qq-plot Longtitude')
@@ -453,7 +447,7 @@ lillie.test(housesTrain$Longtitude)
 
 <br>
 
-Siguiendo con nuestro objetivo principal, es decir predecir el precio de una vivienda en base a sus características, vamos a analizar la relación de las variables del dataset con respecto a la variable *Price*. Aunque se verá más adelante, se tomará el logaritmo del precio para su comparación con las variables categóricas, por presentar una distribución más cercana a una distribución normal.
+Siguiendo con nuestro objetivo principal, es decir predecir el precio de una vivienda en base a sus características, vamos a analizar la relación de las variables del dataset con respecto a la variable *Price*. Siguiendo con la transformación realizada sobre esta variable, se tomará el logaritmo del precio para su comparación con el resto de variables, por presentar una distribución más cercana a una distribución normal.
 
 <br>
 
@@ -461,7 +455,7 @@ Siguiendo con nuestro objetivo principal, es decir predecir el precio de una viv
 
 <br>
 
-Empezaremos examinando la variable Price en función de las variables categóricas que tenemos. 
+Empezaremos examinando la variable logaritmo de Price en función de las variables categóricas que tenemos. 
 
 __Regionname__
 
@@ -470,7 +464,7 @@ Distribución de precio en función de la región. Western Victoria parece que t
 ```{r RegionPrice}
 housesTrain %>% 
   ggplot(aes(x=log_price, colour=Regionname)) +
-  geom_density() + scale_fill_manual(values=palette34)
+  geom_density() + scale_colour_manual(values=palette34)
 
 housesTrain %>%
   ggplot(aes(y=log_price, fill=Regionname)) +
@@ -491,16 +485,17 @@ Presumiblemente, parece que el tipo de vivienda sí discrimina con respecto al p
 ```{r TypePrice}
 housesTrain %>%
   ggplot(aes(x=log_price, colour=Type)) +
-  geom_density() + scale_fill_manual(values=palette34)
+  geom_density() + scale_colour_manual(values=palette34)
 
 housesTrain %>% 
   ggplot(aes(y=log_price, fill=Type)) +
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
 
-Como comprobación, se compara la variable numérica *Rooms* con *Type*, para ver cuantas habitaciones tienen los distintos tipos de casa. Podemos observar que las casas de tipo u son las que menos habitaciones tienen (1, 2 o 3), seguidas de las casas tipo t (2, 3 y 4) y terminando con las h, que tienen todos los posibles valores de habitaciones.
+Como comprobación, se compara la variable numérica *Rooms* con *Type*, para ver cuantas habitaciones tienen los distintos tipos de casa y así comprender mejor qué implica la variable *Type*. Podemos observar que las casas de tipo u son las que menos habitaciones tienen (1, 2 o 3), seguidas de las casas tipo t (2, 3 y 4) y terminando con las h, que tienen todos los posibles valores de habitaciones.
+
 ```{r roomsType}
-housesTrain %>% ggplot(aes(x=Rooms, fill=Type)) + geom_histogram()
+housesTrain %>% ggplot(aes(x=Rooms, fill=Type)) + geom_histogram() + scale_fill_manual(values=palette34)
 ```
 
 
@@ -519,7 +514,7 @@ La gráfica tomando el logaritmo permite una visualización mejor donde vemos pr
 ```{r PriceMethod}
 housesTrain %>% 
   ggplot(aes(x=log_price, colour=Method)) +
-  geom_density() + scale_fill_manual(values=palette34)
+  geom_density() + scale_colour_manual(values=palette34)
 
 housesTrain %>%
   ggplot(aes(y=log_price, fill=Method)) +
@@ -536,13 +531,25 @@ housesTrain %>%
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
 
+
+```{r}
+water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
+housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
+
+housesTrain %>% ggplot(aes(x=log_price, color=may_have_water)) + geom_density()
+```
+
+```{r}
+housesTrain %>% ggplot(aes(x = Price, color = may_have_water)) + geom_density()
+```
+
 <br>
 
 ### Variables cuantitativas
 
 <br>
 
-A continuación, examinaremos las distintas variables numéricas, y su relación con la que será nuestra columna objetivo (Price).
+A continuación, examinaremos las distintas variables numéricas, y su relación con la que será nuestra columna objetivo *Price* tomando su logaritmo.
 Lo primero que hacemos es comprobar las correlaciones de las variables numéricas.
 
 ```{r heatmapCorr, fig.width=15, fig.height=10, message=FALSE}
@@ -559,11 +566,12 @@ get_upper_tri <- function(cormat){
     cormat[lower.tri(cormat)]<- NA
     return(cormat)
 }
+
 upper_tri <- get_upper_tri(cormat)
 melted_cormat <- melt(upper_tri, na.rm = TRUE)
 ggheatmap <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
  geom_tile(color = "white")+
- scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+ scale_fill_gradient2(low = "#1EA6A2", high = "#A61E22", mid = "white", 
    midpoint = 0, limit = c(-1,1), space = "Lab", 
    name="Pearson\nCorrelation") +
   theme_minimal()+ 
@@ -637,7 +645,7 @@ housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), 
 
 housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>%
   ggplot(aes(x=log_price, colour=rooms_cat)) +
-  geom_density() + scale_fill_manual(values=palette34)
+  geom_density() + scale_colour_manual(values=palette34)
 
 housesTrain %>%
   mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>% 
@@ -654,7 +662,7 @@ housesTrain %>%
 housesTrain %>% 
   mutate(rooms_cat = cut2(Rooms, g=5)) %>%
   ggplot(aes(x=log_price, colour=rooms_cat)) +
-  geom_density() + scale_fill_manual(values=palette34)
+  geom_density() + scale_colour_manual(values=palette34)
 ```
 
 En ambas categorizaciones se observa cómo son más numerosas las viviendas con 1, 2 o 3 habitaciones y cómo la cola derecha la la distribución es mayor cuanto mayor es el número de habitaciones. Nos centraremos en la división en 3 grupos, que corresponderían con casas Pequeñas, Medianas y Grandes.
@@ -676,7 +684,7 @@ housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2)) %>% select(ba
 
 housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2))  %>%
   ggplot(aes(x=log_price, colour=bath_cat)) +
-  geom_density() + scale_fill_manual(values=palette34)
+  geom_density() + scale_colour_manual(values=palette34)
 
 housesTrain %>%
   mutate(bath_cat = cut2(housesTrain$Bathroom, g=2)) %>% 
@@ -704,7 +712,7 @@ housesTrain %>%
   filter(Bedroom2!=20) %>%
   mutate(bed_cat = cut2(Bedroom2, g=3))  %>%
   ggplot(aes(x=log_price, colour=bed_cat)) +
-  geom_density() + scale_fill_manual(values=palette34)
+  geom_density() + scale_colour_manual(values=palette34)
 
 housesTrain %>%
   filter(Bedroom2!=20) %>%
@@ -729,19 +737,19 @@ housesTrain %>%
 
 ```{r Car2Grupos}
 housesTrain %>%
-  mutate(car_cat = cut(Car, breaks = c(0,2,9), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
   select(car_cat) %>%
   table()
 
 housesTrain %>% 
   na.omit() %>%
-  mutate(car_cat = cut(Car, breaks = c(0,2,9), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
   ggplot(aes(x=log_price, colour=car_cat)) +
-  geom_density() + scale_fill_manual(values=palette34)
+  geom_density() + scale_colour_manual(values=palette34)
 
 housesTrain %>% 
   na.omit() %>%
-  mutate(car_cat = cut(Car, breaks = c(0,2,9), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
   ggplot(aes(y=log_price, fill=car_cat)) +
   geom_boxplot() + scale_fill_manual(values=palette34)
 ```
@@ -772,10 +780,6 @@ Lo primero que hacemos con esta variable será extraer el año, ya que viene en 
 
 
 ```{r CrearSellYear}
-housesTrain$sellYear <- separate(housesTrain, Date, c('Day','Month', 'Year'), sep = '/')$Year
-#housesTrain$sellYear <- factor(housesTrain$year, levels=c("2016", "2017"))
-```
-```{r}
 housesTrain$sellYear <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$year
 housesTrain$sellYear <-factor(housesTrain$sellYear, levels=c("2016", "2017"))
 ```
@@ -788,18 +792,40 @@ describe(housesTrain$sellYear)
 ```{r SellYearPrice, message=FALSE}
 housesTrain %>% 
   ggplot(aes(x=log_price, colour=sellYear)) +
-  geom_density()
+  geom_density() + scale_colour_manual(values=palette34)
 
-housesTrain %>%
+p <- housesTrain %>%
   select(sellYear, log_price) %>%
-  ggpairs
+  ggpairs(ggplot2::aes(colour=sellYear, alpha=0.1))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+
 ```
 
 
 ¿Y con otras variables?
 Parece que en 2017 se vendieron casa más alejadas del centro.
+
 ```{r message=FALSE}
-housesTrain %>% select(sqrt_distance, Lattitude, Longtitude, sellYear) %>% ggpairs(columns=1:3, ggplot2::aes(colour=sellYear, alpha=0.1))
+p <- housesTrain %>% select(sqrt_distance, Lattitude, Longtitude, sellYear) %>% ggpairs(columns=1:3, ggplot2::aes(colour=sellYear, alpha=0.1))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values=palette34) +
+        scale_color_manual(values=palette34)  
+  }
+}
+
+p
 ```
 
 Probamos a analizar el mes por si nos da información adicional. Vemos que no hay ventas de casas en Enero para ningún año.
@@ -811,7 +837,7 @@ housesTrain$sellMonth <- factor(housesTrain$sellMonth)
 ```
 
 ```{r message=FALSE}
-housesTrain %>% ggplot(aes(y=Price, color=sellMonth)) + geom_boxplot() + scale_fill_manual(values=palette34)
+housesTrain %>% ggplot(aes(y=Price, color=sellMonth)) + geom_boxplot() + scale_colour_manual(values=palette34)
 ```
 
 __PropertyCount__
@@ -827,9 +853,11 @@ Esta variable nos informa de todas las propiedades que hay en cada barrio. Se pu
 - Combinar esta información con el número de casas vendidas por barrio, obtener la tasa de venta en cada barrio, y ver si hay barrios más populares que otros en cuanto a ventas.
 
 Diviendo en 3 grupos parecidos, la primera opción no parece arrojar ninguna luz sobre el precio de la vivienda.
+
 ```{r}
 housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=10)) %>% select(property_count_cat) %>% table()
-housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=10)) %>% ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
+
+housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=10)) %>% ggplot(aes(x=log_price, color=property_count_cat)) + geom_density() + scale_colour_manual(values=palette34)
 ```
 
 Con la tasa de casas vendidas por barrio tampoco se diferencia demasiado. En todo caso, habría que probar con más categorías, pero se acabaría alcanzando el número distinto de barrios que hay.
@@ -838,7 +866,7 @@ Con la tasa de casas vendidas por barrio tampoco se diferencia demasiado. En tod
 suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
 housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
 housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>% select(property_count_cat) %>% table() 
-housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>% ggplot(aes(x=log_price, color=property_count_cat)) + geom_density()
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>%  ggplot(aes(x=log_price, color=property_count_cat)) + geom_density() + scale_colour_manual(values=palette34)
 ```
 
 Tampoco parece que el hecho de que el barrio sea más "popular" (en cuanto a número de viviendas vendidas) sea influyente para el precio de venta de las mismas.
@@ -865,10 +893,20 @@ aggr_plot <- aggr(housesTrain[,cols_na], col=c('#666666','#E6AB02'), numbers=TRU
                   ylab=c("Histograma de datos faltantes","Patrón de co-ocurrencia"))
 
 ```
+```{r porcentajeFaltantes, echo=FALSE}
+porc_falt <- housesTrain[cols_na]
+pPorcFalt <- plot_missing(porc_falt, group = list("Good" = 0.05, "Ok" = 0.3, "Bad" = 0.8))
+```
+
+
+```{r plotPrcFalt, message=FALSE}
+pPorcFalt + scale_fill_manual(values=c(palette34[6], palette34[16], palette34[22]))
+```
+
 
 A modo de resumen respecto a los datos faltantes podemos decir que:
 
-- Para la variable *BuildingArea*, el 47% de los valores (5145 de 10865) son NaNs, y el 0.11% son 0. En total, tendríamos 47.11% de valores informados.
+- Para la variable *BuildingArea*, el 47% de los valores (5152 de 10865) son NaNs, y el 0.11% son 0. En total, tendríamos 47.11% de valores informados.
 
 - Para la variable *YearBuilt*, el 40% de los valores son NaNs.
 
@@ -970,11 +1008,11 @@ p1 <- housesTrain %>% select(Landsize) %>%
   na.omit() %>%
   mutate(log_landsize = log10(Landsize)) %>%
   ggplot(aes(y=log_landsize)) +
-  geom_boxplot() + labs(y = 'log_landsize inicial')
+  geom_boxplot(colour = colorBox) + labs(y = 'log_landsize inicial')
 
 p2 <- imputationsLogLandsize %>% select(log_landsize) %>%
   ggplot(aes(y=log_landsize)) +
-  geom_boxplot() + labs(y = 'log_landsize imputado')
+  geom_boxplot(colour = colorBox) + labs(y = 'log_landsize imputado')
 
 grid.arrange(p1, p2, nrow=1)
 ```
@@ -1010,7 +1048,7 @@ Se podría intentar categorizar la variable (ya vimos que se puede dividir en 2 
 
 ```{r}
 housesTrain$car_cat = housesTrain %>%
-  mutate(car_cat = addNA(cut(Car, breaks = c(0,2,9), labels = c("0 o 1 plaza", "2 o más"), include.lowest = TRUE, right = FALSE))) %>%
+  mutate(car_cat = addNA(cut(Car, breaks = c(0,2,20), labels = c("0 o 1 plaza", "2 o más"), include.lowest = TRUE, right = FALSE))) %>%
   select(car_cat) 
 
 housesTrain$car_cat %>% table
@@ -1037,9 +1075,12 @@ ggplot(data=imputationCouncilArea, aes(x=CouncilArea, fill = CouncilArea)) +    
   theme(axis.text.x=element_blank())
 
 
-imputationCouncilArea %>% select(c("Price", "CouncilArea")) %>%
+box_coun <- imputationCouncilArea %>% select(c("Price", "CouncilArea")) %>%
   ggplot(aes(y=Price, fill=CouncilArea)) +
-  geom_boxplot()
+  geom_boxplot() +
+  scale_fill_manual(values=palette34) 
+
+# fig.width=15, fig.height=4
 ```
 
 __YearBuilt__
@@ -1064,28 +1105,11 @@ year_categories %>%
 
 year_categories %>%
   ggplot(aes(x=log_price, colour=year_cat)) +
-  geom_density()
+  geom_density() + scale_colour_manual(values = palette34)
 
 year_categories %>%
   ggplot(aes(y=log_price, fill=year_cat)) +
-  geom_boxplot()
-```
-Si se prueba a imputar respecto a las coordenadas:
-
-```{r imputarYearBuilt}
-imputationsYearBuilt <- housesTrain %>% select(Lattitude, Longtitude, YearBuilt) %>% VIM::kNN(variable='YearBuilt')
-
-year_categoriesImp <- imputationsYearBuilt %>% mutate(year_cat2 = cut2(YearBuilt, g=2))
-
-year_categoriesImp %>%
-  select(year_cat2) %>% table()
-
-year_categoriesImp$log_price <- housesTrain$log_price
-
-year_categoriesImp %>%
-          ggplot(aes(x=log_price, colour=year_cat2)) +
-          geom_density()
-
+  geom_boxplot() + scale_fill_manual(values = palette34)
 ```
 
 
@@ -1098,8 +1122,8 @@ year_categoriesImp %>%
 A modo de resumen, se contemplan las siguientes transformaciones de las variables cuantitativas disponibles:
 * Transformación logarítmica de *Landsize* y *Price* (variable target, cambiaría interpretabilidad, pero puede mejorar predicción)
 * Transformación de raíz cuadrada de *Distance*
-* Categorización de *Rooms*, *YearBuilt* y *Car*
-* Reescalado de variables cuantitativas
+* Categorización de *Rooms*, *YearBuilt*, *Car* y *Propertycount*
+* Reescalado de variables cuantitativas (estandarización)
 
 ```{r cuantitative_transformations}
 # Filtros e imputaciones (YearBuilt categórica)
@@ -1136,7 +1160,7 @@ housesTrain$bath_cat <- factor(cut2(housesTrain$Bathroom, g=2), labels=c("Pocos_
 #De 0 a 3 dormitorios
 housesTrain$bed_cat <- factor(cut2(housesTrain$Bedroom2, g=2), labels=c("Pocos_dormitorios", "Muchos_dormitorios"))
 #0-1 y 2 o más
-housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,9), labels = c("Pocas_plazas", "Muchas_plazas"), include.lowest = TRUE, right = FALSE)
+housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,20), labels = c("Pocas_plazas", "Muchas_plazas"), include.lowest = TRUE, right = FALSE)
 
 #El join solo se debe ejecutar una vez
 suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
@@ -1187,6 +1211,7 @@ levels(housesTrainFinal$sell_rate_cat)
 ```
 
 <br>
+
 Con todo imputado y categorizado, podemos realizar más análisis multivariantes, combinando las nuevas variables.
 
 En el siguiente gráfico se puede observar que las casas más pequeñas están más cercanas al centro, y que además tienen un menor *Landsize*. Con respecto al precio, se hace más evidente la relación con la distancia: si la casa es grande y está muy cercana al centro, es más cara.
@@ -1224,24 +1249,26 @@ housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Method) %>% 
 
 <br>
 
-Anteriormente hemos preseleccionado ciertas variables después de la limpieza y análisis inicial de nuestro conjunto de datos. En base al exploratorio realizado, hemos visto que no hay ninguna correlación lineal evidente entre las variables cuantitativas y la variable objetivo. Por tanto, vamos a aplicar diversos métodos de selección de variables para encontrar la mejor combinación posible.Actualmente disponemos de un total de 10 variables explicativas:
+Anteriormente hemos preseleccionado ciertas variables después de la limpieza y análisis inicial de nuestro conjunto de datos. En base al exploratorio realizado, hemos visto que no hay ninguna correlación lineal evidente entre las variables cuantitativas y la variable objetivo. Por tanto, vamos a aplicar diversos métodos de selección de variables para encontrar la mejor combinación posible. Actualmente disponemos de un total de 13 variables explicativas, de las cuales tan solo 4 son cuantitativas. Hay que añadir además que, si se codifican las variables categóricas como dummie, el modelo podría llegar a tener 24 variables.
 
 ```{r cargadatos, echo=F}
-train <- read.csv('train_set.csv')
+train <- read.csv('train_set_new_variables.csv')
 train %>% select(-c(log_price,Price)) %>% names()
 ```
 
-Inicialmente vamos a utilizar como target la variable *Price* en lugar de su transformación logarítmica:
+Inicialmente se probó a utilizar la variable *Price* directamente como target. Sin embargo, en base a lo visto en el EDA acerca de la transformación conveniente de esta variable, el modelo de regresión lineal múltiple tiene mejores resultados si se utiliza *log_price* como variable objetivo. Por tanto, solo se muestran las técnicas de selección de variables aplicadas a modelos con esta variable como objetivo.
 
 ```{r echo=F}
-train <- train %>% select(-log_price)
+train <- train %>% select(-Price)
 # Necesito redefinirlos porque se me descolocaban los niveles al cargar el trainset
 train$Regionname = factor(train$Regionname, levels=c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
 train$Method = factor(train$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
 train$Type = factor(train$Type, levels=c('h', 'u', 't'))
-train$car_cat = factor(train$car_cat, levels = c('Hasta_1_plaza', '2_o_más_plazas'))
+train$car_cat = factor(train$car_cat, levels = c("Pocas_plazas", "Muchas_plazas"))
 train$year_built_cat = factor(train$year_built_cat, levels = c('Antigua', 'Moderna', 'Desconocido'))
 train$rooms_cat = factor(train$rooms_cat, levels = c('Pequeñas','Medianas','Grandes'))
+train$bed_cat = factor(train$bed_cat, levels=c("Pocos_dormitorios", "Muchos_dormitorios"))
+train$bath_cat = factor(train$bath_cat, levels=c("Pocos_baños", "Muchos_baños"))
 train$sell_rate_cat = factor(train$sell_rate_cat, levels=c("Menos_populares", "Más_populares"))
 ```
 
@@ -1254,28 +1281,28 @@ train$sell_rate_cat = factor(train$sell_rate_cat, levels=c("Menos_populares", "M
 El primer método que hemos utilizado es el de best subset selección. El resumen de todos los modelos examinados se muestra a continuación:
 
 ```{r}
-best_subsets_models <- regsubsets(Price~., data = train, nvmax = 22)
+best_subsets_models <- regsubsets(log_price~., data = train, nvmax = 25)
 reg_sum <- summary(best_subsets_models)
 reg_sum
 ```
-Para evaluar los resultados obtenidos, se ha observado el coeficiente {R{2}} ajustado asociado a cada modelo:
+Para evaluar los resultados obtenidos, se ha observado el coeficiente R2 ajustado asociado a cada modelo:
 
 ```{r}
 reg_sum$adjr2
 which.max(reg_sum$adjr2)
 ```
-A juzgar por los resultados, el mejor modelo es el que consta de 20 variables. 
+A juzgar por los resultados, el mejor modelo es el que consta de 23 variables. 
 
-Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo posible sería a través del siguiente gráfico, donde además del R**2 ajustado se muestran otras estimaciones de la bondad de ajuste de los modelos:
+Otra manera más gráfica de ver de cuántos predictores consta el mejor modelo posible sería a través del siguiente gráfico, donde además del R2 ajustado se muestran otras estimaciones de la bondad de ajuste de los modelos:
 
 ```{r fig.align='center'}
 for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_subsets_models, scale=metric)}
 ```
 
-En los anteriores gráficos se puede observarque las variables que más aparecen en general son la distancia al centro (*sqrt_distance*), el número de habitaciones y el tipo de vivienda. También se puede observar que la mejoría del modelo es casi imperceptible a partir de un determinado número de variables.
+En los anteriores gráficos se puede observar que las variables que más aparecen en general son la distancia al centro (*sqrt_distance*), el número de habitaciones y el tipo de venta. También se puede observar que la mejoría del modelo es casi imperceptible a partir de un determinado número de variables. Además, para el mejor modelo solo se quedan sin incluir ciertas categorías de variables cualitativas (año de venta desconocido y una región). También se puede apreciar como *log_landsize* podría ser quitada del modelo sin mayor significancia en la métrica.
 
 ```{r}
-p <- ggplot(data = data.frame(n_predictores = 1:22,
+p <- ggplot(data = data.frame(n_predictores = 1:25,
                               R_ajustado = reg_sum$adjr2),
             aes(x = n_predictores, y = R_ajustado)) +
     geom_line() +
@@ -1284,7 +1311,7 @@ p <- p + geom_point(aes(
                     x = n_predictores[which.max(reg_sum$adjr2)],
                     y = R_ajustado[which.max(reg_sum$adjr2)]),
                     colour = "red", size = 3)
-p <- p +  scale_x_continuous(breaks = c(0:22)) + 
+p <- p +  scale_x_continuous(breaks = c(0:25)) + 
           theme_bw() +
           labs(title = 'R2_ajustado vs número de predictores (Best Subset)', 
                x =  'número predictores')
@@ -1292,16 +1319,16 @@ p
 ```
 
 
-En la anterior gráfica se puede observar que, aunque el modelo con el mayor R^2 ajustado se consigue con 20 predictores (como ya habíamos visto), a partir de 10 predictores aproximadamente la mejoría es inapreciable. Como siempre va a ser mejor un modelo más explicable.
+En la anterior gráfica se puede observar que, aunque el modelo con el mayor R2 ajustado se consigue con 23 predictores (como ya habíamos visto), a partir de 17 predictores aproximadamente la mejoría es inapreciable. Como siempre va a ser mejor un modelo más explicable.
 
 ```{r}
-reg_sum$adjr2[20]
-reg_sum$adjr2[10]
+reg_sum$adjr2[23]
+reg_sum$adjr2[17]
 ```
-Para el modelo de 10 predictores, los coeficientes son los siguientes:
+Para el modelo de 17 predictores, los coeficientes son los siguientes:
 
 ```{r}
-coef(object = best_subsets_models, id = 10)
+coef(object = best_subsets_models, id = 17)
 ```
 
 <br>
@@ -1314,7 +1341,7 @@ Otra de las técnicas utilizadas es la de *Forward Selection*, en la que se part
 
 
 ```{r}
-best_forward_models <- regsubsets(Price~., data = train, nvmax = 22, method = 'forward')
+best_forward_models <- regsubsets(log_price~., data = train, nvmax = 25, method = 'forward')
 reg_forward_sum <- summary(best_forward_models)
 reg_forward_sum
 ```
@@ -1325,26 +1352,27 @@ for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_forward_models, scale=me
 ```
 
 ```{r}
-p <- ggplot(data = data.frame(n_predictores = 1:22,
+p <- ggplot(data = data.frame(n_predictores = 1:25,
                               R_ajustado = reg_forward_sum$adjr2),
             aes(x = n_predictores, y = R_ajustado)) +
     geom_line() +
     geom_point()
+
 p <- p + geom_point(aes(
                     x = n_predictores[which.max(reg_forward_sum$adjr2)],
                     y = R_ajustado[which.max(reg_forward_sum$adjr2)]),
                     colour = "red", size = 3)
-p <- p +  scale_x_continuous(breaks = c(0:22)) + 
+p <- p +  scale_x_continuous(breaks = c(0:25)) + 
           theme_bw() +
           labs(title = 'R2_ajustado vs número de predictores (Forward Selection)', 
                x =  'número predictores')
 p
 ```
-De nuevo se cumple que el modelo que ofrece un mayor R^2 ajustado es el que utiliza 20 predictores. Ahora se necesitaría mínimo unos 12 predictores para alcanzar un valor similar.
+De nuevo se cumple que el modelo que ofrece un mayor R^2 ajustado es el que utiliza 23 predictores. Ahora se necesitaría mínimo unos 19 predictores para alcanzar un valor similar.
 
 ```{r}
-reg_forward_sum$adjr2[12]
-coef(object = best_forward_models, id = 12)
+reg_forward_sum$adjr2[19]
+coef(object = best_forward_models, id = 19)
 ```
 
 <br>
@@ -1356,7 +1384,7 @@ coef(object = best_forward_models, id = 12)
 El último método de selección automática de variables que se ha puesto en práctica es el de *Backward Selection*. En este caso se parte de un modelo con todos los predictores y se van eliminando uno a uno (en cada paso se elimina la variable más significativa para el modelo):
 
 ```{r}
-best_backward_models <- regsubsets(Price~., data = train, nvmax = 22, method = 'backward')
+best_backward_models <- regsubsets(log_price~., data = train, nvmax = 25, method = 'backward')
 reg_backward_sum <- summary(best_backward_models)
 reg_backward_sum
 ```
@@ -1364,7 +1392,7 @@ reg_backward_sum
 for (metric in c("r2", "adjr2", "Cp", "bic")){plot(best_backward_models, scale=metric)}
 ```
 ```{r}
-p <- ggplot(data = data.frame(n_predictores = 1:22,
+p <- ggplot(data = data.frame(n_predictores = 1:25,
                               R_ajustado = reg_backward_sum$adjr2),
             aes(x = n_predictores, y = R_ajustado)) +
     geom_line() +
@@ -1373,31 +1401,37 @@ p <- p + geom_point(aes(
                     x = n_predictores[which.max(reg_backward_sum$adjr2)],
                     y = R_ajustado[which.max(reg_backward_sum$adjr2)]),
                     colour = "red", size = 3)
-p <- p +  scale_x_continuous(breaks = c(0:22)) + 
+p <- p +  scale_x_continuous(breaks = c(0:25)) + 
           theme_bw() +
           labs(title = 'R2_ajustado vs número de predictores (Forward Selection)', 
                x =  'número predictores')
 p
 ```
+
+Las conclusiones que se extraen son muy parecidas a las anteriores.
+
 ```{r}
-reg_forward_sum$adjr2[10]
-coef(object = best_forward_models, id = 10)
+reg_forward_sum$adjr2[19]
+coef(object = best_forward_models, id = 19)
 ```
-Se puede concluir, que las 3 técnicas de selección automática de variables indican que el número óptimo de predictores es alrededor de 10. Además, según estas técnicas, las variables más significativas para el modelo serían:
+Se puede concluir, que las 3 técnicas de selección automática de variables indican que el número óptimo de predictores es alrededor de 19. Además, según estas técnicas, las variables más significativas para el modelo serían:
 
 * Distancia al centro.
 * Longitud.
 * Latitud.
-* Número de habitaciones.
-* Número de plazas de garaje.
+* Tipo de casa según el número de habitaciones.
+* Tipo de casa según el número de plazas de parking.
+* Tipo de casa según el número de baños.
 * Tipo de vivienda.
 * Región.
 
-<br>
-
-# Técnicas de regularización 
+Cabe destacar que el tamaño de la parcela (*log_landsize*) parece que no aporta mucho al modelo según estos métodos.
 
 <br>
+
+# Técnicas de regularización
+
+Además de las técnicas de selección de variables anteriores, se prueban técnicas de regularización. En lo siguiente, hay que tener en cuenta que con regularización Lasso se consigue que ciertos coeficientes se anulen, mientras que con Ridge se situarían muy cercanos a 0, pero sin anularse.
 
 <br>
 
@@ -1406,15 +1440,17 @@ Se puede concluir, que las 3 técnicas de selección automática de variables in
 <br>
 
 ```{r}
- x <- model.matrix(Price~., data = train)[, -1]
-y <- train$Price
+x <- model.matrix(log_price~., data = train)[, -1]
+y <- train$log_price
 ```
 
 En la siguiente gráfica se muestra como varía el valor de los coeficientes para diferentes valores de lambda, hasta que finalmente se hacen todos 0 (esto con Ridge no ocurriría).
+
 ```{r}
 models_lasso <- glmnet(x = x, y = y, alpha = 1)
 plot(models_lasso, xvar = "lambda", label = TRUE)
 ```
+
 Para descubrir con qué valor de lambda se consigue el mejor modelo, y con cuántos predictores, el paquete 'glmnet' ofrece una función para averiguarlo. Para la evaluación de los modelos utiliza la técnica de validación cruzada (con 10 *folds* por defecto) y una función de pérdida que por defecto es el error cuadrático medio.
 
 ```{r}
@@ -1425,16 +1461,36 @@ plot(cv_lasso)
 
 En la gráfica podemos apreciar dos líneas de puntos. La primera marca el lambda para el cual se consigue el modelo con un error cuadrático medio más bajo. La segunda, marca el lambda para el cual se consigue el modelo más sencillo cuyo error se encuentra a 1 desviación estándar del mínimo.  
 
-En esta misma gráfica, podemos ver que se podría obtener un modelo con 14 predictores aproximadamente, cuyo error sería muy similar al del mejor modelo (que utiliza los 22).
+En esta misma gráfica, podemos ver que se podría obtener un modelo con 21 predictores aproximadamente, cuyo error sería muy similar al del mejor modelo (que utiliza 24, la variable eliminada sería la categoría de año de construcción desconocido). Con este método 5 variables asociadas a categorías se eliminarían.
 
 ```{r}
 set.seed(10)
 out_eleven <- glmnet(x,y,alpha=1,lambda = cv_lasso$lambda.1se)
-lasso_coef_eleven <- predict(out_eleven,type="coefficients")[1:23,]
-lasso_coef_eleven[lasso_coef_eleven!=0]
+lasso_coef_eleven <- predict(out_eleven, type="coefficients")[1:26,]
+lasso_coef_eleven
 ```
 
 La información que obtenemos al aplicar regularización Lasso es similar a la que obteníamos con las técnicas aplicadas anteriormente.
+Se obtiene un MSE de 0.01633 con 21 variables, y 0.01603 con 24.
+
+```{r}
+cv_lasso
+```
+
+Si se calculan los residuos de este modelo, se puede observar que no siguen una distribución normal.
+
+
+```{r predictLasso}
+preds_lasso <- predict(out_eleven,x)
+residuals_lasso <- y - preds_lasso
+lillie.test(residuals_lasso)
+qplot(residuals_lasso, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+rsq_lasso <- cor(y, preds_lasso)^2
+sprintf("R2 = %f", rsq_lasso)
+```
+
 
 ## Regularización Ridge 
 
@@ -1457,21 +1513,260 @@ En este caso, se muestran los coeficientes que se obtienen del modelo cuyo error
 
 ```{r}
 out_ridge <- glmnet(x,y,alpha=0,lambda = cv_ridge$lambda.1se)
-ridge_coef <- predict(out_ridge,type="coefficients")[1:23,]
+ridge_coef <- predict(out_ridge,type="coefficients")[1:26,]
 sort(abs(ridge_coef), decreasing = TRUE) 
 ```
-En este caso, la información más valiosa que nos aporta Ridge es que le otorga bastante importancia al tipo de vivienda.
+En este caso, la información más valiosa que nos aporta Ridge es que le otorga bastante importancia al tipo de vivienda. Con ambas regularizaciones se ha visto que la variable cuantitativa *log_landsize* obtiene un coeficiente muy cercano a 0.
+
+Con Ridge, se obtiene un MSE de 0.0165 con 25 variables.
+
+```{r}
+cv_ridge
+```
+
+```{r predictRidge}
+preds_ridge <- predict(out_ridge,x)
+residuals_ridge <- y - preds_ridge
+lillie.test(residuals_ridge)
+qplot(residuals_ridge, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+rsq_ridge <- cor(y, preds_ridge)^2
+sprintf("R2 = %f", rsq_ridge)
+```
+
+## Elastic Net
+
+Para compensar ambos métodos de regularización (Lasso puede llegar a "sobreregularizar" el modelo), se puede utilizar la técnica Elastic Net, mediante la cual un parámetro *alpha* pondera el peso de cada una de las dos regularizaciones sobre los datos. 
+
+Utilizando 10-fold cross validation, y eligiendo el lambda.1se, el mejor resultado se obtiene con un *alpha*=0.45. El modelo constaría de 22 variables (se eliminan variables que ya hemos visto anteriormente: año desconocido, región de Victoria Norte y método SA) y tendría un MSE de 0.01625.
+
+```{r}
+set.seed(10)
+a <- seq(0.1, 0.9, 0.05)
+
+search <- foreach(i = a, .combine = rbind) %do% {
+  cv <- cv.glmnet(x, y, alpha = i)
+  data.frame(cvm = cv$cvm[cv$lambda == cv$lambda.1se], lambda.1se = cv$lambda.1se, alpha = i, type.measure='mse')
+}
+cve <- search[search$cvm == min(search$cvm), ]
+mde <- glmnet(x, y, lambda = cve$lambda.1se, alpha = cve$alpha)
+cve
+mde
+coef(mde)
+```
+
+```{r predictElastic}
+preds_e <- predict(mde,x)
+residuals_e <- y - preds_e
+lillie.test(residuals_e)
+qplot(residuals_e, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+rsq_e <- cor(y, preds_e)^2
+sprintf("R2 = %f", rsq_e)
+```
+
+
+# Modelos de regresión lineal múltiple
+
+```{r echo=FALSE}
+check_residuals_normality <- function(model){
+  # Residuals vs predictions
+  plot(model, 1)
+  # Residuals qq plot
+  plot(model, 2)
+  # Normality test
+  lillie.test(model$residuals)
+}
+
+calculate_mse <- function(model) {
+  RSS <- c(crossprod(model$residuals))
+  MSE <- RSS / length(model$residuals)
+  return(MSE)
+}
+```
+
+Una vez ya hemos analizado completamente nuestras variables, se ha procedido ha entrenar diversos modelos manualmente y evaluar sus resultados. A continuación se van mostrando los resultados obtenidos, analizando también los residuos.
+
+## Modelo 1
+
+Como se ha comentado antes, después de probar modelos con target *Price*, se decidió utilizar la variable *log_price* como objetivo. El mejor resultado obtenido con esta primera forma fue de R2=0.54.
+
+Para el primer modelo con el nuevo target, se utilizan todas las variables con las que hemos estado trabajando, ya que con las técnicas de selección automática se ha visto que las variables que se pueden obviar son en su mayoría categorías de variables cualitativas.
+
+Observaciones:
+
+* Se obtiene un R2 = 0.6948 con un MSE = 0.0159.
+* Las variables *RegionnameNorthern_Victoria*, *RegionnameWestern_Victoria*, *year_built_catDesconocido* y *MethodSA* obtienen un p-valor elevado, con lo que no se podría rechazar la hipótesis nula de que sus coeficientes son 0. Esto ya lo hemos visto en las técnicas de selección de variables.
+* Los residuos no siguen una distribución normal. El test de normalidad tiene un p-valor muy pequeño, con lo que se podría rechazar la hipótesis de normalidad. Además, en la distribución de residuos vs predicciones aparecen outliers (debería ser uniforme entre -1 y 1), y el histograma de los residuos no llega a ser del todo normal.
+
+```{r}
+model1 <- lm(log_price~ sqrt_distance + log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model1)
+check_residuals_normality(model1)
+qplot(model1$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+mse_model <- calculate_mse(model1)
+sprintf("MSE: %f", mse_model)
+```
+
+Las razones por las que los errores no son normales pueden ser:
+
+* Relación no lineal entre entradas y salidas. Ya hemos visto que nuestras variables predictoras no tienen una correlación muy alta con la salida.
+* Distribuciones de valores de entrada. Ya se ha visto que variables como *sqrt_distance* o *log_landsize* no son del todo normales a pesar de las transformaciones aplicadas.
+
+## Modelo 2
+Para comprobar si las distribuciones de las entradas pueden afectar a la normalidad de los residuos, probamos otro modelo en el que no se incluye la variable *sqrt_distance*.
+
+Observaciones:
+
+* Como era de esperar, obtenemos un R2 menor que antes (la variable *sqrt_distance* aportaba información) con un MSE = 0.0215.
+* Ahora, la variable *log_landsize* tiene un p-valor elevado. Esto, unido a lo que se ha visto en las técnicas de selección de variables, parece indicar que esta variable no aporta información lineal acerca del precio de la vivienda.
+* Aunque el p-valor del test de normalidad de los residuos sea pequeño, es mucho mayor que antes. Esto unido a la gráfica de residuos vs predicciones, donde parece que la varianza aumenta con las predicciones (parte izq de la gráfica) pero en menor medida que antes y el histograma de los residuos, se puede establecer que los residuos siguen una distribución aproximadamente normal.
+
+```{r}
+model2 <- lm(log_price~log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model2)
+check_residuals_normality(model2)
+qplot(model2$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+mse_model2 <- calculate_mse(model2)
+sprintf("MSE: %f", mse_model2)
+```
+
+Probamos además a quitar la variable *log_landsize* para comprobar lo mencionado anteriomente.
+
+Se puede comprobar que efectivamente no hay efecto al quitar esa variable.
+
+```{r}
+model3 <- lm(log_price~Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model3)
+check_residuals_normality(model3)
+qplot(model3$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+mse_model3 <- calculate_mse(model3)
+```
+
+
+## Interacciones entre variables
+
+Por último, se prueban interacciones entre variables con el fin de mejorar el modelo.
+
+Se realizan distintas pruebas con interacciones entre las diferentes variables cuantitativas, tomando como base las del mejor modelo obtenido hasta ahora (R2=0.6948 con distance, 0.5868 sin distance).
+
+Las opciones que hemos visto que mejoran alguno de los modelos son:
+
+__Distance y landsize__
+
+
+```{r distance:landsize}
+model <- lm(log_price~sqrt_distance:log_landsize + Lattitude + Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+__Latitud y Longitud__
+
+En este caso, se combinan estas dos variables sin incluir la distancia ni el tamaño de la parcela.
+
+```{r lat*long_no_distance}
+model <- lm(log_price~Lattitude*Longtitude + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+__Regionname y rooms_cat__
+
+También se ha probado a combinar variables cualitativas.
+
+
+```{r Regionname*rooms_cat}
+model <- lm(log_price~ Lattitude  + Longtitude + Type + rooms_cat*Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train)
+summary(model)
+check_residuals_normality(model)
+qplot(model$residuals, geom = "histogram",
+     bins = 30) +
+     labs(title = "Histograma de residuos",x = "residual")
+```
+
+
+# Score sobre test
+
+Tenemos dos modelos candidatos:
+
+* Modelo 1: con un R2 mejor pero sin cumplir normalidad en los errores.
+* Modelo 2: con un R2 pero pero los errores se acercan más a una distribución normal.
+
+Probamos este último modelo, ya que las predicciones tendrán un intervalo de confianza más apropiado, y las predicciones del modelo se ajustarán más a la "realidad" (aunque fallará más).
+
+
+```{r}
+test_data <- read.csv('test_set_new_variables.csv')
+test_data <- test_data %>% select(-Price)
+best_model <- model3
+(preds <- data.frame(cbind(actual_values=test_data$log_price, predicted_values=predict(best_model,test_data))))[1:5,]
+```
+
+En la siguiente tabla se muestran los valores de diferentes medidas para el error:
+
+```{r echo=F}
+rmse <- RMSE(predict(best_model, test_data), test_data$log_price)
+r2 <- R2(predict(best_model, test_data), test_data$log_price)
+model_metrics <- data.frame(error_metrics = c('R2','MSE'), value_train = c(summary(best_model)$r.squared, calculate_mse(best_model)), value_test = c(r2, rmse^2))
+
+model_metrics
+```
+
+Se puede observar por el valor que toma R2 (superior que en train), que nuestro modelo, a pesar de que no logra un gran acierto, no sufre ningún tipo de sobreajuste.
+
+```{r}
+mean_target <- mean(test_data$log_price)
+var_target <- var(test_data$log_price)
+predictions <- predict(best_model, test_data)
+mean_predict <- mean(predictions)
+var_predict <- var(predictions)
+
+(comparison_metrics <- data.frame(metrics=c('Mean', 'Variance'), target=c(mean_target, var_target), predict=c(mean_predict, var_predict)))
+```
+
+```{r}
+p1<- test_data %>% ggplot(aes(x=log_price)) + geom_density() + labs(title='Target values')
+predictions_df <- data.frame(log_price=predictions)
+p2 <- predictions_df %>% ggplot(aes(x=log_price)) + geom_density() + labs(title='Predictions')
+
+grid.arrange(p1, p2, nrow=1)
+```
+
+# Conclusiones y líneas futuras
+- El análisis nos ha mostrado que no hay una relación lineal evidente entre las variables predictoras y el precio de la vivienda. Esta es una de las razones principales por las que se considera que el modelo da malos resultados.
+- Muchas de las variables cuantitativas disponibles se han tenido que convertir a categóricas, lo que dificulta el modelado de una regresión lineal múltiple.
+- La transformación de la variable de salida ha mejorado la performance del modelo, a costa de perder interpretabilidad.
+
+
+
+# Anexo
+
+## Modelos
+
+Una vez ya hemos analizado completamente nuestras variables, se ha procedido ha entrenar diversos modelos y evaluar sus resultados. A continuación se van mostrando los resultados obtenidos.
 
 ```{r carga de datos, echo=F}
 train <- read.csv('train_set.csv')
 train <- train %>% select(-log_price) #Voy a usar como target el Price sin transformar
 ```
 
-# Modelos
 
-Una vez ya hemos analizado completamente nuestras variables, se ha procedido ha entrenar diversos modelos y evaluar sus resultados. A continuación se van mostrando los resultados obtenidos.
-
-## Modelo 1
+### Modelo 1
 
 En este primer modelo se han utilizado las variables que más se repetían como relevantes para el modelo generalmente en todos los métodos de selección de variables empleados anteriormente. Son las siguientes:
 
@@ -1489,7 +1784,7 @@ model1 <- lm(Price~sqrt_distance + Lattitude + Longtitude + rooms_cat + Type + R
 summary(model1)
 ```
 
-## Modelo 2
+### Modelo 2
 
 Es el mismo que el primer modelo probado, pero añadiendo la variable year_cat, a pesar de que en vista a los resultados obtenidos en la parte de selección de variables no parece que sea muy influyente para los modelos. Con lo cual, las variables utilizadas por el modelo son las siguientes:
 
@@ -1507,7 +1802,7 @@ summary(model2)
 ```
 El resultado obtenido es prácticamente el mismo. De hecho, a pesar de que como era evidente el R^2 aumenta, el R^ajustado no varía respecto al modelo anterior. Además, se puede observar que los p-valores asociados a los coeficientes de las categorías de year_built son bastante altos. 
 
-## Modelo 3
+### Modelo 3
 
 En este tercer caso, se ha introducido de nuevo la variable YearBuilt, pero en este caso como númerica (previa imputación), para poder ver como varía el funcionamiento del modelo. Por lo tanto, las variables utilizadas han sido las siguientes:
 
@@ -1523,11 +1818,9 @@ En este tercer caso, se ha introducido de nuevo la variable YearBuilt, pero en e
 
 ```{r echo=F, message=F}
 #Carga de datos
-
 train_year <- read_csv('train_yearbuilt.csv') %>% select(-log_price)
 model3 <- lm(Price~sqrt_distance + Lattitude + Longtitude + YearBuilt + Type + rooms_cat + Regionname, data = train_year)
 summary(model3)
-
 ```
 
 Se puede ver que en este caso si que se mejora ligeramente la performance del modelo al añadir la variable YearBuilt como numérica.
@@ -1544,7 +1837,7 @@ par(mfrow = c(2, 2))
 plot(model3)
 ```
 
-### Normalidad de los residuos
+#### Normalidad de los residuos
 
 A continuación se muestra el diagrama Q-Q de los residuos para comprobar su normalidad:
 
@@ -1555,7 +1848,7 @@ plot(model3, 2)
 Se puede ver que para los valores más altos es cuando se empiezan a desviar de una normal. Los errores NO son normales.
 
 
-### Homogeneidad de la varianza de los residuos 
+#### Homogeneidad de la varianza de los residuos 
 
 ```{r}
 plot(model3,3)
@@ -1563,7 +1856,7 @@ plot(model3,3)
 
 En esta gráfica se ve claramente que la varianza de los residuos no es para nada constante. Esta varianza empieza a aumentar bastante para los valores más altos. Por lo tanto no se cumple el principio de homodedasticity de los mismos.
 
-### Valores influyentes
+#### Valores influyentes
 
 La siguiente gráfica muestra los puntos más influyentes para el modelo según la distancia de Cook:
 
@@ -1577,7 +1870,7 @@ plot(model3, 4, id.n = 5) #Marco los 5 puntos más influyentes según la distanc
 model_metrics %>% top_n(5, wt = .cooksd)
 ```
 
-El punto más influyente para el modelo con diferencia es el siguiente:
+EL punto más influyente para el modelo con diferencia es el siguiente:
 
 ```{r}
 housesTrain %>% filter(Price == 9000000)
@@ -1586,7 +1879,7 @@ housesTrain %>% filter(Price == 9000000)
 Se puede ver que está bastante alejado del centro para ser tan cara. También el número de habitaciones es bastante bajo y teniendo en cuenta que estas son dos de las variables más siginificativas para el modelo, nos podemos hacer una idea de por qué este punto influye tanto en el resultado.
 
 
-## Selección de variables con log_price como target
+#### Selección de variables con log_price como target
 
 En vista a que los resultados obtenidos utilizando Price sin transformar como variable objetivo no han sido especialmente buenos, se ha decido probar a utilizar su transformación logaritmica como target. Primeramente, hemos aplicado de nuevo un par de técnicas de selección de variables para asegurarnos de que las variables más relevantes siguen siendo las mismas a pesar de cambiar de target:
 
@@ -1614,7 +1907,7 @@ sort(abs(coefss), decreasing = T)
 En vista a estos resultados, se ha determinado que las variables más relevantes son aproximadamente las mismas.
 
 
-## Modelo 4
+#### Modelo 4
 
 Con todo ello, se ha probado el modelo con las mismas variables con las que obteníamos anteriormente el mejor resultado, pero transformando el target. El resultado obtenido ha sido el siguiente: 
 
@@ -1631,14 +1924,11 @@ En el siguiente gráfico se puede ver como la varianza de los residuos es más o
 plot(model4, 1)
 ```
 
-En cuanto a la normalidad de los residuos, podemos ver que en esta ocasión sí que se ajustan bastante a una distribución normal:
+En cuanto a la normalidad de los residuos, podemos ver que en esta ocasión sí que se ajustan bastante más a una distribución normal:
 
 ```{r}
 plot(model4, 2)
 ```
-
-Al aplicar el test de normalidad de Lilliefors sobre los residuos del modelo, el p-valor devuelto es muy pequeño, lo que no nos permite rechazar la hipótesis de normalidad de estos:
-
 
 
 ```{r}
@@ -1654,45 +1944,6 @@ plot(model4, 4, id.n = 5)
 model_metrics_2 <- augment(model4)
 model_metrics_2 %>% top_n(5, wt = .cooksd)
 ```
-
-# Score sobre test
-
-Este último modelo parace ser el que consigue ajustarse de una mejor manera a los datos. Para poder evaluar realmente su correcto funcionamiento, es necesario comprobar su rendimiento sobre datos nuevos, es decir, el conjunto de test.
-
-
-```{r}
-test_data <- read.csv('test_yearbuilt.csv')
-test_data <- test_data %>% select(-Price)
-best_model <- model4
-(preds <- data.frame(cbind(actual_values=test_data$log_price, predicted_values=predict(best_model,test_data))))[1:5,]
-```
-
-En la siguiente tabla se muestran los valores de diferentes medidas para el error:
-
-```{r echo=F}
-rmse <- RMSE(predict(best_model,test_data), test_data$log_price)
-r2 <- R2(predict(best_model,test_data), test_data$log_price)
-mae <- mae(predict(best_model,test_data), test_data$log_price)
-model_metrics <- data.frame(error_metrics = c('R2','RMSE','MAE'), value = c(r2, rmse, mae))
-
-model_metrics
-
-```
-
-Se puede observar por el valor que toma R2 (superior que en train), que nuestro modelo, a pesar de que no logra un gran acierto, no sufre ningún tipo de sobreajuste.
-
-
-
-# Conclusiones y líneas futuras
-- El análisis nos ha mostrado que no hay una relación lineal evidente entre las variables predictoras y el precio de la vivienda. Esta es una de las razones principales por las que se considera que el modelo da malos resultados.
-- Muchas de las variables cuantitativas disponibles se han tenido que convertir a categóricas, lo que dificulta el modelado de una regresión lineal múltiple.
-- La transformación de la variable de salida ha mejorado la performance del modelo, a costa de perder interpretabilidad.
-
-Como líneas de trabajo futuras se propone:
-
-* Estudiar interacciones entre variables. 
-* Generación de nuevas variables a partir de las actuales para ver si correlan en mayor medida con el target.
-
 
  
 

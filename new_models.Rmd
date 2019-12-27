@@ -407,7 +407,7 @@ final_dataset_construction <- function(dataset, standarizer, imputationsCarforTe
   levels(dataset$year_built_cat) <- c(levels(dataset$year_built_cat), 'Desconocido')
   dataset <- dataset %>% mutate_at(vars(year_built_cat), ~replace(., is.na(.), 'Desconocido'))
   #0-1 y 2 o más
-  dataset$car_cat <-cut(dataset$Car, breaks = c(0,2,9), labels = c("Pocas_plazas", "Muchas_plazas"), include.lowest = TRUE, right = FALSE)
+  dataset$car_cat <-cut(dataset$Car, breaks = c(0,2,20), labels = c("Pocas_plazas", "Muchas_plazas"), include.lowest = TRUE, right = FALSE)
   # Hasta 1 baño
   dataset$bath_cat <- factor(cut2(dataset$Bathroom, g=2), labels=c("Pocos_baños", "Muchos_baños"))
   #De 0 a 3 dormitorios
@@ -448,7 +448,7 @@ dataTest <- final_dataset_construction(housesTest, normParam,imputationsCarforTe
 ```
 
 ```{r}
-write.csv(housesTrainFinal, 'test_set_new_variables.csv', row.names=FALSE)
+write.csv(dataTest, 'test_set_new_variables.csv', row.names=FALSE)
 ```
 ```{r}
 test_data = read.csv('test_set_new_variables.csv')
