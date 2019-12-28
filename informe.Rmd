@@ -886,7 +886,7 @@ Examinamos primero qué % de los registros no tienen estos valores rellenos.
 
 Observamos que cerca del 50% de los registros tienen la variable BuildingArea sin informar, mientras que el 40% no tienen la variable YearBuilt informada. Vemos además que en el 37% de los casos, BuildingArea y YearBuilt faltan simultáneamente. El % de registros con la variable Car vacía es muy pequeño. Además, tenemos 15% de 0 en la variable Landsize, lo que podríamos considerar como valores faltantes.
 
-```{r HistFaltantes}
+```{r HistFaltantes, warning=FALSE}
 housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
 housesTrain$CouncilArea[which(housesTrain$CouncilArea == '')] <- 'Unavailable'
 housesTrain$CouncilArea[which(housesTrain$CouncilArea == 'Unavailable')] <- NA
@@ -899,8 +899,7 @@ aggr_plot <- aggr(housesTrain[,cols_na], col=c('#666666','#E6AB02'), numbers=TRU
 ```
 ```{r porcentajeFaltantes}
 porc_falt <- housesTrain[cols_na]
-pPorcFalt <- plot_missing(porc_falt, group = list("Good" = 0.05, "Ok" = 0.3, "Bad" = 0.8))
-pPorcFalt
+plot_missing(porc_falt, group = list("Good" = 0.05, "Ok" = 0.3, "Bad" = 0.8))
 ```
 
 
