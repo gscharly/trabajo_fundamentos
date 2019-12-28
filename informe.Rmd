@@ -1795,9 +1795,15 @@ grid.arrange(p1, p2, nrow=1)
 ```
 
 # Conclusiones y líneas futuras
-- El análisis nos ha mostrado que no hay una relación lineal evidente entre las variables predictoras y el precio de la vivienda. Esta es una de las razones principales por las que se considera que el modelo da malos resultados.
+- El análisis nos ha mostrado que no hay una relación lineal evidente entre las variables predictoras y el precio de la vivienda. Esta es una de las razones principales por las que se considera que el modelo no da los mejores resultados, sobretodo al analizar los residuos.
 - Muchas de las variables cuantitativas disponibles se han tenido que convertir a categóricas, lo que dificulta el modelado de una regresión lineal múltiple.
 - La transformación de la variable de salida ha mejorado la performance del modelo, a costa de perder interpretabilidad.
+
+Como líneas futuras:
+
+- Identificar una variable/variables para utilizar el dataset en un problema de clasificación (tipo de casa? método de venta de casa?)
+- Previsiblemente, un modelo como un árbol de decisión o ensembles de arboles (tipo Random Forest) aplicado al problema de predicción del precio ofrezca mejores resultados, al trabajar mejor con variables categóricas.
+- Estudiar si otras variables como el código postal, barrio o vendedor pueden transformarse en menos categorías para ser aprovechable en modelos.
 
 <br>
 
