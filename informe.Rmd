@@ -1809,9 +1809,9 @@ Como líneas futuras:
 
 # Ejercicio extra: ¿Cómo aumentar el precio un 10%?
 
-Para este ejercicio, se eligen varias casas del dataset, y se proponen cambios en las variables para que el precio de venta se incremente en un 10%. Al tener nuestro modelo solo 2 variables cuantitativas (las coordenadas), se calculará también el incremento que supondría un cambio de categoría en algunas de las variables.
+Para este ejercicio, se eligen al azar varias casas del dataset, y se proponen cambios en las variables de entrada del modelo para que el precio de venta se incremente en un 10%. Al tener nuestro modelo solo 2 variables cuantitativas (las coordenadas), se calculará también el incremento que supondría un cambio de categoría en algunas de las variables.
 
-Al ser las variables cuantitativas de este modelo en especial las coordenadas, no tendría mucho sentido hablar de desplazamientos de este-oeste y de norte-sur por separado. Hay que tener en cuenta que si las coordenadas varían, también lo pueden hacer algunas categorías, como *Regionname* o *sell_rate*. Además, está el problema obvio de que si los cambios son grandes las coordenadas se pueden salir de la ciudad, o acabar en el mar.
+Al ser las variables cuantitativas de este modelo unicamente las coordenadas, no tendría mucho sentido hablar de desplazamientos de este-oeste y de norte-sur por separado. Hay que tener también en cuenta que si las coordenadas varían, también lo pueden hacer algunas categorías, como *Regionname* o *sell_rate*. Además, existe el problema obvio de que si los cambios son grandes las coordenadas se pueden salir de la ciudad, o acabar en el mar.
 
 
 ```{r}
@@ -1819,6 +1819,7 @@ coefs <- model3$coefficients
 predictions <- model.matrix(model3) %*% coefs
 coefs
 ```
+
 ## Casa 1
 
 Se muestra la información original y transformada de la casa:
@@ -1835,16 +1836,16 @@ housePruebaTrain
 Para esta casa, se propone un cambio en la latitud, manteniendo constantes los demás parámetros.
 
 ```{r}
-price_actual <- house$Price
-price_final <- price_actual*1.1
-log_price_final <- log10(price_final)
-residual <- model3$residuals[i]
+prediction_actual <- 10^predictions[i]
+prediction_final <- prediction_actual*1.1
+log_prediction_final <- log10(prediction_final)
 ```
+
 
 
 ```{r diffLattitude}
 prediction_without_var <- predictions[i] - housePruebaTrain$Lattitude*coefs['Lattitude']
-new_var_scaled <- (log_price_final - prediction_without_var - residual)/coefs['Lattitude']
+new_var_scaled <- (log_prediction_final - prediction_without_var)/coefs['Lattitude']
 new_var <- new_var_scaled*var(housesTrain$Lattitude) + mean(housesTrain$Lattitude)
 sprintf("Latitud original: %f", house$Lattitude)
 sprintf("Latitud modificada: %f", new_var)
@@ -1878,15 +1879,14 @@ housePruebaTrain
 Para esta casa, se propone un cambio en la longitud.
 
 ```{r}
-price_actual <- house$Price
-price_final <- price_actual*1.1
-log_price_final <- log10(price_final)
-residual <- model3$residuals[i]
+prediction_actual <- 10^predictions[i]
+prediction_final <- prediction_actual*1.1
+log_prediction_final <- log10(prediction_final)
 ```
 
 ```{r diffLongtitude}
 prediction_without_var <- predictions[i] - housePruebaTrain$Longtitude*coefs['Longtitude']
-new_var_scaled <- (log_price_final - prediction_without_var - residual)/coefs['Longtitude']
+new_var_scaled <- (log_prediction_final - prediction_without_var)/coefs['Longtitude']
 new_var <- new_var_scaled*var(housesTrain$Longtitude) + mean(housesTrain$Longtitude)
 sprintf("Longitud original: %f", house$Longtitude)
 sprintf("Longitud modificada: %f",new_var)
@@ -1993,7 +1993,7 @@ sprintf("El incremento en el precio es del %.2f%%", increment)
 
 ## Modelos probados
 
-Una vez ya hemos analizado completamente nuestras variables, se ha procedido ha entrenar diversos modelos y evaluar sus resultados. A continuación se van mostrando los resultados obtenidos.
+Inicialmente se habían probado múltiples modelos uitlizando la variable Price (sin transformar) como target. Estos modelos finalmente fueron descartados debido a los malos resultados obtenidos. Sin embargo, nos ha parecido interesante reflejar en este anexo el proceso que hemos ido siguiendo para conseguir los resultados finales que se han mostrado anteriormente en este informe.
 
 ```{r carga de datos, echo=F}
 train <- read.csv('train_set.csv')
