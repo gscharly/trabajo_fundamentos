@@ -1221,33 +1221,84 @@ Con todo imputado y categorizado, podemos realizar más análisis multivariantes
 En el siguiente gráfico se puede observar que las casas más pequeñas están más cercanas al centro, y que además tienen un menor *Landsize*. Con respecto al precio, se hace más evidente la relación con la distancia: si la casa es grande y está muy cercana al centro, es más cara.
 
 ```{r message=FALSE}
-housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, rooms_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=rooms_cat, alpha=0.1))
-housesTrainFinal %>% select(Lattitude, Longtitude, log_price, rooms_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=rooms_cat, alpha=0.1))
+p <- housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, rooms_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=rooms_cat, alpha=0.1))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values=palette34) +
+        scale_color_manual(values=palette34) 
+  }
+}
+
+p
 ```
 
 Con respecto al número de plazas de aparcamiento, lógicamente las casas situadas en el centro tienen menos plazas, y una parcela menor.
-```{r}
-housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, car_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=car_cat, alpha=0.1))
-housesTrainFinal %>% select(Lattitude, Longtitude, log_price, car_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=car_cat, alpha=0.1))
-```
 
 ```{r}
-housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, year_built_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=year_built_cat, alpha=0.1))
-housesTrainFinal %>% select(Lattitude, Longtitude, log_price, year_built_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=year_built_cat, alpha=0.1))
+p <- housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, car_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=car_cat, alpha=0.1))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values=palette34) +
+        scale_color_manual(values=palette34) 
+  }
+}
+
+p
 ```
 
+Atendiendo al año de construcción de la vivienda, las antiguas está ligeramente más próximas al centro, más caras y más grandes, pero esta variable no discrimina de forma marcada. 
 
 ```{r}
-housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Type) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Type, alpha=0.1))
-```
-```{r}
-housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
+p <- housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, year_built_cat) %>% ggpairs(columns=1:3, ggplot2::aes(colour=year_built_cat, alpha=0.1))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values=c(palette34[5], palette34[4], palette34[3])) +
+        scale_color_manual(values=c(palette34[5], palette34[4], palette34[3])) 
+  }
+}
+
+p
 ```
 
+Las viviendas tipo u se concentran en zonas más próximas al centro, tienen más varianza en cuanto al tamaño y cuentan con precios de venta más económicos. Las viviendas tipo h y t se encuentran más alejadas del centro. Además las de tipo h tienden a ser más caras y tener, en su mayoría, tamaños medio-grandes, mientras que las de tipo t presentan tamños más pequeños y precios muy concentrados en valores medios.
+
 ```{r}
-#write.csv(housesTrainFinal, file='train_set_new_variables.csv', row.names = FALSE)
+p <- housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Type) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Type, alpha=0.1))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values=c(palette34[6], palette34[4], palette34[8])) +
+        scale_color_manual(values=c(palette34[6], palette34[4], palette34[8])) 
+  }
+}
+
+p
 ```
 
+Por último, respecto al método de venta se observa que no discrimina mucho respecto a las otras variables. Las viviendas vendidas con una oferta del vendedor (VB) está ligeramente más cera del centro y las vendidas en una subasta ligeramente más apartadas de este. En cuanto al tamaño, las distribuciones también están bastante superpuestas, pero si se ve cómo las VB y las SP tienden a tener mañor varianza. Las vendidas con oferta (VB) también presentan mayor varianza respecto al precio y , como es esperable, las vendidas mediante subasta presentan precios más concentrados en valores medios. 
+
+```{r}
+p <- housesTrainFinal %>% select(sqrt_distance, log_landsize, log_price, Method) %>% ggpairs(columns=1:3, ggplot2::aes(colour=Method, alpha=0.1))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values=palette34) +
+        scale_color_manual(values=palette34) 
+  }
+}
+
+p
+```
+
+<br>
 
 # Aplicación de técnicas automáticas de selección de variables
 
@@ -1264,7 +1315,7 @@ Inicialmente se probó a utilizar la variable *Price* directamente como target. 
 
 ```{r echo=F}
 train <- train %>% select(-Price)
-# Necesito redefinirlos porque se me descolocaban los niveles al cargar el trainset
+
 train$Regionname = factor(train$Regionname, levels=c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
 train$Method = factor(train$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
 train$Type = factor(train$Type, levels=c('h', 'u', 't'))
@@ -1709,7 +1760,7 @@ qplot(model$residuals, geom = "histogram",
 Tenemos dos modelos candidatos:
 
 * Modelo 1: con un R2 mejor pero sin cumplir normalidad en los errores.
-* Modelo 2: con un R2 pero pero los errores se acercan más a una distribución normal.
+* Modelo 2: con un R2 peor pero los errores se acercan más a una distribución normal.
 
 Probamos este último modelo, ya que las predicciones tendrán un intervalo de confianza más apropiado, y las predicciones del modelo se ajustarán más a la "realidad" (aunque fallará más).
 
@@ -1755,6 +1806,13 @@ grid.arrange(p1, p2, nrow=1)
 - El análisis nos ha mostrado que no hay una relación lineal evidente entre las variables predictoras y el precio de la vivienda. Esta es una de las razones principales por las que se considera que el modelo da malos resultados.
 - Muchas de las variables cuantitativas disponibles se han tenido que convertir a categóricas, lo que dificulta el modelado de una regresión lineal múltiple.
 - La transformación de la variable de salida ha mejorado la performance del modelo, a costa de perder interpretabilidad.
+
+<br>
+
+# Ejercicio extra: ¿Cómo aumentar el precio un 10%?
+
+<br>
+
 
 
 
