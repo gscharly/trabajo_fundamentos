@@ -1809,10 +1809,181 @@ Como líneas futuras:
 
 # Ejercicio extra: ¿Cómo aumentar el precio un 10%?
 
+Para este ejercicio, se eligen varias casas del dataset, y se proponen cambios en las variables para que el precio de venta se incremente en un 10%. Al tener nuestro modelo solo 2 variables cuantitativas (las coordenadas), se calculará también el incremento que supondría un cambio de categoría en algunas de las variables.
+
+Al ser las variables cuantitativas de este modelo en especial las coordenadas, no tendría mucho sentido hablar de desplazamientos de este-oeste y de norte-sur por separado. Hay que tener en cuenta que si las coordenadas varían, también lo pueden hacer algunas categorías, como *Regionname* o *sell_rate*. Además, está el problema obvio de que si los cambios son grandes las coordenadas se pueden salir de la ciudad, o acabar en el mar.
+
+
+```{r}
+coefs <- model3$coefficients
+predictions <- model.matrix(model3) %*% coefs
+coefs
+```
+## Casa 1
+
+Se muestra la información original y transformada de la casa:
+```{r}
+house <- housesTrain[2,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
+house
+
+housePruebaTrain <- train[2,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
+housePruebaTrain
+```
+
+
+Para esta casa, se propone un cambio en la latitud, manteniendo constantes los demás parámetros.
+
+```{r}
+price_actual <- house$Price
+price_final <- price_actual*1.1
+log_price_final <- log10(price_final)
+residual <- model3$residuals[2]
+```
+
+
+```{r diffLattitude}
+prediction_without_var <- predictions[2] - housePruebaTrain$Lattitude*coefs['Lattitude']
+new_var_scaled <- (log_price_final - prediction_without_var - residual)/coefs['Lattitude']
+new_var <- new_var_scaled*var(housesTrain$Lattitude) + mean(housesTrain$Lattitude)
+sprintf("Latitud original: %f", house$Lattitude)
+sprintf("Latitud modificada: %f", new_var)
+```
+
+Esto significa que para aumentar el precio un 10%, la vivienda debería estar unos grados más al sur, como se muestra en el mapa.
+```{r echo=FALSE, message=FALSE}
+melbourne_map <- get_map(location = "melbourne", zoom = 13)
+```
+
+
+```{r message=FALSE}
+changes_lat <- data.frame(Lattitude=c(house$Lattitude, new_var), Longtitude=c(house$Longtitude, house$Longtitude), color=c(palette34[1], palette34[2]))
+ggmap(melbourne_map) + geom_point(aes(x = changes_lat$Longtitude, y = changes_lat$Lattitude, color=changes_lat$color), data = changes_lat, alpha=0.5, size = 3) + theme(legend.position="none")
+```
+
+
+## Casa 2
+
+Se muestra la información original y transformada de la casa:
+
+```{r}
+house <- housesTrain[10,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
+house
+
+housePruebaTrain <- train[10,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
+housePruebaTrain
+```
+
+Para esta casa, se propone un cambio en la longitud.
+
+```{r}
+price_actual <- house$Price
+price_final <- price_actual*1.1
+log_price_final <- log10(price_final)
+residual <- model3$residuals[10]
+```
+
+```{r diffLongtitude}
+prediction_without_var <- predictions[10] - housePruebaTrain$Longtitude*coefs['Longtitude']
+new_var_scaled <- (log_price_final - prediction_without_var - residual)/coefs['Longtitude']
+new_var <- new_var_scaled*var(housesTrain$Longtitude) + mean(housesTrain$Longtitude)
+sprintf("Longitud original: %f", house$Longtitude)
+sprintf("Longitud modificada: %f",new_var)
+```
+
+Esto significa que para aumentar el precio un 10%, la vivienda debería estar unos grados más al este, como se muestra en el mapa.
+
+```{r}
+changes_lon <- data.frame(Lattitude=c(house$Lattitude, house$Lattitude), Longtitude=c(house$Longtitude, new_var), color=c(palette34[1], palette34[2]))
+ggmap(melbourne_map) + geom_point(aes(x = changes_lon$Longtitude, y = changes_lon$Lattitude, color=changes_lat$color), data = changes_lat, alpha=0.5, size = 3) + theme(legend.position="none")
+```
+
+## Casa 3
+
+Se muestra la información original y transformada de la casa:
+
+```{r}
+house <- housesTrain[50,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
+house
+
+housePruebaTrain <- train[50,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
+housePruebaTrain
+```
+
+Para esta casa, se van a estudiar cambios en algunas variables categóricas, para ver cual sería el incremento en el precio.
+
+```{r echo=FALSE}
+calculate_increment <- function(prediction, prediction_final) {
+  prediction_final_price <- 10^prediction_final
+  prediction_original_price <- 10^prediction
+  incremento <- (prediction_final_price - prediction_original_price)/prediction_original_price*100
+  return(incremento)
+}
+```
+
+### Habitaciones
+Esta casa tiene 2 habitaciones. ¿Qué pasaría si se construyera otra habitación (pasar a categoría Mediana)? Esto se traduciría en sumar el coeficiente de la categoría Mediana, ya que la categoría Pequeña es el valor de referencia en el factor.
+
+```{r}
+# Pasar de pequeña a mediana
+increment <- calculate_increment(predictions[50], predictions[50] + coefs['rooms_catMedianas'])
+sprintf("El incremento en el precio es del %.2f%%", increment)
+```
+¿Y si se construyen más habitaciones hasta llegar a 4 (o más)?
+
+```{r}
+# Pasar de pequeña a grande
+increment <- calculate_increment(predictions[50], predictions[50] + coefs['rooms_catGrandes'])
+sprintf("El incremento en el precio es del %.2f%%", increment)
+```
+
+### Baños
+Esta casa tiene 1 baño. ¿Y si se construyen más? De nuevo, la categoría de referencia es Pocos baños, por lo que bastaría con sumar el coeficiente de la categoría nueva.
+```{r}
+# Pasar de pocos a muchos baños
+increment <- calculate_increment(predictions[50], predictions[50] + coefs['bath_catMuchos_baños'])
+sprintf("El incremento en el precio es del %.2f%%", increment)
+```
+
+### Año de construcción
+Esta casa se construyó en 1975, y hemos visto que las casas antiguas tenían un precio más elevado. ¿Cuál sería el incremento del precio si la casa se hubiera construido antes del año 1971? En este caso, se debe restar el coeficiente de la categoría Moderna, puesto que la categoría Antigua es la referencia.
+
+```{r}
+# Pasar de moderna a antigua
+increment <- calculate_increment(predictions[50], predictions[50] - coefs['year_built_catModerna'])
+sprintf("El incremento en el precio es del %.2f%%", increment)
+```
+
+
+## Casa 4
+
+Se muestra la información original y transformada de la casa:
+
+```{r}
+house <- housesTrain[22,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
+house
+
+housePruebaTrain <- train[22,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
+housePruebaTrain
+```
+
+### Método de venta
+¿Y si el método de venta hubiese sido venta normal (S) en vez de PI? La categoría de referencia de nuevo es S.
+
+```{r}
+# Pasar de PI a S
+increment <- calculate_increment(predictions[22], predictions[22] - coefs['MethodPI'])
+sprintf("El incremento en el precio es del %.2f%%", increment)
+```
+
+### Car
+La casa tiene pocas plazas (menos de 2). ¿Cuánto aumentaría el precio si se construyen más?
+```{r}
+# Pasar de PI a S
+increment <- calculate_increment(predictions[22], predictions[22] + coefs['car_catMuchas_plazas'])
+sprintf("El incremento en el precio es del %.2f%%", increment)
+```
+
 <br>
-
-
-
 
 # Anexo
 
