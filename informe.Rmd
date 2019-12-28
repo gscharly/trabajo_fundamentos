@@ -1823,10 +1823,11 @@ coefs
 
 Se muestra la información original y transformada de la casa:
 ```{r}
-house <- housesTrain[2,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
+i=2
+house <- housesTrain[i,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
 house
 
-housePruebaTrain <- train[2,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
+housePruebaTrain <- train[i,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
 housePruebaTrain
 ```
 
@@ -1837,12 +1838,12 @@ Para esta casa, se propone un cambio en la latitud, manteniendo constantes los d
 price_actual <- house$Price
 price_final <- price_actual*1.1
 log_price_final <- log10(price_final)
-residual <- model3$residuals[2]
+residual <- model3$residuals[i]
 ```
 
 
 ```{r diffLattitude}
-prediction_without_var <- predictions[2] - housePruebaTrain$Lattitude*coefs['Lattitude']
+prediction_without_var <- predictions[i] - housePruebaTrain$Lattitude*coefs['Lattitude']
 new_var_scaled <- (log_price_final - prediction_without_var - residual)/coefs['Lattitude']
 new_var <- new_var_scaled*var(housesTrain$Lattitude) + mean(housesTrain$Lattitude)
 sprintf("Latitud original: %f", house$Lattitude)
@@ -1866,10 +1867,11 @@ ggmap(melbourne_map) + geom_point(aes(x = changes_lat$Longtitude, y = changes_la
 Se muestra la información original y transformada de la casa:
 
 ```{r}
-house <- housesTrain[10,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
+i=10
+house <- housesTrain[i,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
 house
 
-housePruebaTrain <- train[10,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
+housePruebaTrain <- train[i,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
 housePruebaTrain
 ```
 
@@ -1879,11 +1881,11 @@ Para esta casa, se propone un cambio en la longitud.
 price_actual <- house$Price
 price_final <- price_actual*1.1
 log_price_final <- log10(price_final)
-residual <- model3$residuals[10]
+residual <- model3$residuals[i]
 ```
 
 ```{r diffLongtitude}
-prediction_without_var <- predictions[10] - housePruebaTrain$Longtitude*coefs['Longtitude']
+prediction_without_var <- predictions[i] - housePruebaTrain$Longtitude*coefs['Longtitude']
 new_var_scaled <- (log_price_final - prediction_without_var - residual)/coefs['Longtitude']
 new_var <- new_var_scaled*var(housesTrain$Longtitude) + mean(housesTrain$Longtitude)
 sprintf("Longitud original: %f", house$Longtitude)
@@ -1902,10 +1904,11 @@ ggmap(melbourne_map) + geom_point(aes(x = changes_lon$Longtitude, y = changes_lo
 Se muestra la información original y transformada de la casa:
 
 ```{r}
-house <- housesTrain[50,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
+i=50
+house <- housesTrain[i,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
 house
 
-housePruebaTrain <- train[50,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
+housePruebaTrain <- train[i,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
 housePruebaTrain
 ```
 
@@ -1925,14 +1928,14 @@ Esta casa tiene 2 habitaciones. ¿Qué pasaría si se construyera otra habitaci�
 
 ```{r}
 # Pasar de pequeña a mediana
-increment <- calculate_increment(predictions[50], predictions[50] + coefs['rooms_catMedianas'])
+increment <- calculate_increment(predictions[i], predictions[i] + coefs['rooms_catMedianas'])
 sprintf("El incremento en el precio es del %.2f%%", increment)
 ```
 ¿Y si se construyen más habitaciones hasta llegar a 4 (o más)?
 
 ```{r}
 # Pasar de pequeña a grande
-increment <- calculate_increment(predictions[50], predictions[50] + coefs['rooms_catGrandes'])
+increment <- calculate_increment(predictions[i], predictions[i] + coefs['rooms_catGrandes'])
 sprintf("El incremento en el precio es del %.2f%%", increment)
 ```
 
@@ -1940,7 +1943,7 @@ sprintf("El incremento en el precio es del %.2f%%", increment)
 Esta casa tiene 1 baño. ¿Y si se construyen más? De nuevo, la categoría de referencia es Pocos baños, por lo que bastaría con sumar el coeficiente de la categoría nueva.
 ```{r}
 # Pasar de pocos a muchos baños
-increment <- calculate_increment(predictions[50], predictions[50] + coefs['bath_catMuchos_baños'])
+increment <- calculate_increment(predictions[i], predictions[i] + coefs['bath_catMuchos_baños'])
 sprintf("El incremento en el precio es del %.2f%%", increment)
 ```
 
@@ -1949,7 +1952,7 @@ Esta casa se construyó en 1975, y hemos visto que las casas antiguas tenían un
 
 ```{r}
 # Pasar de moderna a antigua
-increment <- calculate_increment(predictions[50], predictions[50] - coefs['year_built_catModerna'])
+increment <- calculate_increment(predictions[i], predictions[i] - coefs['year_built_catModerna'])
 sprintf("El incremento en el precio es del %.2f%%", increment)
 ```
 
@@ -1959,10 +1962,11 @@ sprintf("El incremento en el precio es del %.2f%%", increment)
 Se muestra la información original y transformada de la casa:
 
 ```{r}
-house <- housesTrain[22,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
+i=22
+house <- housesTrain[i,] %>% select(Lattitude, Longtitude, Type, Rooms, Regionname, Bathroom, YearBuilt, Propertycount, Method, Car, log_price, Price)
 house
 
-housePruebaTrain <- train[22,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
+housePruebaTrain <- train[i,] %>% select(Lattitude, Longtitude, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, log_price)
 housePruebaTrain
 ```
 
@@ -1971,7 +1975,7 @@ housePruebaTrain
 
 ```{r}
 # Pasar de PI a S
-increment <- calculate_increment(predictions[22], predictions[22] - coefs['MethodPI'])
+increment <- calculate_increment(predictions[i], predictions[i] - coefs['MethodPI'])
 sprintf("El incremento en el precio es del %.2f%%", increment)
 ```
 
@@ -1979,7 +1983,7 @@ sprintf("El incremento en el precio es del %.2f%%", increment)
 La casa tiene pocas plazas (menos de 2). ¿Cuánto aumentaría el precio si se construyen más?
 ```{r}
 # Pasar de PI a S
-increment <- calculate_increment(predictions[22], predictions[22] + coefs['car_catMuchas_plazas'])
+increment <- calculate_increment(predictions[i], predictions[i] + coefs['car_catMuchas_plazas'])
 sprintf("El incremento en el precio es del %.2f%%", increment)
 ```
 
