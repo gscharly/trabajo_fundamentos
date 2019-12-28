@@ -897,14 +897,10 @@ aggr_plot <- aggr(housesTrain[,cols_na], col=c('#666666','#E6AB02'), numbers=TRU
                   ylab=c("Histograma de datos faltantes","Patrón de co-ocurrencia"))
 
 ```
-```{r porcentajeFaltantes, echo=FALSE}
+```{r porcentajeFaltantes}
 porc_falt <- housesTrain[cols_na]
 pPorcFalt <- plot_missing(porc_falt, group = list("Good" = 0.05, "Ok" = 0.3, "Bad" = 0.8))
-```
-
-
-```{r plotPrcFalt, message=FALSE}
-pPorcFalt + scale_fill_manual(values=c(palette34[6], palette34[16], palette34[22]))
+pPorcFalt
 ```
 
 
