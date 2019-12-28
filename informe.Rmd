@@ -902,15 +902,15 @@ plot_missing(porc_falt, group = list("Good" = 0.05, "Ok" = 0.3, "Bad" = 0.8))
 
 A modo de resumen respecto a los datos faltantes podemos decir que:
 
-- Para la variable *BuildingArea*, el 47% de los valores (5152 de 10865) son NaNs, y el 0.11% son 0. En total, tendríamos 47.11% de valores informados.
+- Para la variable *BuildingArea*, el 47.35% de los valores (5152 de 10865) son NaNs, y el 0.11% son 0.
 
-- Para la variable *YearBuilt*, el 40% de los valores son NaNs.
+- Para la variable *YearBuilt*, el 39.24% de los valores son NaNs.
 
 - Para la variable *Landsize*, no hay NaNs, pero el 14.3% de los valores son 0.
 
 - La variable *Car* tiene 49 valores faltantes (0.45%).
 
-- Para la variable *CouncilArea*, el 10% son desconocidos (1098)
+- Para la variable *CouncilArea*, el 10.11% son desconocidos (1098)
 
 <br>
 
@@ -1774,7 +1774,7 @@ model_metrics <- data.frame(error_metrics = c('R2','MSE'), value_train = c(summa
 model_metrics
 ```
 
-Se puede observar por el valor que toma R2 (superior que en train), que nuestro modelo, a pesar de que no logra un gran acierto, no sufre ningún tipo de sobreajuste.
+Se puede observar por el valor que toma R2 (muy parecido al de train), que nuestro modelo, a pesar de que no logra un gran acierto, no sufre ningún tipo de sobreajuste.
 
 ```{r}
 mean_target <- mean(test_data$log_price)
