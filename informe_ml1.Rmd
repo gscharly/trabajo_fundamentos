@@ -1,0 +1,1436 @@
+---
+title: "Machine Learning 1"
+author: 
+- name: Paula Santamaría Villaverde
+- name: Manuel Jesús Pertejo Lope
+- name: Carlos Gómez Sánchez
+date: "9 de febrero de 2020"
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+      section_divs: true
+    theme: "sandstone"
+    highlight: "zenburn"
+    code_folding: "hide"
+---
+
+```{r setup, echo=FALSE, eval=TRUE}
+knitr::opts_chunk$set(error = TRUE)
+```
+
+```{r imagenMelbourne, echo=FALSE}
+knitr::include_graphics("melbourneModif.png")
+```
+
+```{r librerías, message=FALSE}
+library(caret)
+library(RColorBrewer)
+library(Hmisc)
+library(VIM)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(Hmisc)
+library(gmodels)
+library(VIM)
+library(mice)
+library(wesanderson)
+library(ggplot2)
+library(GGally)
+library(gridExtra)
+library(car)
+library(moments)
+library(mplot)
+library(glmnet)
+library(plyr)
+library(tidyverse)
+library(leaps)
+library(broom)
+library(ggfortify)
+library(olsrr)
+library(nortest)
+library(Metrics)
+library(ggmap)
+library(reshape2)
+library(dplyr)
+library(DataExplorer)
+library(foreach)
+```
+<br>
+
+# Definición de objetivos
+
+<br>
+
+*Objetivo general*
+
+- Clasificar las viviendas de la ciudad de Melbourne
+
+*Objetivos específicos*
+
+- Realizar un análisis exploratorio de datos univariante para las variables cualitativas y cuantitativas.
+- Realizar un análisis explotratorio multivariante de todas las variables con respecto a la nueva variable target (*price_label*)
+- Detectar y tratar los datos faltantes.
+- Seleccionar las variables adecuadas al modelo.
+- Ajustar los distintos modelos de clasificación vistos en la asignatura.
+
+Enlace a Github: https://github.com/gscharly/trabajo_fundamentos
+
+# Lectura y descripción del dataset
+
+# Lectura y descripción del dataset
+
+<br>
+```{r Lectura, echo=FALSE}
+houses <- read.csv('./datasets/melb_data.csv')
+cols <- ncol(houses)
+rows <- nrow(houses)
+```
+
+
+```{r log_price_creation,echo=FALSE}
+houses <- houses %>% mutate(log_price = log10(Price))
+```
+
+```{r}
+kable(head(houses, 5)) %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = TRUE)
+```
+
+El presente dataset contiene información acerca del sector inmobiliario en la ciudad de Melbourne. Está compuesto por un total de 21 variables y 13580 observaciones.
+A continuación se muestra una tabla con la descripción de cada variable.
+
+```{r Descripción, echo=FALSE}
+dfcol <- data.frame(
+  'Variable' = c('Rooms', 'Price', 'Method', 'Type', 'SellerG', 'Date', 'Distance', 'Regionname', 'Propertycount', 'Bedroom2', 'Bathroom', 'Car', 'Landsize', 'BuildingArea', 'CouncilArea', 'Suburb', 'Address', 'Postcode', 'YearBuilt', 'Lattitude', 'Longtitude'),
+  'Descripción' = c('Number of rooms', 'Price in dollars', 'S - property sold; SP - property sold prior; PI - property passed in; PN - sold prior not disclosed; SN - sold not disclosed; NB - no bid; VB - vendor bid; W - withdrawn prior to auction; SA - sold after auction; SS - sold after auction price not disclosed. N/A - price or highest bid not available', 'br - bedroom(s); h - house,cottage,villa, semi,terrace; u - unit, duplex; t - townhouse; dev site - development site; o res - other residential', 'Real Estate Agent', ' Date sold', 'Distance from CBD', 'General Region (West, North West, North, North east ...etc)', 'Number of properties that exist in the suburb', 'Scraped of Bedrooms (from different source)', 'Number of Bathrooms', 'Number of carspots', 'Land Size', 'Building Size', 'Governing council for the area', 'Neighborhood', 'House direction', 'Postcode', 'Construction year', 'Lattitude', 'Longtitude')
+)
+
+dfcol %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c('hover'), position = 'center')
+```
+
+
+A modo de introducción, se muestran una serie de mapas de Melbourne.
+
+En el primero, podemos ver, de un solo vistazo, cómo se distribuyen las viviendas vendidas según su región. Vemos que hay zonas de Melbourne, como la zona oeste de la bahía donde no hay viviendas registradas en nuestro data set. Se puede observar que la mayoría de casas vendidas se concentran en el centro de la ciudad de Melbourne, pero hay casas en regiones que se encuentran bastante alejadas (Victoria). Se ve que estas regiones son amplias, y que posiblemente el precio no solo varíe de unas a otras, si no también dentro de la misma región. Además, la ciudad destaca por la bahía de Port Phillip, habiendo casas vendidas que rodean esta bahía sin estar cerca del centro. Esto puede hacer pensar que el precio no tiene por qué estar directamente relacionado con la distancia al centro (variable disponible en el dataset), si no que también podría estar influido por la posición respecto a la bahía.
+
+
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
+melbourne_map <- get_map(location = "melbourne", zoom = 10)
+houses_map <- houses[,c("Regionname", "Lattitude", "Longtitude")]
+houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#E6AB02", "Western Metropolitan" = "#A6761D", "Northern Metropolitan" = "#7570B3",
+                                                      "Eastern Metropolitan" = "#1B9E77", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#D95F02",
+                                                      "Northern Victoria" = "#E7298A", "Western Victoria" = "#666666"))
+  
+ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75) + labs(title='Casas vendidas por región')
+```
+
+Si pintamos el precio medio por cada región, se puede observar que hay regiones más caras que otras en media. Sin embargo, dentro de una misma región puede haber bastante variabilidad de precio. Si se representa el precio medio por barrio, se observa que en la región más cara efectivamente se encuentran las casas más caras, pero también otras que son más baratas. Parece que se confirma que los barrios pegados a la bahía tienen un precio más alto, aunque hay viviendas caras en el interior también.
+
+
+```{r mapsPrice, warning=FALSE}
+housesMeanPriceRegion <- houses %>% group_by(Regionname) %>% summarise(mean_price_region = mean(Price), sd_price_region = sd(Price))
+housesMeanPriceSuburb <- houses %>% group_by(Suburb) %>% summarise(mean_price_suburb = mean(Price), sd_price_suburb = sd(Price))
+
+housesPrice <- houses %>% inner_join(housesMeanPriceSuburb, by='Suburb') %>% inner_join(housesMeanPriceRegion, by='Regionname')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$mean_price_region), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Precio medio en función de la región')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$mean_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Precio medio en función del barrio')
+```
+
+A pesar de que el barrio parece indicativo y distintivo de precios más baratos y más caros, dentro de los barrios "caros" sigue habiendo variedad de precios. Esto se puede ver si se representa la desviación típica del precio por barrio:
+
+
+```{r mapsSdPrice, warning=FALSE}
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$sd_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Desviación típica del precio en función del barrio')
+```
+
+Con estos mapas, aunque más adelante se analizan las distribuciones del precio en función de estas y otras variables categóricas, se pretende introducir el hecho de que el precio de venta varía con la zona en la que está situada la vivienda y que puede ayudar a distinguir entre viviendas caras y baratas, aunque serán necesarias otras variables que expliquen el precio en aquellas zonas en las que la variabilidad del mismo sea elevada.
+
+<br>
+
+# División de los datos
+
+<br>
+
+Separaremos el archivo en dos subconjuntos: datos de entrenamiento y datos de test. El primero de los grupos se llamará *housesTrain* y el segundo *housesTest*.
+
+```{r DivisiónDatos}
+set.seed(10)
+trainIndex <- createDataPartition(houses$Price, p = .8, list = FALSE, times = 1)
+housesTrain <- houses[ trainIndex,]
+housesTest <- houses[-trainIndex,]
+```
+
+```{r DivisiónDatosTabla}
+obsTrain <- housesTrain %>% nrow
+obsTest <- housesTest %>% nrow
+dfDivision <- data.frame(
+  Subconjuntos = c('Train + Validation', 'Test'),
+  Observaciones = c(obsTrain, obsTest))
+
+dfDivision %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center')
+```
+
+
+Ahora, el subconjunto *housesTrain*, con el que trabajaremos inicialmente, está formado por 10865 observaciones.
+
+<br>
+
+# Creación de variable para clasificación
+
+Antes de comenzar con el análisis exploratorio, se va a crear una variable que sirva para convertir nuestro problema en un problema de clasificación. Para ello, vamos a utilizar la variable *Price* para diferenciar entre casas baratas y caras. Para ello, tenemos varias opciones:
+
+- Utilizar la mediana de *Price* para tener un conjunto de datos balanceado, pero donde habrá muchas muestras cercanas con las que tendremos problemas a la hora de clasificar.
+- Establecer el corte en un valor de *Price* mayor, donde tendremos un problema de desbalanceo de datos.
+
+Contemplaremos ambos casos, y la variable tendrá etiqueta 0 para las casas baratas, y etiqueta 1 para casas caras.
+
+
+```{r}
+quantiles_price <- quantile(housesTrain$Price)
+housesTrain <- housesTrain %>% mutate(price_label = Price > median(Price), price_label_high = Price > quantiles_price[4])
+```
+
+```{r}
+housesTrain %>% ggplot(aes(x=Price, color=price_label)) + geom_density()
+housesTrain %>% ggplot(aes(x=Price, color=price_label_high)) + geom_density()
+```
+
+
+
+# Análisis exploratorio de datos
+
+<br>
+
+## Resumen numérico variables cualitativas
+
+<br>
+
+En el dataset contamos con ocho variables categóricas: Suburb, Address, Type, Method, SellerG, Date, CouncilArea y Regionname. A continuación se muestra la esctructura de cada una de ellas. 
+
+```{r ResumenCualitativas}
+VarCualitativas <- housesTrain %>% select_if(Negate(is.numeric))
+str(VarCualitativas)
+```
+<br>
+
+### Tablas de frecuencias
+
+<br>
+
+Las siguientes tablas muestran la frecuencia para cada una de las variables cualitativas del dataset a excepción de la variable *Address*. Se decide no emplear esta variable ya que se cuenta con una dirección para cada vivienda y creemos que es mejor, para el anáilisis del conjunto de datos, emplear otras variables de localización como son *Regionname*, *CouncilArea* y *Suburb*.
+
+Además de esto, respecto a la variable *Date* nos parece más relevante mostrar las frecuencias por meses del año, por lo que la separamos en tres variables distintas: *day*, *mounth* y *year*.
+
+```{r DateSeparate}
+VarCualitativas <- VarCualitativas %>% separate(Date, c('Day','Month', 'Year'), sep = '/')
+```
+
+```{r FrecuenciasCualitativas}
+tabla_frecuencias <- function(df, columna1, columna2 = 'Frecuencia'){
+    knitr::kable(df, col.names = c(columna1, columna2)) %>%
+      kable_styling(bootstrap_options = 'hover', position = 'center',full_width = T)
+}
+```
+
+```{r}
+tabla_frecuencias(df = data.frame(table(VarCualitativas$Type)), columna1 = 'Type')
+tabla_frecuencias(df = data.frame(table(VarCualitativas$Method)), columna1 = 'Method')
+tabla_frecuencias(df = data.frame(table(VarCualitativas$Regionname)), columna1 = 'Regionname')
+tabla_frecuencias(df = data.frame(table(VarCualitativas$Suburb)), columna1 = 'Suburb')%>%
+      scroll_box(width = "100%", height = "350px")
+tabla_frecuencias(df = data.frame(table(VarCualitativas$Year)), columna1 = 'Year')
+tabla_frecuencias(df = data.frame(table(VarCualitativas$Month)), columna1 = 'Month')
+```
+
+<br>
+
+### Gráficas de barras
+
+<br>
+En este apartado se muestran las gráficas de barras correspondientes a las frecuencias anteriores excepto para la variable *Suburb* ya que presenta 314 niveles y no ofrecería una gráfica legible.
+
+```{r paleta34}
+#Paleta creada a partir de Brewer Dark2
+palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+```
+
+```{r GráficaBarras}
+plot_barras <-function(df = VarCualitativas, x, bar, xlab, ylab = 'Frecuencia'){
+  ggplot(data=df, aes(x=x, fill = bar)) + 
+    geom_bar(stat="count",position=position_dodge()) +
+    scale_fill_manual(values=palette34) +
+    labs(x= xlab, y = ylab, fill=NULL) + 
+    theme(axis.text.x=element_blank())
+}
+
+xlab_barras <- c('Tipo de vivienda', 'Método de venta', 'CouncilArea', 'Región', 'Tipo de casa según precio', 'Tipo de casa según precio mayor')
+var_barras <- colnames((VarCualitativas)[c(3,4,9,10,11,12)])
+i <- 1
+
+for (var in var_barras){
+  xaes_var <- VarCualitativas %>% select(var)
+  print(plot_barras(x = unlist(xaes_var),bar= unlist(xaes_var), xlab =  var))
+  i <- i + 1
+}
+
+plot_barras(x = VarCualitativas$Month,bar= VarCualitativas$Year, xlab = 'Month')
+```
+
+Respecto a la variable *Type*, observamos que el factor más representado en el dataset es el h (house,cottage,villa, semi, terrace) y que no hay viviendas de tipo bedroom.
+
+Siguiendo con la variable *Method*, podemos ver como está muy descompensada, con factores que son practicamente nulos. Esta variable hace referencia a la forma en la que se ha vendido una casa. Es una variable muy propia del dominio de la cual no sabemos leer bien su información y medir su relevancia. Es por este motivo por el que, si resulta ser una variable útil en el modelo, deberíamos informarnos de ella a través de alguna persona experta.
+
+Atendiendo a la salida, tanto numérica como gráfica, observamos que la variable *CouncilArea* presenta una categoría vacía y otra llamada Unavailable. Los datos de dichas categorías (10%) los consideramos faltantes y serán imputados en el apartado dedicado a esto.
+
+Por otra parte, de las 8 regiones de Melbourne, hay 4 que representan el 95% de casas vendidas (Southern Metropolitan, Northern Metropolitan, Western Metropolitan y Eastern Metropolitan, en ese orden).
+
+Por último, atendiendo a *Month* y *Year*, en este dataset solo están las viviendas vendidas en los años 2016 y 2017, donde observamos una frecuencia similar en ambos años pero con diferencias según el mes.
+
+
+<br>
+
+<br>
+
+## Resumen numérico variables cuantitativas
+
+<br>
+
+```{r ResumenCuantitativas}
+VarCuantitativas <- housesTrain %>% select_if(is.numeric)
+VarCuantitativas %>% describe()
+```
+
+
+Uno de los primeros datos en el que nos fijamos en la existencia de missings en las variables de YearBuilt y BuildingArea.
+
+
+<br>
+
+### Histogramas, densidad, asimetría y apuntamiento
+
+<br>
+
+A continuación obserbamos las distribuciones para cada variable cuantitativa a través de sus histogramas.
+
+```{r HistogramaDensidad, message=FALSE, warning=FALSE}
+colorDensidad <- brewer.pal(n = 4, name = 'Dark2')[4]
+colorNormal <- palette34[14]
+colorBox <- palette34[13]
+
+
+plot_histograma <- function(df = housesTrain, dat1, dat2, xlab, ylab = "Densidad", xaes){
+  ggplot(df, aes(x=xaes, label = curt), na.omit = TRUE) + geom_histogram(aes(y=..density..), colour="black", fill="white") + geom_density(alpha=.2, fill= colorDensidad) + theme_light () +
+  stat_function(fun=dnorm, color=colorNormal, lwd = 1.3,
+  args=list(mean=mean(xaes), sd=sd(xaes)))  + labs(x= xlab, y = ylab) + 
+  annotate(geom = 'text', label = dat1, x = Inf, y = Inf, hjust = 1.7, vjust = 2, parse = TRUE) +
+  annotate(geom = 'text', label = dat2, x = Inf, y = Inf, hjust = 1.7, vjust = 3.5, parse = TRUE)
+}
+
+plot_box <- function(df = VarCuantitativas, ylab, yaes){
+  ggplot(df, aes(y=yaes)) + geom_boxplot(na.rm = TRUE, colour = colorBox) + 
+    theme_light () + labs(y = ylab)
+}
+
+
+variables_not_geo <- colnames(VarCuantitativas)
+for (var in variables_not_geo){
+  aes_var <- VarCuantitativas %>% select(var)
+  curt <- round(kurtosis(VarCuantitativas[var], na.rm = TRUE), 2)
+  asim <- round(skewness(VarCuantitativas[var], na.rm = TRUE), 2)
+  dat1 <- paste0("Curtosis == ",curt)
+  dat2 <- paste0("Asimetría == ",asim)
+  p1<- plot_histograma(dat1 = dat1, dat2 = dat2, xlab = var, xaes = unlist(aes_var))
+  p2 <- plot_box(ylab = var, yaes = unlist(aes_var))
+  grid.arrange(p1, p2, nrow=1)
+}
+```
+
+En primer lugar, atendiendo a las distribuciones de las variables *Rooms*, *Bedroom*, *Bathroom*, *Car* y *YearBuilt* se concentran en torno a unos pocos valores enteros, por lo que previsiblemente las convertiremos a variables categóricas. De estas variables, observando su Boxplot y los outliers, vemos que son más las viviendas que tienen un número bajo o medio de habitaciones.
+
+Respecto a esta última variable, *YearBuilt*, vemos que hay un outlier que se corresponde con el año 1196 según la tabla describe. Este dato lo tomamos como un dato erróneo (faltante) y se establece que cualquier casa que tenga *YearBuilt* por debajo del año de fundación de la ciudad (1850) será eliminada.
+
+Por otro lado, debido a que tenemos variables que representan habitaciones dentro de una casa (*Rooms*, *Bedroom2*, *Bathroom*), vamos a comprobar primero si *Rooms* incluye a las demás. 
+
+```{r ComprobacionRooms, echo=FALSE}
+housesTrain %>% select(Rooms, Bedroom2, Bathroom) %>%
+  filter(Rooms < Bedroom2+Bathroom) %>%
+  nrow
+
+housesTrain %>% select(Rooms, Bedroom2, Bathroom) %>%
+  filter(Rooms <= Bedroom2) %>%
+  nrow
+```
+
+*Rooms* no incluye la suma de *Bedroom2* y *Bathroom*, ya que el 98% de las veces el valor es menor a la suma de ambos.
+
+Por último,observamos que son varias las distribuciones con una fuerte curtósis y asimetría (*Price*, *Distance*, *Landsize*, *BuildingArea*, *YearBuilt*) por lo estas variables son candidatas a recibir una transformación. Las tres últimas variables tienen valores faltantes, por lo que se analizarán en un apartado diferente.
+
+
+__Distance__
+
+La variable *Distance* también podría verse favorecida por una transformación, ya que tiene valores extremos en la cola de su distribución. Sin embargo, esta variable presenta valores iguales a 0 (casas que están literalmente en el centro) por lo que sería más conveniente una transformación del tipo raíz cuadrada.
+
+```{r transformacionDistance, message=FALSE}
+housesTrain <- housesTrain %>% mutate(sqrt_distance = sqrt(Distance))
+
+p1 <- housesTrain %>%
+  ggplot(aes(x=Distance)) +
+  geom_histogram(aes(y=..density..), colour="black", fill="white") +
+  geom_density(fill= colorDensidad , alpha=.2)
+
+p2 <- housesTrain %>%
+  ggplot(aes(x=sqrt_distance)) +
+  geom_histogram(aes(y=..density..), colour="black", fill="white") +
+  geom_density(fill= colorDensidad , alpha=.2)
+  
+grid.arrange(p1, p2, nrow=1)
+```
+
+```{r transformacionDistanceBox, message=FALSE}
+p1 <- housesTrain %>%
+  ggplot(aes(y=Distance)) +
+  geom_boxplot(colour = colorBox)
+
+p2 <- housesTrain %>%
+  ggplot(aes(y=sqrt_distance)) +
+  geom_boxplot(colour = colorBox)
+  
+grid.arrange(p1, p2, nrow=1)
+```
+
+Con esta transformación conseguimos reducir los valores extremos de la distribución, pero no conseguimos una distribución totalmente normal de la variable a simple vista.
+
+
+__Lattitude__ y __Longtitude__
+
+A priori, las distribuciones de estas dos variables no son normales. Se comprueba mediante tests de normalidad:
+
+```{r normalidadLattitude}
+housesTrain %>% 
+ggplot(aes(sample=Lattitude)) + stat_qq() + stat_qq_line() + labs(title='qq-plot Lattitude')
+lillie.test(housesTrain$Lattitude)
+```
+
+```{r normalidadLongtitude}
+housesTrain %>% 
+ggplot(aes(sample=Longtitude)) + stat_qq() + stat_qq_line() + labs(title='qq-plot Longtitude')
+lillie.test(housesTrain$Longtitude)
+```
+
+<br>
+
+## Análisis multivariante
+
+<br>
+
+Al disponer ahora de un problema de clasificación, debemos analizar las variables en función de la nueva variable categórica, que indica si una casa es barata o cara. Por ello, se deben ajustar las gráficas del trabajo anterior, ya que se estudiaba en función de la variable *Price* (continua).
+
+<br>
+
+### Variables cualitativas
+
+<br>
+
+Empezaremos examinando la variable objetivo en función de las variables categóricas que tenemos. 
+
+__Regionname__
+
+Representamos el número de casas baratas/cara en cada región, tanto en valor absoluto como porcentual. Se puede observar que el barrio con mayor número de casas caras es Southern Metropolitan, mientras que Eastern Metropolitan tiene mayor porcentaje de casas caras.
+
+```{r}
+housesTrain %>% ggplot() + geom_bar(aes(x=Regionname, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=Regionname, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+<br>
+Con el target más caro:
+
+```{r}
+housesTrain %>% ggplot() + geom_bar(aes(x=Regionname, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=Regionname, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+
+__Type__
+
+Recordemos los distintos tipos de casas que hay:
+
+* h: houses, cottage, villa, semi, terrace
+* t: townhouse
+* u: unit
+
+Se puede observar que al mayoría de casas caras se engloban en el tipo h.
+
+```{r TypePrice}
+housesTrain %>% ggplot() + geom_bar(aes(x=Type, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=Type, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+<br>
+Con el target más caro:
+
+```{r TypePrice2}
+housesTrain %>% ggplot() + geom_bar(aes(x=Type, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=Type, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+__Method__
+
+Los métodos de venta son los siguientes:
+
+* S - property sold
+* SP - property sold prior
+* PI - property passed in
+* VB - vendor bid
+* SA - sold after auction
+
+Porcentualmente, todos los métodos de venta tienen el mismo ratio de casas caras/baratas.
+
+```{r MethodPrice}
+housesTrain %>% ggplot() + geom_bar(aes(x=Method, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=Method, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+<br>
+Con el target más caro:
+
+```{r MethodPrice2}
+housesTrain %>% ggplot() + geom_bar(aes(x=Method, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=Method, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+
+__CouncilArea__
+
+Parece que áreas como Bayside o Boroondara tienen casas más caras.
+
+```{r fig.width=15, fig.height=4}
+housesTrain %>% ggplot() + geom_bar(aes(x=CouncilArea, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=CouncilArea, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+<br>
+```{r fig.width=15, fig.height=4}
+housesTrain %>% ggplot() + geom_bar(aes(x=CouncilArea, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=CouncilArea, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+
+Teniendo en cuenta el ámbito de aplicación, pensamos que aquellas viviendas que estén en la bahía serán más caras. Utilizando la variable *CouncilArea*, se han seleccionado aquellas zonas que rodean la bahía. 
+
+En vista de los gráficos, observamos que no hay mucha diferencia en el valor medio de las viviendas según esta variable. Además, para aquellas que no se concentran en la zona de la bahía, hay outliers, es decir, casas mucho más caras y mucho más baratas. Con esto concluimos que hay casas cuyo valor es muy alto y no se debe a que esté cercana a la bahía.
+
+```{r}
+water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
+housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
+
+housesTrain %>% ggplot() + geom_bar(aes(x=may_have_water, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=may_have_water, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+<br>
+Con target caro:
+```{r}
+water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
+housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
+
+housesTrain %>% ggplot() + geom_bar(aes(x=may_have_water, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% ggplot() + geom_bar(aes(x=may_have_water, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+<br>
+
+### Variables cuantitativas
+
+<br>
+
+A continuación, examinaremos las distintas variables numéricas. Lo primero que hacemos es comprobar las correlaciones de las variables numéricas:
+
+```{r heatmapCorr, fig.width=15, fig.height=10, message=FALSE}
+numeric_cols <- c("Rooms", "Distance", "sqrt_distance", "Bedroom2", "Bathroom", "Car", "Lattitude", "Longtitude", "YearBuilt", "Landsize", "BuildingArea", "Propertycount")
+cormat <- round(cor(na.omit(housesTrain[,numeric_cols])), 2)
+
+# Get lower triangle of the correlation matrix
+get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+  # Get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+}
+
+upper_tri <- get_upper_tri(cormat)
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+ggheatmap <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "#1EA6A2", high = "#A61E22", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+
+ggheatmap + geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+```
+Se puede observar lo siguiente:
+
+- Las variables *Rooms*, *Bathroom* y *Bedroom* están muy correladas entre ellas (parece lógico pensar que el número de baños y dormitorios esté correlado con el número de habitaciones). Sin embargo, ya se ha comentado que, debido a las distribuciones de estas variables, se van a convertir a categóricas.
+
+Esta información puede ser completada con las distribuciones de las variables:
+
+```{r message=FALSE}
+
+numeric_cols <- c("Rooms", "sqrt_distance", "Bedroom2", "Bathroom", "Car", "price_label")
+
+p<-housesTrain %>% select(numeric_cols) %>%
+  na.omit() %>%
+  ggpairs(columns=1:6, ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+
+numeric_cols2 <- c("Landsize", "BuildingArea", "YearBuilt", 'Lattitude', 'Longtitude', "price_label")
+
+p<-housesTrain %>% select(numeric_cols2) %>%
+  na.omit() %>%
+  ggpairs(columns=1:6, ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+
+```
+
+
+Aquí podemos ver el problema de las distribuciones de *Rooms*, *Bedroom2* y *Bathroom*.
+
+A simple vista, no se pueden apreciar variaciones de las distribuciones de las variables cuantitivas en función de la categoría de la casa.
+
+A continuación, se examinan más detenidamente las variables respecto al precio de venta de las viviendas, y respecto a otras variables categóricas.
+
+__Rooms__
+
+Rooms se concetra entre 2, 3 y 4 habitaciones. Parece que los precios más altos se alcanzan con 3, 4 y 5 habitaciones, pero los rangos son similares.
+
+```{r RoomsPrice}
+p<-housesTrain %>%
+  select(Rooms, price_label) %>%
+  ggpairs(ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+```{r RoomsPrice}
+p<-housesTrain %>%
+  select(Rooms, price_label_high) %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+Dada la gáfica de distribución de la variable *Rooms* se observa como los valores se concentran en unos puntos. A la hora de discretizarla, probaremos a categorizarla en 3 y 4 grupos para observar cómo se comporta con respecto a *Price*.
+
+Se ha probado a categorizar la variable Rooms, intentando que las categorías tengan aproximadamente el mismo número de registros. A la hora de categorizar, a pesar de intentar que los grupos estén equilibrados, siempre sería aconsejable el criterio de un experto del dominio.
+
+
+```{r Rooms3Grupos}
+housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>% select(rooms_cat) %>%
+  table()
+
+housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>%
+  ggplot() + geom_bar(aes(x=rooms_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>%
+  ggplot() + geom_bar(aes(x=rooms_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+<br>
+Con target mas caro:
+
+```{r}
+housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>% select(rooms_cat) %>%
+  table()
+
+housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>%
+  ggplot() + geom_bar(aes(x=rooms_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), labels = c("De 1 a 2", "3", "De 4 a 10"), include.lowest = TRUE, right = FALSE)) %>%
+  ggplot() + geom_bar(aes(x=rooms_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+
+
+__Bathrooms__
+
+De nuevo, se categoriza la variable, esta vez en dos grupos: casas con hasta 1 baño, y casas con 2 o más. Se observa que esta distinción sí permite diferenciar en cierta medida el precio: casas con más baños son más caras.
+```{r}
+p<-housesTrain %>%
+  select(Bathroom, price_label) %>%
+  ggpairs(ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+```{r}
+p<-housesTrain %>%
+  select(Bathroom, price_label_high) %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+
+
+```{r Bath2Grupos}
+housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2)) %>% select(bath_cat) %>%
+  table()
+
+housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2))  %>%
+  ggplot() + geom_bar(aes(x=bath_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2))  %>%
+  ggplot() + geom_bar(aes(x=bath_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+```
+
+Con target mas caro:
+```{r}
+housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2)) %>% select(bath_cat) %>%
+  table()
+
+housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2))  %>%
+  ggplot() + geom_bar(aes(x=bath_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2))  %>%
+  ggplot() + geom_bar(aes(x=bath_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+
+__Bedroom2__
+
+Hay 20 dormitorios en una casa que, buscando en Maps, es muy pequeña. Se elimina ese registro al ser solo uno. Dividiendo en 3 grupos parecidos, se observa influencia en el precio.
+
+```{r}
+p<-housesTrain %>% filter(Bedroom2<20) %>%
+  select(Bedroom2, price_label) %>%
+  ggpairs(ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+
+```{r}
+p<-housesTrain %>% filter(Bedroom2<20) %>%
+  select(Bedroom2, price_label_high) %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+```{r}
+housesTrain %>%
+  filter(Bedroom2!=20) %>%
+  mutate(bed_cat = cut2(Bedroom2, g=3)) %>% select(bed_cat) %>%
+  table()
+
+housesTrain %>%
+  filter(Bedroom2!=20) %>%
+  mutate(bed_cat = cut2(Bedroom2, g=3))  %>%
+  ggplot() + geom_bar(aes(x=bed_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+housesTrain %>%
+  filter(Bedroom2!=20) %>%
+  mutate(bed_cat = cut2(Bedroom2, g=3)) %>% 
+  ggplot() + geom_bar(aes(x=bed_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+<br> 
+Con el target mas caro:
+```{r}
+housesTrain %>%
+  filter(Bedroom2!=20) %>%
+  mutate(bed_cat = cut2(Bedroom2, g=3)) %>% select(bed_cat) %>%
+  table()
+
+housesTrain %>%
+  filter(Bedroom2!=20) %>%
+  mutate(bed_cat = cut2(Bedroom2, g=3))  %>%
+  ggplot() + geom_bar(aes(x=bed_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+housesTrain %>%
+  filter(Bedroom2!=20) %>%
+  mutate(bed_cat = cut2(Bedroom2, g=3)) %>% 
+  ggplot() + geom_bar(aes(x=bed_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+__Car__
+
+Los valores de *Car* se concentran en 1 o 2 por lo que, al igual que las anteriores, es firme candidata a discretización.
+
+Por las gráficas obtenidas tras la categorización, parece que el número de plazas podría ayudar a diferenciar el precio.
+
+```{r CarPrice}
+p<-housesTrain %>%
+  select('Car', 'price_label') %>%
+  na.omit() %>%
+  ggpairs(ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+```{r}
+p<-housesTrain %>%
+  select('Car', 'price_label_high') %>%
+  na.omit() %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+
+
+```{r Car2Grupos}
+housesTrain %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
+  select(car_cat) %>%
+  table()
+
+housesTrain %>% 
+  na.omit() %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
+  ggplot() + geom_bar(aes(x=car_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+housesTrain %>% 
+  na.omit() %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
+  ggplot() + geom_bar(aes(x=car_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+```
+
+__Distance__
+
+Se comparan las transformaciones de ambas variables, observando que las casas con menor distancia al centro se podrían clasificar más facilmente como caras.
+
+```{r DistancePrice}
+p<-housesTrain %>%
+  select(sqrt_distance, price_label) %>%
+  ggpairs(ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+<br>
+Con target mas caro:
+```{r}
+p<-housesTrain %>%
+  select(sqrt_distance, price_label_high) %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+
+
+__Latitud y longitud__
+
+Las distribuciones parecen indicar que el precio de la vivienda aumenta en la parte sur (menor latitud) y en la parte este (mayor longitud) de Melbourne. 
+
+```{r}
+p<-housesTrain %>%
+  select('Lattitude', 'Longtitude', 'price_label') %>%
+  ggpairs(ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+<br>
+Con target mas caro:
+```{r}
+p<-housesTrain %>%
+  select('Lattitude', 'Longtitude', 'price_label_high') %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+__Sell date__
+
+Lo primero que hacemos con esta variable será extraer el año, ya que viene en formato dd/MM/yyyy, y probablemente el año nos proporcione más información acerca del precio de venta de la casa.
+
+
+```{r CrearSellYear}
+housesTrain$sellYear <- separate(housesTrain, Date, c('day','month', 'year'), sep = '/')$year
+housesTrain$sellYear <-factor(housesTrain$sellYear, levels=c("2016", "2017"))
+```
+
+Observamos que solo hay 2 años de venta, y que no tiene demasiada relación con el precio.
+```{r}
+describe(housesTrain$sellYear)
+```
+
+```{r SellYearPrice, message=FALSE}
+housesTrain %>% 
+  ggplot() + geom_bar(aes(x=sellYear, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+housesTrain %>% 
+  ggplot() + geom_bar(aes(x=sellYear, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+```
+
+__PropertyCount__
+
+
+Esta variable nos informa de el número de propiedades que hay en cada barrio. Se puede probar lo siguiente:
+
+* Categorizar esta variable para diferenciar entre barrios muy poblados y menos poblados, y ver si tiene relación con el precio.
+
+* Combinar esta información con el número de casas vendidas por barrio, obtener la tasa de venta en cada barrio, y ver si hay barrios más populares que otros en cuanto a ventas.
+
+Diviendo en 3 grupos parecidos, la primera opción no parece arrojar ninguna luz sobre el precio de la vivienda.
+
+```{r}
+housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=3)) %>% select(property_count_cat) %>% table()
+
+housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=3)) %>%
+  ggplot() + geom_bar(aes(x=property_count_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+housesTrain %>% mutate(property_count_cat = cut2(Propertycount, g=3)) %>%
+  ggplot() + geom_bar(aes(x=property_count_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values=palette34)
+
+```
+
+Con la tasa de casas vendidas por barrio tampoco se diferencia demasiado. En todo caso, se podría probar con más categorías, pero se acabaría alcanzando el número distinto de barrios que hay.
+
+```{r propertyCount}
+suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
+housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>% select(property_count_cat) %>% table() 
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>%  ggplot() + geom_bar(aes(x=property_count_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_fill_manual(values=palette34)
+housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>%  ggplot() + geom_bar(aes(x=property_count_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_fill_manual(values=palette34)
+```
+
+Tampoco parece que el hecho de que el barrio sea más "popular" (en cuanto a número de viviendas vendidas) sea influyente para el precio de venta de las mismas.
+
+<br>
+
+# Análisis exploratorio de datos faltantes
+
+<br>
+
+Hemos visto anteriormente que las variables *YearBuilt*, *BuildingArea* y *Car* tenían valores NAs, y que la variable *Landsize* tenía valores sospechosos (0).
+Examinamos primero qué % de los registros no tienen estos valores rellenos.
+
+Observamos que cerca del 50% de los registros tienen la variable BuildingArea sin informar, mientras que el 40% no tienen la variable YearBuilt informada. Vemos además que en el 37% de los casos, BuildingArea y YearBuilt faltan simultáneamente. El % de registros con la variable Car vacía es muy pequeño. Además, tenemos 15% de 0 en la variable Landsize, que podríamos considerar como valores faltantes.
+
+```{r HistFaltantes, warning=FALSE}
+housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
+housesTrain$CouncilArea[which(housesTrain$CouncilArea == '')] <- 'Unavailable'
+housesTrain$CouncilArea[which(housesTrain$CouncilArea == 'Unavailable')] <- NA
+housesTrain$YearBuilt[which(housesTrain$YearBuilt<1800)] <- NA
+cols_na <- c('BuildingArea', 'Landsize', 'YearBuilt', 'Car', 'CouncilArea')
+aggr_plot <- aggr(housesTrain[,cols_na], col=c('#666666','#E6AB02'), numbers=TRUE, sortVars=TRUE,
+                  labels=names(housesTrain[,cols_na]), cex.axis=0.6, gap=3, 
+                  ylab=c("Histograma de datos faltantes","Patrón de co-ocurrencia"))
+
+```
+```{r porcentajeFaltantes}
+porc_falt <- housesTrain[cols_na]
+plot_missing(porc_falt, group = list("Good" = 0.05, "Ok" = 0.3, "Bad" = 0.8))
+```
+
+
+A modo de resumen respecto a los datos faltantes podemos decir que:
+
+- Para la variable *BuildingArea*, el 47.35% de los valores (5152 de 10865) son NaNs, y el 0.11% son 0.
+
+- Para la variable *YearBuilt*, el 39.24% de los valores son NaNs.
+
+- Para la variable *Landsize*, no hay NaNs, pero el 14.3% de los valores son 0.
+
+- La variable *Car* tiene 49 valores faltantes (0.45%).
+
+- Para la variable *CouncilArea*, el 10.11% son desconocidos (1098)
+
+<br>
+
+__Relación entre BuildingArea y Landsize informados__
+
+La variable *BuildingArea* podría ser de gran interés a la hora de predecir el precio de venta de una casa. Sin embargo, la gran cantidad de datos faltantes lleva a pensar que una técnica de imputación puede no ser recomendable. Como también se tiene la variable *Landsize*, se procede a comprobar si existe alguna relación entre los valores informados de *BuildingArea* y esta variable, ya que la podríamos utilizar por su bajo número de datos faltantes.
+
+Como era de esperar se observa una correlación positiva entre ambas variables. El valor de la correlación es de 0.5 lo que también cabe dentro de lo esperable. Sin embargo, es difícil apoyarse en las gráficas debido a sus distribuciones por lo que se que se procede a utilizar el logarítmo de ambas variables.
+
+```{r BuildingLand}
+housesTrain %>% select(BuildingArea, Landsize) %>% na.omit() %>% ggpairs()
+```
+```{r BuildingLanLog}
+housesTrain %>% select(BuildingArea, Landsize) %>%
+  na.omit() %>%
+  filter(Landsize > 0 & BuildingArea > 0) %>%
+  mutate(log_landsize = log10(Landsize), log_buildingArea = log10(BuildingArea)) %>%
+  select(log_landsize, log_buildingArea) %>% ggpairs()
+```
+
+La relación entre los logaritmos tiene una correlación menor que lo visto anteriormente. Pese a ello, y la gran cantidad de valores faltantes que tienen, decidimos eliminar la variable *BuidingArea* y quedarnos con *Landsize*.
+
+__Landsize__
+
+Aparte de los valores a 0, esta variable presenta valores muy dispersos. Se puede probar una transformación logarítmica para verla mejor (hay valores muy extremos). A la hora de realizar su imputación vamos a ver cómo se relaciona *Landsize* con *Longtitud* , *Lattitude* y *Distance* ya que, pensando en el ámbito en el que estamos trabajando, creemos que la ubicación de la vivienda estará relacionado con el area del perímetro previo a la vivienda.
+
+```{r LandFaltantes}
+housesTrain %>% select(Landsize) %>%
+  na.omit() %>%
+  mutate(log_landsize = log10(Landsize)) %>%
+  ggplot(aes(x=log_landsize)) +
+  geom_density()
+```
+
+Vamos a ver como se distribuyen los valores informados y faltantes en función de la localización (latitud y longitud).
+
+```{r message=FALSE}
+housesTrain %>% filter(is.na(Landsize)) %>% select(sqrt_distance, Lattitude, Longtitude) %>% ggpairs() + labs(title='Landsize no informado')
+
+housesTrain %>% select(sqrt_distance, Lattitude, Longtitude, Landsize) %>%
+  na.omit() %>%
+  mutate(log_landsize = log10(Landsize)) %>%
+  select(sqrt_distance, Lattitude, Longtitude, log_landsize) %>%
+  ggpairs + labs(title='Landsize informado')
+```
+
+Parece que los valores faltantes de *Landsize* tienen muchos de sus valores en valores bajos de *Lattitude*.
+
+```{r}
+housesTrain %>%
+  mutate(log_landsize = log10(Landsize)) %>%
+  select(Lattitude, log_landsize) %>% marginplot()
+```
+
+Para la longitud, los valores faltantes de *Landsize* se concentran alrededor de la mediana de la longitud.
+
+```{r}
+housesTrain %>%
+  mutate(log_landsize = log10(Landsize)) %>%
+  select(Longtitude, log_landsize) %>% marginplot()
+```
+
+
+Si además se examina en función de la distancia, se puede aprecia que los valores faltantes de *Landsize* se dan para valores bajos de *Distance*, es decir, para casas más cercanas al centro de la ciudad.
+
+```{r}
+housesTrain %>%
+  mutate(log_landsize = log10(Landsize)) %>%
+  select(Distance, log_landsize) %>% marginplot()
+```
+Si probamos a imputar con kNN los valores de *Landsize* en función de las coordenadas y la distancia, vemos que los nuevos valores no se alejan demasiado de las distribuciones iniciales.
+
+```{r LandsizeImputacion}
+imputationsLandsize <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
+```
+
+Se puede ver mejor si transformamos los valores de *Landsize* una vez imputados:
+```{r}
+imputationsLogLandsize <- imputationsLandsize %>% mutate(log_landsize=log10(Landsize), log_landsize_imp = Landsize_imp)
+```
+```{r}
+imputationsLogLandsize %>% select(Lattitude, log_landsize, log_landsize_imp) %>% marginplot(., delimiter = '_imp')
+imputationsLogLandsize %>% select(Longtitude, log_landsize, log_landsize_imp) %>% marginplot(., delimiter = '_imp')
+imputationsLogLandsize %>% select(Distance, log_landsize, log_landsize_imp) %>% marginplot(., delimiter = '_imp')
+```
+
+Comparamos la distribución de *Landsize* con valores informados con la generada a través de imputación.
+
+```{r}
+p1 <- housesTrain %>% select(Landsize) %>%
+  na.omit() %>%
+  mutate(log_landsize = log10(Landsize)) %>%
+  ggplot(aes(y=log_landsize)) +
+  geom_boxplot(colour = colorBox) + labs(y = 'log_landsize inicial')
+
+p2 <- imputationsLogLandsize %>% select(log_landsize) %>%
+  ggplot(aes(y=log_landsize)) +
+  geom_boxplot(colour = colorBox) + labs(y = 'log_landsize imputado')
+
+grid.arrange(p1, p2, nrow=1)
+```
+
+Además, se comparan la nueva variable *log_landsize* con valores imputados con el precio, como se ha hecho en el análisis multivariante. No parece que haya una gran correlación entre ambas variables.
+
+```{r}
+housesTrain$log_landsize <- imputationsLandsize %>% mutate(log_landsize=log10(Landsize)) %>% select(log_landsize) %>% unlist()
+housesTrain %>% select(log_landsize, log_price) %>% ggpairs()
+```
+
+
+__Car__
+
+Para la variable *Car*, solo hay 49 valores faltantes (0.45%). Al ser una variable numérica con valores discretos (solo toma valores enteros desde 0 hasta 8), no parece buena idea utilizar métodos de imputación por regresiones en base a otras variables.
+
+Podemos por un lado tratar de imputarlas basándonos en otras variables y usando kNN. Usaremos las variables *Rooms* y *Distance*:
+
+```{r ImputCarconRooms}
+housesTrain %>% select(Rooms, Car)  %>% marginplot()
+housesTrain %>% select(Distance, Car)%>% marginplot()
+imputationsCar <- housesTrain %>% select(Rooms, Distance, Car) %>% VIM::kNN(variable='Car')
+imputationsCar %>% select(Distance, Car, Car_imp) %>% marginplot(., delimiter = '_imp')
+```
+
+Otras dos opciones:
+
+- Borrar esos 49 registros (a riesgo de poder perder algo de información).
+- Transformar la variable a categórica e intentar imputar el factor.
+
+
+Se podría intentar categorizar la variable (ya vimos que se puede dividir en 2 categorías con aproximadamente el mismo numero de muestras) y utilizar la función *polyreg* del paquete MICE que permite imputar valores categóricos mediante una regresión politómica. Este método se basa en construir un modelo multinomial para las respuestas categóricas, realizar las predicciones para los valores faltantes y después añadir ruido a estas predicciones. (NOTA: esta aproximación no ha funcionado bien, se deja el planteamiento)
+
+```{r}
+housesTrain$car_cat = housesTrain %>%
+  mutate(car_cat = addNA(cut(Car, breaks = c(0,2,20), labels = c("0 o 1 plaza", "2 o más"), include.lowest = TRUE, right = FALSE))) %>%
+  select(car_cat) 
+
+housesTrain$car_cat %>% table
+```
+
+
+Una vez imputado, previsiblemente no habrá cambiado la distribución de la variable al ser un % tan pequeño de datos faltantes.
+
+__CouncilArea__
+
+Para las viviendas donde *CouncilArea* no está registrado, lo imputaremos con un KNN utilizando la latitud y longitud. Con estas variables la imputación debería ser correcta, ya que las coordenadas informan directamente del área en el que está la casa.
+
+```{r imputacionCouncilArea}
+imputationCouncilArea <- housesTrain %>% select(CouncilArea, Lattitude, Longtitude) %>% VIM::kNN(variable='CouncilArea')
+
+imputationCouncilArea$Price <- housesTrain$Price
+
+housesTrain %>% select(Price, CouncilArea)  %>% marginplot
+imputationCouncilArea %>% select(Price, CouncilArea, CouncilArea_imp)  %>% marginplot(., delimiter = '_imp')
+
+ggplot(data=imputationCouncilArea, aes(x=CouncilArea, fill = CouncilArea)) +       geom_bar(stat="count",position=position_dodge()) +
+  scale_fill_manual(values=palette34) +
+  labs(x= 'CouncilArea_imp', y = 'Frecuencias', fill=NULL) + 
+  theme(axis.text.x=element_blank())
+
+
+box_coun <- imputationCouncilArea %>% select(c("Price", "CouncilArea")) %>%
+  ggplot(aes(y=Price, fill=CouncilArea)) +
+  geom_boxplot() +
+  scale_fill_manual(values=palette34) 
+
+# fig.width=15, fig.height=4
+```
+
+__YearBuilt__
+
+Retomando el análisis univariante de esta variable hay que recordar que presenta una distribución con varios picos que sugiere su discretización. De esta manera, se pretende transformarla en una variable categórica que represente intervalos temporales a la que añadiremos categoría Unknown para los valores faltantes. También recordamos que para una de las observaciones el valor de *YearBuilt* era de 1196 y, dado que es anterior al año de fundación de Melbourne, lo tomaríamos como dato perdido.
+
+En la siguiente gráfica se muestra la distribución en función de la variable objetivo.
+
+```{r, message=FALSE}
+housesTrain <- housesTrain
+p<-housesTrain %>% select(YearBuilt, price_label) %>% na.omit() %>% ggpairs(ggplot2::aes(colour=price_label))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+Se categoriza en dos grupos (además del desconocido) de manera que los grupos tienen un número de observaciones más o menos similar. Al verla en relación a *Price*, se observa que los datos faltantes quedan entre la categoría de casas más antiguas (hasta 1971) y las más modernas.
+
+```{r}
+year_categories <- housesTrain %>% 
+  mutate(year_cat = addNA(cut2(YearBuilt, g=2)))
+
+year_categories %>%
+  select(year_cat) %>% table()
+
+year_categories %>%
+  ggplot() + geom_bar(aes(x=year_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_fill_manual(values=palette34)
+
+year_categories %>%
+  ggplot() + geom_bar(aes(x=year_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_fill_manual(values=palette34)
+```
+<br>
+Con target mas caro:
+```{r}
+year_categories <- housesTrain %>% 
+  mutate(year_cat = addNA(cut2(YearBuilt, g=2)))
+
+year_categories %>%
+  select(year_cat) %>% table()
+
+year_categories %>%
+  ggplot() + geom_bar(aes(x=year_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_fill_manual(values=palette34)
+
+year_categories %>%
+  ggplot() + geom_bar(aes(x=year_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_fill_manual(values=palette34)
+```
+
+<br>
+
+# Transformaciones y procesado de variables
+
+<br>
+
+A modo de resumen, se contemplan las siguientes transformaciones de las variables cuantitativas disponibles:
+* Transformación logarítmica de *Landsize*.
+* Transformación de raíz cuadrada de *Distance*
+* Categorización de *Rooms*, *YearBuilt*, *Car* y *Propertycount*
+* Reescalado de variables cuantitativas (estandarización)
+
+```{r cuantitative_transformations}
+# Filtros e imputaciones (YearBuilt categórica)
+#housesTrainFinal <- housesTrain
+housesTrain$YearBuilt[which(housesTrain$YearBuilt<1850)] <- NA
+housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
+imputationsLandsizeFinal <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
+imputationsCarFinal <- housesTrain %>% select(Rooms, Distance, Car) %>% VIM::kNN(variable='Car') 
+
+#Necesario para la función de construcción del dataset
+housesTrain$LandsizeImp <- imputationsLandsizeFinal %>% select(Landsize) %>% unlist()
+housesTrain$CarImp <- imputationsCarFinal %>% select(Car) %>% unlist()
+imputationsLandsizeforTest <- housesTrain %>% select(Suburb, Address, Rooms, Type, Price, Method, SellerG, Date, Distance, Postcode, Bedroom2, Bathroom, Car, LandsizeImp, BuildingArea, YearBuilt, CouncilArea, Lattitude, Longtitude, Regionname, Propertycount) 
+names(imputationsLandsizeforTest)[names(imputationsLandsizeforTest) == "LandsizeImp"] <- "Landsize"
+imputationsCarforTest <- housesTrain %>% select(Suburb, Address, Rooms, Type, Price, Method, SellerG, Date, Distance, Postcode, Bedroom2, Bathroom, CarImp, Landsize, BuildingArea, YearBuilt, CouncilArea, Lattitude, Longtitude, Regionname, Propertycount) 
+names(imputationsCarforTest)[names(imputationsCarforTest) == "CarImp"] <- "Car"
+
+# Transformaciones de variables cuantitativas
+
+sqrt_distance <- housesTrain %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
+housesTrain$sqrt_distance <- unlist(sqrt_distance)
+log_landsize <- imputationsLandsizeFinal %>% mutate(log_landsize=log10(Landsize)) %>% select(log_landsize)
+housesTrain$log_landsize <- unlist(log_landsize)
+log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
+housesTrain$log_price <- unlist(log_price)
+
+# Discretización de variables cuantitativas
+housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
+housesTrain$year_built_cat <- factor(cut2(housesTrain$YearBuilt, g=2), labels = c("Antigua", "Moderna"))
+levels(housesTrain$year_built_cat) <- c(levels(housesTrain$year_built_cat), 'Desconocido')
+housesTrain <- housesTrain %>% mutate_at(vars(year_built_cat), ~replace(., is.na(.), 'Desconocido'))
+# Hasta 1 baño
+housesTrain$bath_cat <- factor(cut2(housesTrain$Bathroom, g=2), labels=c("Pocos_baños", "Muchos_baños"))
+#De 0 a 3 dormitorios
+housesTrain$bed_cat <- factor(cut2(housesTrain$Bedroom2, g=2), labels=c("Pocos_dormitorios", "Muchos_dormitorios"))
+#0-1 y 2 o más
+housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,20), labels = c("Pocas_plazas", "Muchas_plazas"), include.lowest = TRUE, right = FALSE)
+
+#El join solo se debe ejecutar una vez
+suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
+#housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
+# Hasta 1.47% de tasa de venta por barrio
+housesTrain$sell_rate_cat <- factor(cut2(housesTrain$sell_rate_suburb, g=2), labels=c("Menos_populares", "Más_populares"))
+
+# Estandarización de variables
+num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude')
+cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method', 'bath_cat', 'bed_cat', 'sell_rate_cat')
+housesTrainNum <- housesTrain %>% select(num_vars)
+normParam <- preProcess(housesTrainNum)
+housesTrainNumNorm <- predict(normParam, housesTrainNum)
+
+housesTrainFinal <- data.frame(housesTrainNumNorm[,num_vars], housesTrain[,cat_vars], housesTrain[, c('Price', 'log_price', 'price_label', 'price_label_high')])
+
+housesTrainFinal$Regionname = factor(housesTrainFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
+#Utilizo la librería plyr
+housesTrainFinal$Regionname  = mapvalues(housesTrainFinal$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan','South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan','South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
+
+housesTrainFinal$Method = factor(housesTrainFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
+housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
+```
+
+Comprobamos los niveles de los factores de las variables categóricas. Siempre que sea posible, el primer nivel debería asociarse a la categoría con más muestras, ya que previsiblemente será la que menor desviación estándar tenga. Además, si los factores siguen un orden lógico, debería respetarse en los niveles.
+
+Teniendo en cuenta esto, reordenamos las variables *Regionname*, *Method* y *Type*.
+
+```{r}
+housesTrainFinal$rooms_cat %>% table()
+housesTrainFinal$year_built_cat %>% table()
+housesTrainFinal$car_cat %>% table()
+housesTrainFinal$Regionname %>% table()
+housesTrainFinal$Method %>% table()
+housesTrainFinal$Type %>% table()
+```
+
+```{r echo=FALSE}
+levels(housesTrainFinal$rooms_cat)
+levels(housesTrainFinal$year_built_cat)
+levels(housesTrainFinal$car_cat)
+levels(housesTrainFinal$Regionname)
+levels(housesTrainFinal$Method)
+levels(housesTrainFinal$Type)
+levels(housesTrainFinal$bath_cat)
+levels(housesTrainFinal$bed_cat)
+levels(housesTrainFinal$sell_rate_cat)
+```
+
+<br>
