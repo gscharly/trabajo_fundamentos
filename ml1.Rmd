@@ -11,12 +11,14 @@ library(ggplot2)
 library(GGally)
 library(class)
 library(caret)
+library(cluster)
+
 set.seed(10)
 ```
 
 
 ```{r}
-housesTrain <- read.csv('train_set_new_variables.csv')
+housesTrain <- read.csv('train_set_new_variables.csv', encoding = 'UTF-8')
 ```
 
 # PCA
@@ -83,7 +85,7 @@ housesTrain %>% ggplot(aes(x=Price, color=price_label)) + geom_density()
 # kNN
 
 ```{r}
-test <- read.csv('test_set_new_variables.csv')
+test <- read.csv('test_set_new_variables.csv', encoding = 'UTF-8')
 test <- test %>% mutate(price_label = Price > median(Price))
 ```
 
@@ -166,5 +168,87 @@ confusionMatrix(table(prediccion_knn5_train,housesTrain$price_label), positive="
 prediccion_knn5_test=knn(housesTrain[,c("sqrt_distance","log_landsize", "Lattitude", "Longtitude")], test[,c("sqrt_distance","log_landsize", "Lattitude", "Longtitude")],
                          k=5, cl=housesTrain$price_label)
 confusionMatrix(table(prediccion_knn5_test,test$price_label), positive="TRUE")
+```
+
+
+# k-means
+
+```{r}
+housesTrainKmeans <- housesTrain %>% dplyr::select(-Regionname, -Type, -Method, -year_built_cat)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTrainKmeans['rooms_cat'] <- housesTrain %>% 
+  dplyr::select(rooms_cat) %>% 
+  factor(levels = c('Pequeñas', 'Medianas', 'Grandes'), ordered = TRUE)
+
+housesTrainKmeans['car_cat'] <-housesTrain %>% 
+  dplyr::select(car_cat) %>% 
+  factor(levels = c('Pocas_plazas', 'Muchas_plazas'), ordered = TRUE)
+
+housesTrainKmeans['bath_cat'] <-housesTrain %>% 
+  dplyr::select(bath_cat) %>% 
+  factor(levels = c('Pocos_baños', 'Muchos_baños'), ordered = TRUE)
+
+housesTrainKmeans['bed_cat'] <-housesTrain %>% 
+  dplyr::select(bed_cat) %>% 
+  factor(levels = c('Pocos_dormitorios', 'Muchos_dormitorios'), ordered = TRUE)
+
+housesTrainKmeans['sell_rate_cat'] <-housesTrain %>% 
+  dplyr::select(sell_rate_cat) %>% 
+  factor(levels = c('Menos_populares', 'Más_populares'), ordered = TRUE)
+
+```
+
+```{r kmeans}
+nume <- housesTrainKmeans %>% dplyr::select(sqrt_distance, log_landsize, Lattitude, Longtitude, Price, log_price)
+
+nume=as.matrix(nume)
+
+#Guardamos el número filas
+n <- nrow(nume)
+
+#Probamos un cluster de 2 grupos
+clusters2=kmeans(nume,centers=2,nstart=25)
+
+#Para ver la variabilidad dentro de los grupos correspondiente a esos dos clusters
+clusters2$withinss
+
+#Buscamos el número de clusters óptimo
+
+#Inicializamos el vector
+SSW <- vector(mode = "numeric", length = 15)
+#Variabilidad de todos los datos, es decir, todos los datos como un único cluster
+SSW[1] <- (n - 1) * sum(apply(nume,2,var))
+#Variabilidad de cada modelo, desde 2 clusters hasta 15 clusters
+for (i in 2:15) SSW[i] <- sum(kmeans(nume,centers=i,nstart=25)$withinss)
+#Dibujamos un gráfico con el resultado
+plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within
+groups",pch=19, col="steelblue4")
+
+#Según la gráfica el número de cluster óptimo sería 3 o 4. Empezamos con 3
+clusters3=kmeans(nume,centers=3,nstart=25)
+
+#Comprobamos la variabilidad
+clusters3$withinss
+
+#Plots de la salida
+nk_3=3 # nk es el numero de clusters
+pairs(nume,col= clusters3$cluster,pch=19)
+points(clusters3$centers, col = 1:nk, pch = 19, cex=2)
+clusplot(nume, clusters3$cluster, color=TRUE, shade=TRUE,
+labels=2,lines=0)
+
+# Probamos con 4
+clusters4=kmeans(nume,centers=4,nstart=25)
+
+#Comprobamos la variabilidad
+clusters4$withinss
+
+#Plots de la salida
+nk_4= 4
+pairs(nume,col= clusters4$cluster,pch=19)
+points(clusters4$centers, col = 1:nk, pch = 19, cex=2)
+clusplot(nume, clusters4$cluster, color=TRUE, shade=TRUE,
+labels=2,lines=0)
 ```
 
