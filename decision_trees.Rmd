@@ -1,0 +1,126 @@
+---
+title: "decision_trees"
+author: "Carlos Gomez Sanchez"
+date: "24 de febrero de 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rpart)
+library(rpart.plot)
+library(caret)
+
+set.seed(10)
+```
+
+
+# Árboles de decisión
+Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer lugar, se utilizarán las variables que se consideraron importantes en el análisis exploratorio, para después probar distintas formas de tuning e intentar evitar el sobreaprendizaje del árbol.
+
+## Utilizando directamente las variables estudiadas
+Se utilizarán directamente las variables estudiadas en el análisis exploratorio, dejando de lado transformaciones y estandarizaciones, además de variables categóricas con muchas categorías. Además, si recordamos, para la regresión lineal tuvimos que convertir varias features numéricas en categóricas (número de habitaciones, año de construcción...). Podemos probar a introducir las variables originales para ver qué cortes propone el árbol.
+
+
+### Con la variable price mediana
+
+Como se puede ver con el árbol, la principal división se realiza por el tipo de vivienda (en este caso unifamiliar, se puede entender que separa casas grandes de pequeñas). Si la casa es u (pequeña), se clasificaría con buena tasa el 22% de los datos (99,2% de las veces serían 0, casas baratas). Por el otro lado del árbol, separa por localización (si se observa el mapa, tiene bastante sentido, las casas caras aparecen en el Noreste). Habría unos nodos con más fallos. Además, la última división por distancia al centro, nos deja un nodo con el 50% de la población, de los cuales el 84% se clasifican como casas caras, mientras que nos deja un nodo con solo un 3%. Esto quiźas se podría mejorar parando antes.
+
+```{r load_variables}
+housesTrain <- read.csv('base_train.csv')
+housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                    "may_have_water", "price_label")]
+n = dim(housesTrainOrigVar)[1]
+# Hay que factorizar el label para que se construya bien el árbol
+housesTrainOrigVar$price_label <- as.factor(housesTrainOrigVar$price_label)
+```
+
+```{r tree1_price_label}
+housesTree1 = rpart(price_label ~ ., data = housesTrainOrigVar)
+rpart.plot(housesTree1)
+#summary(housesTree1)
+error1 = 100 * sum(predict(housesTree1, type = "class") != housesTrainOrigVar$price_label)/n
+error1
+table(pred = predict(housesTree1, type = "class"), obs = housesTrainOrigVar$price_label)
+```
+
+### Podando el árbol 
+Queremos quedarnos con el árbol más pequeño que tenga el menor error de cross validation. Nos quedamos con 4 hojas, aumentando un poco el error.
+
+```{r}
+printcp(housesTree1)
+```
+```{r}
+plotcp(housesTree1)
+```
+
+```{r}
+#pruneTREE1 = prune(housesTree1, cp = housesTree1$cptable[which.min(housesTree1$cptable[,"xerror"]), "CP"])
+pruneTREE1 = prune(housesTree1, cp = housesTree1$cptable[4,"CP"])
+rpart.plot(pruneTREE1)
+error1 = 100 * sum(predict(pruneTREE1, type = "class") != housesTrainOrigVar$price_label)/n
+error1
+table(pred = predict(pruneTREE1, type = "class"), obs = housesTrainOrigVar$price_label)
+```
+
+
+
+
+### Con la variable price 75%
+
+Al aumentar el corte de la distinción entre barato y caro, observamos que el error disminuye! En los cortes ahora se tiene en cuenta el número de habitaciones como corte principal (de nuevo diferenciando entre casas pequeñas y grandes). El siguiente corte se realiza en base a la región (de nuevo localización, estaría bien saber las regiones porque no se ve...). Parece que la región por la que se discrimina es Southern Metropolitan. Si la casa es pequeña y está en cualquier región que no sea esa, se clasifica como barata la mayoría de las veces.
+
+Algo que también se puede ver es que hay varios nodos con pocas muestras (los que vienen de la distinción de tipo de casa es Southern Metropolitan). Vemos además que hay un montón de falsos positivos (casas baratas que se etiquetan como caras).
+
+```{r load_variables}
+housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                    "may_have_water", "price_label_high")]
+n = dim(housesTrainOrigVar)[1]
+# Hay que factorizar el label para que se construya bien el árbol
+housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
+```
+
+```{r tree2_price_label}
+housesTree2 = rpart(price_label_high ~ ., data = housesTrainOrigVar)
+rpart.plot(housesTree2, type=4, fallen.leaves = FALSE, tweak =1.75)
+rpart.rules(housesTree2, clip.facs = TRUE)
+error = 100 * sum(predict(housesTree2, type = "class") != housesTrainOrigVar$price_label_high)/n
+error
+table(pred = predict(housesTree2, type = "class"), obs = housesTrainOrigVar$price_label_high)
+```
+
+### Podando el árbol 
+Intentamos eliminar esas últimas hojas que hemos comentado. Prácticamente no habría diferencia entre tener 7 hojas u 8. Podemos probar a ver si con 4 hojas el error aumenta mucho.
+
+```{r}
+printcp(housesTree2)
+```
+```{r}
+plotcp(housesTree2)
+```
+
+Con 7 hojas, el error es prácticamente el mismo.
+
+```{r}
+pruneTREE2 = prune(housesTree2, cp = housesTree2$cptable[4,"CP"])
+rpart.plot(pruneTREE2, type=4, fallen.leaves = FALSE, tweak =1.75)
+error2 = 100 * sum(predict(pruneTREE2, type = "class") != housesTrainOrigVar$price_label_high)/n
+error2
+table(pred = predict(pruneTREE2, type = "class"), obs = housesTrainOrigVar$price_label_high)
+```
+
+Bajando la complejidad hasta quedarnos solo con 4 hojas, observamos que el error aumenta en un 4% (hasta el 17%), pero el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja, con el 75% de los datos, y con una tasa de acierto aceptable (el 84% serían baratas). Las casas con más de 4 habitaciones en Southern Metropolitan (son solo el 9%) se clasifican como caras el 86% de las veces. La última división es en función de la distancia al centro, y ya falla más.
+
+```{r}
+pruneTREE3 = prune(housesTree2, cp = housesTree2$cptable[3,"CP"])
+rpart.plot(pruneTREE3, type=4, fallen.leaves = FALSE, tweak =1)
+error2 = 100 * sum(predict(pruneTREE3, type = "class") != housesTrainOrigVar$price_label_high)/n
+error2
+table(pred = predict(pruneTREE3, type = "class"), obs = housesTrainOrigVar$price_label_high)
+```
+
