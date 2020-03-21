@@ -156,6 +156,26 @@ Con estos mapas, aunque más adelante se analizan las distribuciones del precio 
 
 <br>
 
+# Creación de variable para clasificación
+
+Antes de comenzar con el análisis exploratorio, se va a crear una variable que sirva para convertir nuestro problema en un problema de clasificación. Para ello, vamos a utilizar la variable *Price* para diferenciar entre casas baratas y caras. Para ello, tenemos varias opciones:
+
+- Utilizar la mediana de *Price* para tener un conjunto de datos balanceado, pero donde habrá muchas muestras cercanas con las que tendremos problemas a la hora de clasificar.
+- Establecer el corte en un valor de *Price* mayor, donde tendremos un problema de desbalanceo de datos.
+
+Contemplaremos ambos casos, y la variable tendrá etiqueta 0 para las casas baratas, y etiqueta 1 para casas caras.
+
+
+```{r}
+quantiles_price <- quantile(houses$Price)
+houses <- houses %>% mutate(price_label = Price > median(Price), price_label_high = Price > quantiles_price[4])
+```
+
+```{r}
+houses %>% ggplot(aes(x=Price, color=price_label)) + geom_density()
+houses %>% ggplot(aes(x=Price, color=price_label_high)) + geom_density()
+```
+
 # División de los datos
 
 <br>
@@ -184,25 +204,7 @@ Ahora, el subconjunto *housesTrain*, con el que trabajaremos inicialmente, está
 
 <br>
 
-# Creación de variable para clasificación
 
-Antes de comenzar con el análisis exploratorio, se va a crear una variable que sirva para convertir nuestro problema en un problema de clasificación. Para ello, vamos a utilizar la variable *Price* para diferenciar entre casas baratas y caras. Para ello, tenemos varias opciones:
-
-- Utilizar la mediana de *Price* para tener un conjunto de datos balanceado, pero donde habrá muchas muestras cercanas con las que tendremos problemas a la hora de clasificar.
-- Establecer el corte en un valor de *Price* mayor, donde tendremos un problema de desbalanceo de datos.
-
-Contemplaremos ambos casos, y la variable tendrá etiqueta 0 para las casas baratas, y etiqueta 1 para casas caras.
-
-
-```{r}
-quantiles_price <- quantile(housesTrain$Price)
-housesTrain <- housesTrain %>% mutate(price_label = Price > median(Price), price_label_high = Price > quantiles_price[4])
-```
-
-```{r}
-housesTrain %>% ggplot(aes(x=Price, color=price_label)) + geom_density()
-housesTrain %>% ggplot(aes(x=Price, color=price_label_high)) + geom_density()
-```
 
 
 
@@ -1348,89 +1350,14 @@ A modo de resumen, se contemplan las siguientes transformaciones de las variable
 * Categorización de *Rooms*, *YearBuilt*, *Car* y *Propertycount*
 * Reescalado de variables cuantitativas (estandarización)
 
-```{r cuantitative_transformations}
-# Filtros e imputaciones (YearBuilt categórica)
-#housesTrainFinal <- housesTrain
-housesTrain$YearBuilt[which(housesTrain$YearBuilt<1850)] <- NA
-housesTrain$Landsize[which(housesTrain$Landsize == 0)] <- NA
-imputationsLandsizeFinal <- housesTrain %>% select(Lattitude, Longtitude, Distance, Landsize) %>% VIM::kNN(variable='Landsize')
-imputationsCarFinal <- housesTrain %>% select(Rooms, Distance, Car) %>% VIM::kNN(variable='Car') 
-
-#Necesario para la función de construcción del dataset
-housesTrain$LandsizeImp <- imputationsLandsizeFinal %>% select(Landsize) %>% unlist()
-housesTrain$CarImp <- imputationsCarFinal %>% select(Car) %>% unlist()
-imputationsLandsizeforTest <- housesTrain %>% select(Suburb, Address, Rooms, Type, Price, Method, SellerG, Date, Distance, Postcode, Bedroom2, Bathroom, Car, LandsizeImp, BuildingArea, YearBuilt, CouncilArea, Lattitude, Longtitude, Regionname, Propertycount) 
-names(imputationsLandsizeforTest)[names(imputationsLandsizeforTest) == "LandsizeImp"] <- "Landsize"
-imputationsCarforTest <- housesTrain %>% select(Suburb, Address, Rooms, Type, Price, Method, SellerG, Date, Distance, Postcode, Bedroom2, Bathroom, CarImp, Landsize, BuildingArea, YearBuilt, CouncilArea, Lattitude, Longtitude, Regionname, Propertycount) 
-names(imputationsCarforTest)[names(imputationsCarforTest) == "CarImp"] <- "Car"
-
-# Transformaciones de variables cuantitativas
-
-sqrt_distance <- housesTrain %>% mutate(sqrt_distance = sqrt(Distance)) %>% select(sqrt_distance)
-housesTrain$sqrt_distance <- unlist(sqrt_distance)
-log_landsize <- imputationsLandsizeFinal %>% mutate(log_landsize=log10(Landsize)) %>% select(log_landsize)
-housesTrain$log_landsize <- unlist(log_landsize)
-log_price <- housesTrain %>% mutate(log_price = log10(Price)) %>% select(log_price)
-housesTrain$log_price <- unlist(log_price)
-
-# Discretización de variables cuantitativas
-housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
-housesTrain$year_built_cat <- factor(cut2(housesTrain$YearBuilt, g=2), labels = c("Antigua", "Moderna"))
-levels(housesTrain$year_built_cat) <- c(levels(housesTrain$year_built_cat), 'Desconocido')
-housesTrain <- housesTrain %>% mutate_at(vars(year_built_cat), ~replace(., is.na(.), 'Desconocido'))
-# Hasta 1 baño
-housesTrain$bath_cat <- factor(cut2(housesTrain$Bathroom, g=2), labels=c("Pocos_baños", "Muchos_baños"))
-#De 0 a 3 dormitorios
-housesTrain$bed_cat <- factor(cut2(housesTrain$Bedroom2, g=2), labels=c("Pocos_dormitorios", "Muchos_dormitorios"))
-#0-1 y 2 o más
-housesTrain$car_cat <-cut(imputationsCarFinal$Car, breaks = c(0,2,20), labels = c("Pocas_plazas", "Muchas_plazas"), include.lowest = TRUE, right = FALSE)
-
-#El join solo se debe ejecutar una vez
-suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n))
-#housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
-# Hasta 1.47% de tasa de venta por barrio
-housesTrain$sell_rate_cat <- factor(cut2(housesTrain$sell_rate_suburb, g=2), labels=c("Menos_populares", "Más_populares"))
-
-# Estandarización de variables
-num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude')
-cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method', 'bath_cat', 'bed_cat', 'sell_rate_cat')
-housesTrainNum <- housesTrain %>% select(num_vars)
-normParam <- preProcess(housesTrainNum)
-housesTrainNumNorm <- predict(normParam, housesTrainNum)
-
-housesTrainFinal <- data.frame(housesTrainNumNorm[,num_vars], housesTrain[,cat_vars], housesTrain[, c('Price', 'log_price', 'price_label', 'price_label_high')])
-
-housesTrainFinal$Regionname = factor(housesTrainFinal$Regionname, levels=c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan', 'South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'))
-#Utilizo la librería plyr
-housesTrainFinal$Regionname  = mapvalues(housesTrainFinal$Regionname, from = c('Southern Metropolitan', 'Northern Metropolitan', 'Western Metropolitan', 'Eastern Metropolitan','South-Eastern Metropolitan', 'Eastern Victoria', 'Northern Victoria', 'Western Victoria'), to = c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan','South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
-
-housesTrainFinal$Method = factor(housesTrainFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
-housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
-```
-
-Comprobamos los niveles de los factores de las variables categóricas. Siempre que sea posible, el primer nivel debería asociarse a la categoría con más muestras, ya que previsiblemente será la que menor desviación estándar tenga. Además, si los factores siguen un orden lógico, debería respetarse en los niveles.
-
-Teniendo en cuenta esto, reordenamos las variables *Regionname*, *Method* y *Type*.
-
-```{r}
-housesTrainFinal$rooms_cat %>% table()
-housesTrainFinal$year_built_cat %>% table()
-housesTrainFinal$car_cat %>% table()
-housesTrainFinal$Regionname %>% table()
-housesTrainFinal$Method %>% table()
-housesTrainFinal$Type %>% table()
-```
-
-```{r echo=FALSE}
-levels(housesTrainFinal$rooms_cat)
-levels(housesTrainFinal$year_built_cat)
-levels(housesTrainFinal$car_cat)
-levels(housesTrainFinal$Regionname)
-levels(housesTrainFinal$Method)
-levels(housesTrainFinal$Type)
-levels(housesTrainFinal$bath_cat)
-levels(housesTrainFinal$bed_cat)
-levels(housesTrainFinal$sell_rate_cat)
-```
 
 <br>
+
+```{r  modeldatasetfunctionyearbuiltnocategorica}
+
+
+```
+
+```{r}
+```
+

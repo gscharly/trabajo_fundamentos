@@ -1,8 +1,20 @@
 ---
-title: "ml1"
-author: "Carlos Gomez Sanchez"
-date: "25 de enero de 2020"
-output: html_document
+title: "Machine Learning 1"
+author: 
+- name: Paula Santamaría Villaverde
+- name: Manuel Jesús Pertejo Lope
+- name: Carlos Gómez Sánchez
+date: "21 de marzo de 2020"
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+      section_divs: true
+    theme: "sandstone"
+    highlight: "zenburn"
+    code_folding: "hide"
 ---
 
 ```{r, message=FALSE}
@@ -13,6 +25,7 @@ library(class)
 library(caret)
 library(cluster)
 library(factoextra)
+library(cowplot)
 
 set.seed(10)
 ```
@@ -30,8 +43,8 @@ housesTrain <- read.csv('base_train.csv')
 
 
 # PCA
-Se debe aplicar sobre datos numéricos que hayan sido estandarizados antes (deben estar en el mismo rango de valores). Por ello, usamos el train ser antiguo.s
-Con las 3 primeras componentes, se captura cerca del 85% de la varianza de los datos.
+Se debe aplicar sobre datos numéricos que hayan sido estandarizados antes (deben estar en el mismo rango de valores). En una primera instancia, se va a probar a aplicar PCA sobre las variables numéricas sobre las que se trabajó en la parte de regresión: raíz cuadrada de la distancia, logaritmo de la parcela, latitud y longitud, todas ellas debidamente estandarizadas. Se observa que con las 3 primeras componentes, se captura cerca del 85% de la varianza de los datos.
+
 ```{r}
 housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
 housesPCA <- prcomp(housesNum)
@@ -39,7 +52,7 @@ summary(housesPCA)
 ```
 
 
-Probamos a lanzar un modelo de regresión lineal múltiple con las variables numéricas después de aplicar PCA.
+Probamos a lanzar un modelo de regresión lineal múltiple con las variables numéricas después de aplicar PCA. El objetivo de esto es comprobar si, con estas componentes (que son independientes entre sí, por lo que no habría correlación lineal entre ellas) se podría mejorar la regresión.
 ```{r}
 train <- housesTrain %>% select(-Price)
 ```
@@ -58,119 +71,174 @@ train_pca_cat %>% select(PC1, PC2, PC3, log_price) %>%
     ggpairs(columns=1:4)
 ```
 
+Efectivamente, estas variables no ayudan a la regresión, al estar completamente no correladas con la salida.
 
 ```{r}
 lm_model <- lm(log_price~PC1 + PC2 + PC3 + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data = train_pca_cat)
 summary(lm_model)
 ```
 
-# Conversión a problema de clasificación
-Para aplicar los siguientes algoritmos, necesitamos convertir nuestro problema a un problema de clasificación. Para ello, vamos a construir una variable *price_label* que dividirá las casas en dos grupos: baratas y caras. El problema ahora será clasificar las viviendas en una de estas dos categorías (se podría extender a más categorías para un problema multiclase).
-
+## Representación de PCA
+Una de las aplicaciones más directas de PCA es la elección de las dos primeras componentes de la descomposición para representar el problema en dos dimensiones. Esto puede ayudar en tareas como clustering. Como primera aproximación, se va a realizar una descomposición de las variables numéricas distancia, tamaño de parcela, latitud y longitud, representando las dos primeras componentes, visualizando el precio como tercera variable.
 
 ```{r}
-housesTrain %>% ggplot(aes(x=Price)) + geom_histogram()
+housesNum <- housesTrain %>% select(Distance, LandsizeImp, Lattitude, Longtitude)
+housesPCA <- prcomp(housesNum, center = TRUE, scale = TRUE)
+summary(housesPCA)
+```
+
+No se ve absolutamente nada, principalmente por los puntos apartados con un valor de PC2 más alto.
+```{r}
+df_houses_pca <- data.frame(housesPCA$x[,1:2])
+df_houses_pca$price_label <- housesTrain$price_label_high
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=price_label)) + geom_point()
+```
+
+```{r}
+df_houses_pca_fil<- df_houses_pca %>% filter(PC2<5 & PC1<5)
+df_houses_pca_fil %>% ggplot(aes(x=PC1, y=PC2, color=price_label)) + geom_point()
 ```
 
 
-
+Mapa de Melbourne :) (lo podemos poner el algún sitio)
 ```{r}
-housesTrain <-housesTrain %>% mutate(price_label = Price > median(Price))
-housesTrain %>% ggplot(aes(x=Price, color=price_label)) + geom_density()
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=price_label_high)) + geom_point()
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Regionname)) + geom_point()
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Type)) + geom_point()
 ```
 
-```{r}
-housesTrain %>% count(price_label)
-```
 
 # kNN
+El siguiente algoritmo que se va a probar es kNN. Para ello, necesitamos que los datos estén de nuevo estandarizados, ya que es un método basado en distancias, y las variables necesitan estar en el mismo rango de valores.
 
 ```{r}
-test <- read.csv('test_set_new_variables.csv', encoding = 'UTF-8')
-test <- test %>% mutate(price_label = Price > median(Price))
+housesTest <- read.csv('base_test.csv')
 ```
 
-```{r knn1}
-# Se usa distancia euclidea para este kNN
-prediccion_knn1 =knn(housesTrain[,c("sqrt_distance","log_landsize", "Lattitude", "Longtitude")], test[,c("sqrt_distance","log_landsize", "Lattitude", "Longtitude")], k=1, cl=housesTrain$price_label)
-
-table(prediccion_knn1,test$price_label)
-
-# Medidas de precisión
-
-accuracy = sum(prediccion_knn1 == test$price_label) /nrow(test)
-error = 1-accuracy
-
-# Acierto sobre el total de las casas CARAS, sensitivity o recall
-sensitivity = sum(prediccion_knn1 == test$price_label & test$price_label == TRUE) / sum(test$price_label == TRUE)
-recall = sensitivity
-
-# Acierto sobre el total de las casas BARATAS
-specificity =  sum(prediccion_knn1 == test$price_label & test$price_label == FALSE) / sum(test$price_label == FALSE)
-
-# Acierto cuando el predicho es CARO
-precision = sum(prediccion_knn1 == test$price_label & prediccion_knn1 == TRUE) / sum(prediccion_knn1 == TRUE)
-
-# Acierto cuando el predicho es BARATO
-npv = sum(prediccion_knn1 == test$price_label & prediccion_knn1 == FALSE) / sum(prediccion_knn1 == FALSE)
-
-# F1_score
-f1score = 2*precision*recall /(precision+recall)
-c(accuracy = accuracy, error = error, sensitivity = sensitivity, specificity = specificity, precision = precision, npv = npv, f1=f1score)
+```{r}
+perform_knn <- function(train, test, label, k, cols) {
+  predictions <- knn(train[,cols], test[,cols], k=k, cl=train[,label])
+  test_metrics <- metrics_function(predictions, test, label)
+  return(test_metrics)
+  
+}
+perform_knn(housesTrain, housesTest, 'price_label_high', 1, num_std_cols)
 ```
+
+
+```{r}
+# Función que calcula distintas métricas de clasificación
+metrics_function <- function(prediccion, test, label){
+
+  # Medidas de precisión
+  
+  accuracy = sum(prediccion == test[,label]) /nrow(test)
+  error = 1-accuracy
+  
+  # Acierto sobre el total de las casas CARAS, sensitivity o recall
+  sensitivity = sum(prediccion == test[,label] & test[,label] == TRUE) / sum(test[,label] == TRUE)
+  recall = sensitivity
+  
+  # Acierto sobre el total de las casas BARATAS
+  specificity =  sum(prediccion == test[,label] & test[,label] == FALSE) / sum(test[,label] == FALSE)
+  
+  # Acierto cuando el predicho es CARO
+  precision = sum(prediccion == test[,label] & prediccion == TRUE) / sum(prediccion == TRUE)
+  
+  # Acierto cuando el predicho es BARATO
+  npv = sum(prediccion == test[,label] & prediccion == FALSE) / sum(prediccion == FALSE)
+  
+  # F1_score
+  f1score = 2*precision*recall /(precision+recall)
+  return(c(accuracy = accuracy, error = error, sensitivity = sensitivity, specificity = specificity, precision = precision, npv = npv, f1=f1score))
+  
+}
+```
+
+Ojo al F1. El accuracy sube porque hay más ceros, pero se siguen fallando los mismos 1.
+
+```{r}
+metrics_function(prediccion_knn1, housesTest, 'price_label_high')
+```
+
 
 ```{r confusion_knn1}
-confusionMatrix(table(prediccion_knn1,test$price_label), positive="TRUE")
+confusionMatrix(table(prediccion_knn1,housesTest$price_label_high), positive="TRUE")
 ```
 
 ## k óptimo
+ESTO HABRIA QUE HACERLO SOBRE VALIDACIÓN NO?
+Para price_label:
 
 ```{r}
-long = 15
-accuracy = rep(0,long)
-f1score = rep(0,long)
-recall = rep(0,long)
-precision = rep(0,long)
-for (i in 1:long)
-{
-  prediccion_knn_cv =knn.cv(housesTrain[,c("sqrt_distance","log_landsize", "Lattitude", "Longtitude")], 
-                            k=i, cl=housesTrain$price_label)
-  accuracy[i] = sum(prediccion_knn_cv == housesTrain$price_label) /nrow(housesTrain)
-  recall[i] = sum(prediccion_knn_cv == housesTrain$price_label & housesTrain$price_label == TRUE) / sum(housesTrain$price_label == TRUE)
-  precision[i] = sum(prediccion_knn_cv == housesTrain$price_label & prediccion_knn_cv == TRUE) / sum(prediccion_knn_cv == TRUE)
-  f1score[i] = 2*precision[i]*recall[i]/(precision[i]+recall[i])
-}
-resultados_knn = as.data.frame(cbind(accuracy,f1score,precision,recall))
-resultados_knn = resultados_knn %>% mutate(index=as.factor(seq(1:long)))
+plot_acc_f1_k <- function(train, label, cols){
+  long = 15
+  accuracy = rep(0,long)
+  f1score = rep(0,long)
+  recall = rep(0,long)
+  precision = rep(0,long)
+  for (i in 1:long)
+  {
+    prediccion_knn_cv =knn.cv(train[,cols], 
+                              k=i, cl=train[,label])
+    accuracy[i] = sum(prediccion_knn_cv == train[,label]) /nrow(train)
+    recall[i] = sum(prediccion_knn_cv == train[,label] & train[,label] == TRUE) / sum(train[,label] == TRUE)
+    precision[i] = sum(prediccion_knn_cv == train[,label] & prediccion_knn_cv == TRUE) / sum(prediccion_knn_cv == TRUE)
+    f1score[i] = 2*precision[i]*recall[i]/(precision[i]+recall[i])
+  }
+  resultados_knn = as.data.frame(cbind(accuracy,f1score,precision,recall))
+  resultados_knn = resultados_knn %>% mutate(index=as.factor(seq(1:long)))
+  
+  max(resultados_knn$f1score)
+  which.max(resultados_knn$f1score)
+  
+  
+  p1 <- ggplot(data=resultados_knn,aes(x=index,y=accuracy)) + 
+    geom_col(colour="cyan4",fill="cyan3")+
+    ggtitle("Accuracy")
+  
+  
+  p2 <- ggplot(data=resultados_knn,aes(x=index,y=f1score)) + 
+    geom_col(colour="orange4",fill="orange3") +
+    ggtitle("F1_score values")
+  
+  plot_grid(p1, p2, rel_heights = c(1/2, 1/2))
+  }
 
-max(resultados_knn$f1score)
-which.max(resultados_knn$f1score)
-
-
-ggplot(data=resultados_knn,aes(x=index,y=accuracy)) + 
-  geom_col(colour="cyan4",fill="cyan3")+
-  ggtitle("Accuracy")
-
-
-ggplot(data=resultados_knn,aes(x=index,y=f1score)) + 
-  geom_col(colour="orange4",fill="orange3") +
-  ggtitle("F1_score values")
+plot_acc_f1_k(housesTrain, 'price_label', num_std_cols)
 ```
 Para k=5 obtenemos un accuracy y un f1 score cercanos a 0.8, Se observa que a medida que k va aumentando, las métricas no incrementan.
 
-## Test con k óptimo
+HABRIA QUE SACAR F1
 ```{r knn5}
 # En train
-prediccion_knn5_train =knn.cv(housesTrain[,c("sqrt_distance","log_landsize", "Lattitude", "Longtitude")], 
+prediccion_knn5_train =knn.cv(housesTrain[,num_std_cols], 
                               k=5, cl=housesTrain$price_label)
 confusionMatrix(table(prediccion_knn5_train,housesTrain$price_label), positive="TRUE")
 
 #En test
-prediccion_knn5_test=knn(housesTrain[,c("sqrt_distance","log_landsize", "Lattitude", "Longtitude")], test[,c("sqrt_distance","log_landsize", "Lattitude", "Longtitude")],
+prediccion_knn5_test=knn(housesTrain[,num_std_cols], test[,num_std_cols],
                          k=5, cl=housesTrain$price_label)
 confusionMatrix(table(prediccion_knn5_test,test$price_label), positive="TRUE")
 ```
 
+
+Para price_label_high:
+
+```{r}
+plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
+```
+```{r knn7high}
+# En train
+prediccion_knn5_train =knn.cv(housesTrain[,num_std_cols], 
+                              k=7, cl=housesTrain$price_label_high)
+confusionMatrix(table(prediccion_knn5_train,housesTrain$price_label_high), positive="TRUE")
+
+#En test
+prediccion_knn5_test=knn(housesTrain[,num_std_cols], test[,num_std_cols],
+                         k=7, cl=housesTrain$price_label_high)
+confusionMatrix(table(prediccion_knn5_test,test$price_label_high), positive="TRUE")
+```
 
 # k-means
 
@@ -251,6 +319,133 @@ plot(k.values, avg_sil_values,
 
 Según las tres gráficas obtenidas, el k óptimo es 2. (dudo??)
 
+
+# Regresión logística
+
+
+```{r}
+# Se creea la variable objetivo (75-25) y se eliminan los antiguos targets
+train <- read.csv('base_train.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'Car', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+train <- train %>%  select(-filter_cols)
+head(train)
+```
+
+```{r}
+model <- glm(price_label_high ~ ., family = binomial(link = 'logit'), data = train)
+summary(model)
+```
+
+```{r}
+# Se crea el test set
+test <- read.csv('base_test.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'Car', 'YearBuilt', 'CouncilArea', 'Landsize', 'Price', 'log_price', 'price_label')
+test <- test %>% select(-filter_cols)
+head(test)
+```
+
+
+```{r}
+threshold = 0.5
+probabilities <- predict(model, test, type="response") 
+preds <- ifelse(probabilities > threshold,1,0)
+preds <- factor(preds)
+```
+
+
+```{r}
+#metrics_function(preds, test, 'price_label_high')
+metrics_function_num <- function(preds, test, label){
+  accuracy = sum(preds == test[,label]) / nrow(test)
+  recall = sum(preds == test[,label] & test[,label] == 1) / sum(test[,label] == 1)
+  precision = sum(preds == test[,label] & test[,label] == 1) / sum(preds == 1)
+  f1_score = 2*recall*precision/(recall+precision)
+  specificity = sum(preds == test[,label] & test[,label] == 0) / sum(test[,label] == 0)
+  c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
+  
+}
+
+metrics_function_num(preds, test, 'price_label_high')
+
+
+```
+
+
+```{r}
+test$price_label_high <- ifelse(test$price_label_high==TRUE,1,0)
+test$price_label_high <- as.factor(test$price_label_high)
+cm <- caret::confusionMatrix(preds, test$price_label_high, positive = '1')
+cm
+```
+
+
+```{r}
+ggplotConfusionMatrix <- function(m){
+  mytitle <- paste("Accuracy", percent_format()(m$overall[1]))
+  p <-
+    ggplot(data = as.data.frame(m$table) ,
+           aes(x = Reference, y = Prediction)) +
+    geom_tile(aes(fill = log(Freq)), colour = "white") +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    geom_text(aes(x = Reference, y = Prediction, label = Freq)) +
+    theme(legend.position = "none") +
+    ggtitle(mytitle)
+  return(p)
+}
+
+ggplotConfusionMatrix(cm)
+```
+
+```{r}
+optimal_threshold <- optimalCutoff(test$price_label_high,probabilities, optimiseFor='Both')[1]
+preds <- ifelse(probabilities > optimal_threshold,1,0)
+preds <- factor(preds)
+optimal_threshold
+```
+
+```{r}
+metrics_function_num(preds, test, 'price_label_high')
+```
+
+
+
+```{r}
+probabilities_train <- predict(model, type = "response")
+train_numeric <- train %>% select_if(is.numeric)
+predictors <- colnames(train_numeric)
+train_numeric <- train_numeric %>%
+  mutate(logit = log(probabilities_train/(1-probabilities_train))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+```
+
+```{r}
+ggplot(train_numeric, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+```
+
+```{r}
+car::vif(model)
+```
+
+```{r}
+model2<- glm(price_label_high ~ .-Regionname - Method, family = binomial(link = 'logit'), data = train)
+summary(model2)
+```
+
+
+```{r}
+threshold2 = 0.5
+probabilities2 <- predict(model2, test, type="response") 
+preds2 <- ifelse(probabilities2 > threshold,1,0)
+preds2 <- factor(preds2)
+```
+
+```{r}
+metrics_function_num(preds2, test, 'price_label_high')
+```
 
 
 
