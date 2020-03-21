@@ -14,15 +14,22 @@ library(caret)
 set.seed(10)
 ```
 
+NOTA IMPORTANTE: Se ha generado el dataset base_train con:
+- Variables originales (hasta Propertycount)
+- Variable log_price
+- Variables para clasificación (price_label con mediana y price_label_high con percentil 75)
+- Variables generadas en Fundamentos para regresión lineal (desde may_have_water). Incluye variables numéricas estandarizadas (con _std)
+- Variables imputadas son LandsizeImp, CarImp, year_built_cat
 
 ```{r}
-housesTrain <- read.csv('train_set_new_variables.csv')
+housesTrain <- read.csv('base_train.csv')
 ```
 
 # PCA
+Se debe aplicar sobre datos numéricos que hayan sido estandarizados antes (deben estar en el mismo rango de valores). Por ello, usamos el train ser antiguo.s
 Con las 3 primeras componentes, se captura cerca del 85% de la varianza de los datos.
 ```{r}
-housesNum <- housesTrain %>% select(sqrt_distance, log_landsize, Lattitude, Longtitude)
+housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
 housesPCA <- prcomp(housesNum)
 summary(housesPCA)
 ```
@@ -31,16 +38,6 @@ summary(housesPCA)
 Probamos a lanzar un modelo de regresión lineal múltiple con las variables numéricas después de aplicar PCA.
 ```{r}
 train <- housesTrain %>% select(-Price)
-
-train$Regionname = factor(train$Regionname, levels=c('Southern_Metropolitan', 'Northern_Metropolitan', 'Western_Metropolitan', 'Eastern_Metropolitan', 'South_Eastern_Metropolitan', 'Eastern_Victoria', 'Northern_Victoria', 'Western_Victoria'))
-train$Method = factor(train$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
-train$Type = factor(train$Type, levels=c('h', 'u', 't'))
-train$car_cat = factor(train$car_cat, levels = c("Pocas_plazas", "Muchas_plazas"))
-train$year_built_cat = factor(train$year_built_cat, levels = c('Antigua', 'Moderna', 'Desconocido'))
-train$rooms_cat = factor(train$rooms_cat, levels = c('Pequeñas','Medianas','Grandes'))
-train$bed_cat = factor(train$bed_cat, levels=c("Pocos_dormitorios", "Muchos_dormitorios"))
-train$bath_cat = factor(train$bath_cat, levels=c("Pocos_baños", "Muchos_baños"))
-train$sell_rate_cat = factor(train$sell_rate_cat, levels=c("Menos_populares", "Más_populares"))
 ```
 
 ```{r}
@@ -51,7 +48,7 @@ train_pca_cat$log_price <- train$log_price
 ```
 
 Hemos conseguido que las variables de entrada sean independientes, pero estas nuevas variables no están correladas linealmente con la salida, por lo que el modelo no debería ser demasiado bueno.
-```{r}
+```{r, message=FALSE}
 train_pca_cat %>% select(PC1, PC2, PC3, log_price) %>%
     na.omit() %>%
     ggpairs(columns=1:4)
