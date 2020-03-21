@@ -1,0 +1,153 @@
+---
+title: "logistic_regression"
+author: "Manuel Pertejo"
+date: "2/27/2020"
+output: html_document
+---
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(class)
+library(caret)
+library(cluster)
+library(factoextra)
+library(scales)
+library(tidyr)
+library(InformationValue)
+
+
+set.seed(10)
+```
+
+
+```{r}
+# Se creea la variable objetivo (75-25) y se eliminan los antiguos targets
+housesTrain <- read.csv('train_set_new_variables.csv', encoding = 'UTF-8')
+train <- housesTrain %>% mutate(price_label = Price > 1330000) 
+train$price_label <- ifelse(train$price_label==TRUE,1,0)
+train$price_label <- as.factor(train$price_label)
+train <- train %>%  select(-'Price', -'log_price')
+head(train)
+```
+
+```{r}
+model <- glm(price_label ~ ., family = binomial(link = 'logit'), data = train)
+summary(model)
+```
+
+```{r}
+# Se crea el test set
+housesTest <- read.csv('test_set_new_variables.csv', encoding = 'UTF-8')
+test <- housesTest %>% mutate(price_label = Price > 1330000)
+test$price_label <- ifelse(test$price_label==TRUE,1,0)
+test$price_label <- as.factor(test$price_label)
+test <- test %>%  select(-'Price', -'log_price')
+```
+
+
+```{r}
+threshold = 0.5
+probabilities <- predict(model, test, type="response") 
+preds <- ifelse(probabilities > threshold,1,0)
+preds <- factor(preds)
+```
+
+
+```{r}
+accuracy = sum(preds == test$price_label) / nrow(test)
+recall = sum(preds == test$price_label & test$price_label == 1) / sum(test$price_label == 1)
+precision = sum(preds == test$price_label & test$price_label == 1) / sum(preds == 1)
+f1_score = 2*recall*precision/(recall+precision)
+specificity = sum(preds == test$price_label & test$price_label == 0) / sum(test$price_label == 0)
+c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
+```
+
+
+```{r}
+cm <- caret::confusionMatrix(preds, test$price_label, positive = '1')
+cm
+```
+
+
+```{r}
+ggplotConfusionMatrix <- function(m){
+  mytitle <- paste("Accuracy", percent_format()(m$overall[1]))
+  p <-
+    ggplot(data = as.data.frame(m$table) ,
+           aes(x = Reference, y = Prediction)) +
+    geom_tile(aes(fill = log(Freq)), colour = "white") +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    geom_text(aes(x = Reference, y = Prediction, label = Freq)) +
+    theme(legend.position = "none") +
+    ggtitle(mytitle)
+  return(p)
+}
+
+ggplotConfusionMatrix(cm)
+```
+
+```{r}
+optimal_threshold <- optimalCutoff(test$price_label,probabilities, optimiseFor='Both')[1]
+preds <- ifelse(probabilities > optimal_threshold,1,0)
+preds <- factor(preds)
+optimal_threshold
+```
+
+```{r}
+accuracy = sum(preds == test$price_label) / nrow(test)
+recall = sum(preds == test$price_label & test$price_label == 1) / sum(test$price_label == 1)
+precision = sum(preds == test$price_label & test$price_label == 1) / sum(preds == 1)
+f1_score = 2*recall*precision/(recall+precision)
+specificity = sum(preds == test$price_label & test$price_label == 0) / sum(test$price_label == 0)
+c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
+```
+
+
+
+```{r}
+probabilities_train <- predict(model, type = "response")
+train_numeric <- train %>% select_if(is.numeric)
+predictors <- colnames(train_numeric)
+train_numeric <- train_numeric %>%
+  mutate(logit = log(probabilities_train/(1-probabilities_train))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+```
+
+```{r}
+ggplot(train_numeric, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+```
+
+```{r}
+car::vif(model)
+```
+
+```{r}
+model2<- glm(price_label ~ .-Regionname - Method, family = binomial(link = 'logit'), data = train)
+summary(model2)
+```
+
+
+```{r}
+threshold2 = 0.5
+probabilities2 <- predict(model2, test, type="response") 
+preds2 <- ifelse(probabilities2 > threshold,1,0)
+preds2 <- factor(preds2)
+```
+
+```{r}
+accuracy2 = sum(preds2 == test$price_label) / nrow(test)
+recall2 = sum(preds2 == test$price_label & test$price_label == 1) / sum(test$price_label == 1)
+precision2 = sum(preds2 == test$price_label & test$price_label == 1) / sum(preds2 == 1)
+f1_score2 = 2*recall2*precision2/(recall2+precision2)
+specificity2 = sum(preds2 == test$price_label & test$price_label == 0) / sum(test$price_label == 0)
+c(accuracy = accuracy2, recall = recall2, specificity = specificity2, precision = precision2, f1=f1_score2)
+```
+
+
+

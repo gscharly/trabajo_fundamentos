@@ -11,6 +11,9 @@ library(ggplot2)
 library(GGally)
 library(class)
 library(caret)
+library(cluster)
+library(factoextra)
+
 set.seed(10)
 ```
 
@@ -24,6 +27,7 @@ NOTA IMPORTANTE: Se ha generado el dataset base_train con:
 ```{r}
 housesTrain <- read.csv('base_train.csv')
 ```
+
 
 # PCA
 Se debe aplicar sobre datos numéricos que hayan sido estandarizados antes (deben estar en el mismo rango de valores). Por ello, usamos el train ser antiguo.s
@@ -63,9 +67,7 @@ summary(lm_model)
 # Conversión a problema de clasificación
 Para aplicar los siguientes algoritmos, necesitamos convertir nuestro problema a un problema de clasificación. Para ello, vamos a construir una variable *price_label* que dividirá las casas en dos grupos: baratas y caras. El problema ahora será clasificar las viviendas en una de estas dos categorías (se podría extender a más categorías para un problema multiclase).
 
-```{r}
-housesTrain %>% summarise(median(Price))
-```
+
 ```{r}
 housesTrain %>% ggplot(aes(x=Price)) + geom_histogram()
 ```
@@ -77,10 +79,14 @@ housesTrain <-housesTrain %>% mutate(price_label = Price > median(Price))
 housesTrain %>% ggplot(aes(x=Price, color=price_label)) + geom_density()
 ```
 
+```{r}
+housesTrain %>% count(price_label)
+```
+
 # kNN
 
 ```{r}
-test <- read.csv('test_set_new_variables.csv')
+test <- read.csv('test_set_new_variables.csv', encoding = 'UTF-8')
 test <- test %>% mutate(price_label = Price > median(Price))
 ```
 
@@ -164,4 +170,88 @@ prediccion_knn5_test=knn(housesTrain[,c("sqrt_distance","log_landsize", "Lattitu
                          k=5, cl=housesTrain$price_label)
 confusionMatrix(table(prediccion_knn5_test,test$price_label), positive="TRUE")
 ```
+
+
+# k-means
+
+```{r}
+housesTrainKmeans <- housesTrain %>% dplyr::select(-Regionname, -Type, -Method, -year_built_cat)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTrainKmeans['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric()
+
+housesTrainKmeans['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+
+housesTrainKmeans['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric()
+
+housesTrainKmeans['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric()
+
+housesTrainKmeans['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric()
+
+
+
+```
+
+```{r kmeans}
+#nume <- housesTrainKmeans %>% dplyr::select(sqrt_distance, log_landsize, Lattitude, Longtitude, Price, log_price)
+
+fac = as.matrix(housesTrainKmeans)
+
+#Guardamos el número filas
+n <- nrow(fac)
+
+#Probamos un cluster de 2 grupos
+clusters2=kmeans(fac,centers=2,nstart=25)
+
+#Para ver la variabilidad dentro de los grupos correspondiente a esos dos clusters
+clusters2$withinss
+
+#Buscamos el número de clusters óptimo 
+
+#Inicializamos el vector
+SSW <- vector(mode = "numeric", length = 15)
+#Variabilidad de todos los datos, es decir, todos los datos como un único cluster
+SSW[1] <- (n - 1) * sum(apply(X = fac, MARGIN = 2, FUN = 'var'))
+#Variabilidad de cada modelo, desde 2 clusters hasta 15 clusters
+for (i in 2:15) SSW[i] <- sum(kmeans(fac,centers=i,nstart=25)$withinss)
+#Dibujamos un gráfico con el resultado
+plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within
+groups",pch=19, col="steelblue4")
+
+#Otra manera de encontrar el número de clusters óptimo: silhouette coefficient 
+#This coefficiente ranges from  −1  to  1 , so that:
+  #Near +1 indicate that the sample is far away from the neighboring clusters.
+  #A value of 0 indicates that the sample is on or very close to the decision boundary     between two neighboring clusters and
+  #Negative values indicate that those samples might have been assigned to the wrong       cluster.
+
+fviz_nbclust(fac, kmeans, method='silhouette')
+
+avg_sil <- function(k) {
+  km.res <- kmeans(fac, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(fac))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 15
+k.values <- 2:15
+
+# extract avg silhouette for 2-15 clusters
+avg_sil_values <- sapply(k.values, avg_sil)
+
+plot(k.values, avg_sil_values,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters K",
+       ylab = "Average Silhouettes")
+```
+
+Según las tres gráficas obtenidas, el k óptimo es 2. (dudo??)
+
+
+
+
 
