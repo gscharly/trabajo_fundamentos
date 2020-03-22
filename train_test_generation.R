@@ -88,6 +88,8 @@ housesTrainFinal$Regionname  = mapvalues(housesTrainFinal$Regionname, from = c('
 
 housesTrainFinal$Method = factor(housesTrainFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
 housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
+# Se elimina la variable Car
+housesTrainFinal <- housesTrainFinal %>% select(-Car)
 
 
 
@@ -166,6 +168,9 @@ final_dataset_construction_year <- function(dataset, standarizer, imputationsCar
   datasetFinal$Method = factor(datasetFinal$Method, levels=c('S', 'SP', 'PI', 'VB', 'SA'))
   datasetFinal$Type = factor(datasetFinal$Type, levels=c('h', 'u', 't'))
   
+  # Se cambia el nombre de las columnas car y landsize para que cuadren con las de train
+  colnames(datasetFinal)[14] <- 'CarImp'
+  colnames(datasetFinal)[15] <- 'LandsizeImp'
   
   return(datasetFinal)
   

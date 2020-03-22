@@ -26,24 +26,31 @@ library(caret)
 library(cluster)
 library(factoextra)
 library(cowplot)
+library(scales)
+library(tidyr)
+library(InformationValue)
+library(rpart)
+library(rpart.plot)
 
 set.seed(10)
 ```
 
-NOTA IMPORTANTE: Se ha generado el dataset base_train con:
-- Variables originales (hasta Propertycount)
+NOTA IMPORTANTE: Se han generado los datasets base_train y base_tes con:
+- Variables originales
 - Variable log_price
 - Variables para clasificación (price_label con mediana y price_label_high con percentil 75)
-- Variables generadas en Fundamentos para regresión lineal (desde may_have_water). Incluye variables numéricas estandarizadas (con _std)
-- Variables imputadas son LandsizeImp, CarImp, year_built_cat
+- Variables generadas en Fundamentos para regresión lineal. Incluye variables numéricas estandarizadas (con _std) y numéricas discretizadas (con _cat)
+- Variables imputadas son LandsizeImp, CarImp
 
-```{r}
-housesTrain <- read.csv('base_train.csv')
-```
+Se recomienda leerlos cada vez que se vaya a probar un algoritmo nuevo.
 
 
 # PCA
 Se debe aplicar sobre datos numéricos que hayan sido estandarizados antes (deben estar en el mismo rango de valores). En una primera instancia, se va a probar a aplicar PCA sobre las variables numéricas sobre las que se trabajó en la parte de regresión: raíz cuadrada de la distancia, logaritmo de la parcela, latitud y longitud, todas ellas debidamente estandarizadas. Se observa que con las 3 primeras componentes, se captura cerca del 85% de la varianza de los datos.
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+```
 
 ```{r}
 housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
@@ -111,22 +118,19 @@ housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Type)) + geom_point(
 # kNN
 El siguiente algoritmo que se va a probar es kNN. Para ello, necesitamos que los datos estén de nuevo estandarizados, ya que es un método basado en distancias, y las variables necesitan estar en el mismo rango de valores.
 
+PARA HACER: intentar probar otras distancias
+
 ```{r}
+housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
+# Para que funcione confusionMatrix de caret, el target debe ser un factor
+housesTrain$price_label <- as.factor(housesTrain$price_label)
+housesTrain$price_label_high <- as.factor(housesTrain$price_label_high)
+housesTest$price_label <- as.factor(housesTest$price_label)
+housesTest$price_label_high <- as.factor(housesTest$price_label_high)
 ```
 
-```{r}
-perform_knn <- function(train, test, label, k, cols) {
-  predictions <- knn(train[,cols], test[,cols], k=k, cl=train[,label])
-  test_metrics <- metrics_function(predictions, test, label)
-  return(test_metrics)
-  
-}
-perform_knn(housesTrain, housesTest, 'price_label_high', 1, num_std_cols)
-```
-
-
-```{r}
+```{r knn_functions}
 # Función que calcula distintas métricas de clasificación
 metrics_function <- function(prediccion, test, label){
 
@@ -150,20 +154,25 @@ metrics_function <- function(prediccion, test, label){
   
   # F1_score
   f1score = 2*precision*recall /(precision+recall)
-  return(c(accuracy = accuracy, error = error, sensitivity = sensitivity, specificity = specificity, precision = precision, npv = npv, f1=f1score))
+  conf_mat <- caret::confusionMatrix(table(prediccion, test[,label]), positive="TRUE")
+  metrics <- c(accuracy = accuracy, error = error, sensitivity = sensitivity, specificity = specificity, precision = precision, npv = npv, f1=f1score)
+  return(list(metrics, conf_mat))
+  
+}
+
+perform_knn <- function(train, test, label, k, cols) {
+  predictions <- knn(train[,cols], test[,cols], k=k, cl=train[,label])
+  test_metrics <- metrics_function(predictions, test, label)
+  return(test_metrics)
   
 }
 ```
 
-Ojo al F1. El accuracy sube porque hay más ceros, pero se siguen fallando los mismos 1.
 
-```{r}
-metrics_function(prediccion_knn1, housesTest, 'price_label_high')
-```
-
-
-```{r confusion_knn1}
-confusionMatrix(table(prediccion_knn1,housesTest$price_label_high), positive="TRUE")
+```{r knn1}
+num_std_cols <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std')
+metrics <- perform_knn(housesTrain, housesTest, 'price_label_high', 1, num_std_cols)
+metrics
 ```
 
 ## k óptimo
@@ -207,43 +216,304 @@ plot_acc_f1_k <- function(train, label, cols){
 
 plot_acc_f1_k(housesTrain, 'price_label', num_std_cols)
 ```
-Para k=5 obtenemos un accuracy y un f1 score cercanos a 0.8, Se observa que a medida que k va aumentando, las métricas no incrementan.
+Para k=5 obtenemos un accuracy y un f1 score entre 0.75 y 0.8. Se observa que a medida que k va aumentando, las métricas no incrementan.
 
 HABRIA QUE SACAR F1
 ```{r knn5}
 # En train
 prediccion_knn5_train =knn.cv(housesTrain[,num_std_cols], 
                               k=5, cl=housesTrain$price_label)
-confusionMatrix(table(prediccion_knn5_train,housesTrain$price_label), positive="TRUE")
+metrics_function(prediccion_knn5_train, housesTrain, 'price_label')
 
 #En test
-prediccion_knn5_test=knn(housesTrain[,num_std_cols], test[,num_std_cols],
+prediccion_knn5_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
                          k=5, cl=housesTrain$price_label)
-confusionMatrix(table(prediccion_knn5_test,test$price_label), positive="TRUE")
+metrics_function(prediccion_knn5_test, housesTest, 'price_label')
 ```
 
 
-Para price_label_high:
+Para price_label_high, vemos de nuevo que el f1-score es menor. Los mejores valores de k podrían ser 5 o 7.
 
 ```{r}
 plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
 ```
 ```{r knn7high}
 # En train
-prediccion_knn5_train =knn.cv(housesTrain[,num_std_cols], 
+prediccion_knn7_train =knn.cv(housesTrain[,num_std_cols], 
                               k=7, cl=housesTrain$price_label_high)
-confusionMatrix(table(prediccion_knn5_train,housesTrain$price_label_high), positive="TRUE")
+metrics_function(prediccion_knn7_train, housesTrain, 'price_label_high')
 
 #En test
-prediccion_knn5_test=knn(housesTrain[,num_std_cols], test[,num_std_cols],
+prediccion_knn7_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
                          k=7, cl=housesTrain$price_label_high)
-confusionMatrix(table(prediccion_knn5_test,test$price_label_high), positive="TRUE")
+metrics_function(prediccion_knn7_test, housesTest, 'price_label_high')
 ```
 
-# k-means
+# Regresión logística
+
 
 ```{r}
-housesTrainKmeans <- housesTrain %>% dplyr::select(-Regionname, -Type, -Method, -year_built_cat)
+# Se creea la variable objetivo (75-25) y se eliminan los antiguos targets
+train <- read.csv('base_train.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+train <- train %>%  select(-filter_cols)
+head(train)
+```
+
+```{r}
+model <- glm(price_label_high ~ ., family = binomial(link = 'logit'), data = train)
+summary(model)
+```
+
+```{r}
+# Se crea el test set
+test <- read.csv('base_test.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'CarImp', 'YearBuilt', 'CouncilArea', 'LandsizeImp', 'Price', 'log_price', 'price_label')
+test <- test %>% select(-filter_cols)
+# Se cambia el target a numérico y a factor
+test$price_label_high <- ifelse(test$price_label_high==TRUE,1,0)
+test$price_label_high <- as.factor(test$price_label_high)
+head(test)
+```
+
+
+```{r}
+threshold = 0.5
+probabilities <- predict(model, test, type="response") 
+preds <- ifelse(probabilities > threshold,1,0)
+preds <- factor(preds)
+```
+
+
+```{r}
+#metrics_function(preds, test, 'price_label_high')
+metrics_function_num <- function(preds, test, label){
+  accuracy = sum(preds == test[,label]) / nrow(test)
+  recall = sum(preds == test[,label] & test[,label] == 1) / sum(test[,label] == 1)
+  precision = sum(preds == test[,label] & test[,label] == 1) / sum(preds == 1)
+  f1_score = 2*recall*precision/(recall+precision)
+  specificity = sum(preds == test[,label] & test[,label] == 0) / sum(test[,label] == 0)
+  metrics <- c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
+  cm <- caret::confusionMatrix(preds, test[,label], positive = '1')
+  return(list(metrics, cm))
+  
+}
+
+metrics_function_num(preds, test, 'price_label_high')
+```
+
+
+```{r}
+ggplotConfusionMatrix <- function(m){
+  mytitle <- paste("Accuracy", percent_format()(m$overall[1]))
+  p <-
+    ggplot(data = as.data.frame(m$table) ,
+           aes(x = Reference, y = Prediction)) +
+    geom_tile(aes(fill = log(Freq)), colour = "white") +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    geom_text(aes(x = Reference, y = Prediction, label = Freq)) +
+    theme(legend.position = "none") +
+    ggtitle(mytitle)
+  return(p)
+}
+cm <- caret::confusionMatrix(preds, test$price_label_high, positive = '1')
+ggplotConfusionMatrix(cm)
+```
+
+```{r}
+optimal_threshold <- optimalCutoff(test$price_label_high,probabilities, optimiseFor='Both')[1]
+preds <- ifelse(probabilities > optimal_threshold,1,0)
+preds <- factor(preds)
+optimal_threshold
+```
+
+```{r}
+metrics_function_num(preds, test, 'price_label_high')
+```
+
+
+
+```{r}
+probabilities_train <- predict(model, type = "response")
+train_numeric <- train %>% select_if(is.numeric)
+predictors <- colnames(train_numeric)
+train_numeric <- train_numeric %>%
+  mutate(logit = log(probabilities_train/(1-probabilities_train))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+```
+
+```{r}
+ggplot(train_numeric, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+```
+
+```{r}
+car::vif(model)
+```
+
+```{r}
+model2<- glm(price_label_high ~ .-Regionname - Method, family = binomial(link = 'logit'), data = train)
+summary(model2)
+```
+
+
+```{r}
+threshold2 = 0.5
+probabilities2 <- predict(model2, test, type="response") 
+preds2 <- ifelse(probabilities2 > threshold,1,0)
+preds2 <- factor(preds2)
+```
+
+```{r}
+metrics_function_num(preds2, test, 'price_label_high')
+```
+
+# Árboles de decisión
+Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer lugar, se utilizarán las variables que se consideraron importantes en el análisis exploratorio, para después probar distintas formas de tuning e intentar evitar el sobreaprendizaje del árbol.
+
+## Utilizando directamente las variables estudiadas
+Se utilizarán directamente las variables estudiadas en el análisis exploratorio, dejando de lado transformaciones y estandarizaciones, además de variables categóricas con muchas categorías. Además, si recordamos, para la regresión lineal tuvimos que convertir varias features numéricas en categóricas (número de habitaciones, año de construcción...). Podemos probar a introducir las variables originales para ver qué cortes propone el árbol.
+
+
+### Con la variable price mediana
+
+Como se puede ver con el árbol, la principal división se realiza por el tipo de vivienda (en este caso unifamiliar, se puede entender que separa casas grandes de pequeñas). Si la casa es u (pequeña), se clasificaría con buena tasa el 22% de los datos (92% de las veces serían 0, casas baratas). Por el otro lado del árbol, separa por localización (si se observa el mapa, tiene bastante sentido, las casas caras aparecen en el Noreste). Habría unos nodos con más fallos. Además, la última división por distancia al centro, nos deja un nodo con el 50% de la población, de los cuales el 84% se clasifican como casas caras, mientras que nos deja un nodo con solo un 3%. Esto quiźas se podría mejorar parando antes.
+
+
+
+```{r load_variables}
+housesTrain <- read.csv('base_train.csv')
+housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                     "price_label")]
+n = dim(housesTrainOrigVar)[1]
+# Hay que factorizar el label para que se construya bien el árbol
+housesTrainOrigVar$price_label <- as.factor(housesTrainOrigVar$price_label)
+```
+
+```{r tree1_price_label}
+housesTree1 = rpart(price_label ~ ., data = housesTrainOrigVar)
+rpart.plot(housesTree1)
+#summary(housesTree1)
+```
+
+```{r metricsTree1}
+preds <- predict(housesTree1, type = "class")
+table(pred = preds, obs = housesTrainOrigVar$price_label)
+metrics_function(preds, housesTrainOrigVar, 'price_label')
+```
+
+
+
+### Podando el árbol 
+Queremos quedarnos con el árbol más pequeño que tenga el menor error de cross validation. Nos quedamos con 4 hojas, aumentando un poco el error.
+
+```{r}
+printcp(housesTree1)
+```
+```{r}
+plotcp(housesTree1)
+```
+
+```{r}
+#pruneTREE1 = prune(housesTree1, cp = housesTree1$cptable[which.min(housesTree1$cptable[,"xerror"]), "CP"])
+pruneTREE1 = prune(housesTree1, cp = housesTree1$cptable[4,"CP"])
+rpart.plot(pruneTREE1)
+```
+Pondando el último nodo, se consiguen unas métricas ligeramente inferiores en train.
+
+```{r metricsPruneTree1}
+preds <- predict(pruneTREE1, type = "class")
+table(pred = preds, obs = housesTrainOrigVar$price_label)
+metrics_function(preds, housesTrainOrigVar, 'price_label')
+```
+
+
+### Con la variable price 75%
+
+Al aumentar el corte de la distinción entre barato y caro, observamos que el accuracy mejora ligeramente, pero el f1-score empeora (de 0.83 a 0.69). Esto se debe a la caída del recall (positivos acertados respecto al total de positivos reales), y es lógico, ya que ahora hay menos positivos, y es más difícil diferenciar entre las clases. 
+
+En los cortes ahora se tiene en cuenta el número de habitaciones como corte principal (de nuevo diferenciando entre casas pequeñas y grandes). El siguiente corte se realiza en base a la región (de nuevo localización, estaría bien saber las regiones porque no se ve...). Parece que la región por la que se discrimina es Southern Metropolitan. Si la casa es pequeña y está en cualquier región que no sea esa, se clasifica como barata la mayoría de las veces. REVISAR!!
+
+Algo que también se puede ver es que hay varios nodos con pocas muestras (los que vienen de la distinción de tipo de casa es Southern Metropolitan). Vemos además que hay un montón de falsos negativos (casas caras que se etiquetan como baratas).
+
+```{r load_variables_high}
+housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                     "price_label_high")]
+n = dim(housesTrainOrigVar)[1]
+# Hay que factorizar el label para que se construya bien el árbol
+housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
+```
+
+```{r tree2_price_label}
+housesTree2 = rpart(price_label_high ~ ., data = housesTrainOrigVar)
+rpart.plot(housesTree2, type=4, fallen.leaves = FALSE, tweak =1.75)
+rpart.rules(housesTree2, clip.facs = TRUE)
+```
+
+```{r metricsTree2}
+preds <- predict(housesTree2, type = "class")
+table(pred = preds, obs = housesTrainOrigVar$price_label_high)
+metrics_function(preds, housesTrainOrigVar, 'price_label_high')
+```
+
+
+### Podando el árbol 
+Intentamos eliminar esas últimas hojas que hemos comentado. Prácticamente no habría diferencia entre tener 7 hojas u 8. Podemos probar a ver si con 4 hojas el error aumenta mucho.
+
+```{r}
+printcp(housesTree2)
+```
+```{r}
+plotcp(housesTree2)
+```
+
+Con 7 hojas, el error es prácticamente el mismo. Incluso mejora un poco el f1-score.
+
+```{r pruneTree2}
+pruneTREE2 = prune(housesTree2, cp = housesTree2$cptable[4,"CP"])
+rpart.plot(pruneTREE2, type=4, fallen.leaves = FALSE, tweak =1.75)
+```
+
+```{r metricsPruneTree2}
+preds <- predict(pruneTREE2, type = "class")
+table(pred = preds, obs = housesTrainOrigVar$price_label_high)
+metrics_function(preds, housesTrainOrigVar, 'price_label_high')
+```
+
+
+Bajando la complejidad hasta quedarnos solo con 4 hojas, observamos que el error aumenta en un 4% (hasta el 17%) y que el f1-score disminuye hasta 0.55, pero el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja, con el 75% de los datos, y con una tasa de acierto aceptable (el 84% serían baratas). Las casas con más de 4 habitaciones en Southern Metropolitan (son solo el 9%) se clasifican como caras el 86% de las veces. La última división es en función de la distancia al centro, y ya falla más.
+
+```{r pruneTree3}
+pruneTREE3 = prune(housesTree2, cp = housesTree2$cptable[3,"CP"])
+rpart.plot(pruneTREE3, type=4, fallen.leaves = FALSE, tweak =1)
+```
+
+```{r metricsPruneTree3}
+preds <- predict(pruneTREE3, type = "class")
+table(pred = preds, obs = housesTrainOrigVar$price_label_high)
+metrics_function(preds, housesTrainOrigVar, 'price_label_high')
+```
+
+
+# Clustering
+
+## k-means
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+```
+
+NOTA: Habría que revisar estas variables con el nuevo cambio de dataset. Además, lo de las siluetas a veces me peta
+
+```{r}
+#Antes:
+#housesTrainKmeans <- housesTrain %>% dplyr::select(-Regionname, -Type, -Method, -year_built_cat)
+housesTrainKmeans <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
 
 #las variables categóricas pasan a ser factores ordenados
 housesTrainKmeans['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
@@ -260,9 +530,6 @@ housesTrainKmeans['bed_cat'] <-housesTrain %>% pull('bed_cat') %>%
 
 housesTrainKmeans['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
   ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric()
-
-
-
 ```
 
 ```{r kmeans}
@@ -318,135 +585,5 @@ plot(k.values, avg_sil_values,
 ```
 
 Según las tres gráficas obtenidas, el k óptimo es 2. (dudo??)
-
-
-# Regresión logística
-
-
-```{r}
-# Se creea la variable objetivo (75-25) y se eliminan los antiguos targets
-train <- read.csv('base_train.csv', encoding = 'UTF-8')
-filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'Car', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
-train <- train %>%  select(-filter_cols)
-head(train)
-```
-
-```{r}
-model <- glm(price_label_high ~ ., family = binomial(link = 'logit'), data = train)
-summary(model)
-```
-
-```{r}
-# Se crea el test set
-test <- read.csv('base_test.csv', encoding = 'UTF-8')
-filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'Car', 'YearBuilt', 'CouncilArea', 'Landsize', 'Price', 'log_price', 'price_label')
-test <- test %>% select(-filter_cols)
-head(test)
-```
-
-
-```{r}
-threshold = 0.5
-probabilities <- predict(model, test, type="response") 
-preds <- ifelse(probabilities > threshold,1,0)
-preds <- factor(preds)
-```
-
-
-```{r}
-#metrics_function(preds, test, 'price_label_high')
-metrics_function_num <- function(preds, test, label){
-  accuracy = sum(preds == test[,label]) / nrow(test)
-  recall = sum(preds == test[,label] & test[,label] == 1) / sum(test[,label] == 1)
-  precision = sum(preds == test[,label] & test[,label] == 1) / sum(preds == 1)
-  f1_score = 2*recall*precision/(recall+precision)
-  specificity = sum(preds == test[,label] & test[,label] == 0) / sum(test[,label] == 0)
-  c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
-  
-}
-
-metrics_function_num(preds, test, 'price_label_high')
-
-
-```
-
-
-```{r}
-test$price_label_high <- ifelse(test$price_label_high==TRUE,1,0)
-test$price_label_high <- as.factor(test$price_label_high)
-cm <- caret::confusionMatrix(preds, test$price_label_high, positive = '1')
-cm
-```
-
-
-```{r}
-ggplotConfusionMatrix <- function(m){
-  mytitle <- paste("Accuracy", percent_format()(m$overall[1]))
-  p <-
-    ggplot(data = as.data.frame(m$table) ,
-           aes(x = Reference, y = Prediction)) +
-    geom_tile(aes(fill = log(Freq)), colour = "white") +
-    scale_fill_gradient(low = "white", high = "steelblue") +
-    geom_text(aes(x = Reference, y = Prediction, label = Freq)) +
-    theme(legend.position = "none") +
-    ggtitle(mytitle)
-  return(p)
-}
-
-ggplotConfusionMatrix(cm)
-```
-
-```{r}
-optimal_threshold <- optimalCutoff(test$price_label_high,probabilities, optimiseFor='Both')[1]
-preds <- ifelse(probabilities > optimal_threshold,1,0)
-preds <- factor(preds)
-optimal_threshold
-```
-
-```{r}
-metrics_function_num(preds, test, 'price_label_high')
-```
-
-
-
-```{r}
-probabilities_train <- predict(model, type = "response")
-train_numeric <- train %>% select_if(is.numeric)
-predictors <- colnames(train_numeric)
-train_numeric <- train_numeric %>%
-  mutate(logit = log(probabilities_train/(1-probabilities_train))) %>%
-  gather(key = "predictors", value = "predictor.value", -logit)
-```
-
-```{r}
-ggplot(train_numeric, aes(logit, predictor.value))+
-  geom_point(size = 0.5, alpha = 0.5) +
-  geom_smooth(method = "loess") + 
-  theme_bw() + 
-  facet_wrap(~predictors, scales = "free_y")
-```
-
-```{r}
-car::vif(model)
-```
-
-```{r}
-model2<- glm(price_label_high ~ .-Regionname - Method, family = binomial(link = 'logit'), data = train)
-summary(model2)
-```
-
-
-```{r}
-threshold2 = 0.5
-probabilities2 <- predict(model2, test, type="response") 
-preds2 <- ifelse(probabilities2 > threshold,1,0)
-preds2 <- factor(preds2)
-```
-
-```{r}
-metrics_function_num(preds2, test, 'price_label_high')
-```
-
-
 
 
