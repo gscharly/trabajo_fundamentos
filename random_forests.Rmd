@@ -1,0 +1,200 @@
+---
+title: "Random Forests"
+author: "Carlos Gomez Sanchez"
+date: "29 de marzo de 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+library(randomForest)
+library(pROC)
+library(grid)
+library(party)
+library(ROCR)
+library(ggplot2)
+library(dplyr)
+library(superml)
+source('utils/pred_type_distribution.R')
+source('utils/calculate_roc.R')
+source('utils/plot_roc.R')
+set.seed(10)
+```
+
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+```
+
+```{r}
+metrics_function <- function(prediccion, test, label){
+
+  # Medidas de precisión
+  
+  accuracy = sum(prediccion == test[,label]) /nrow(test)
+  error = 1-accuracy
+  
+  # Acierto sobre el total de las casas CARAS, sensitivity o recall
+  sensitivity = sum(prediccion == test[,label] & test[,label] == TRUE) / sum(test[,label] == TRUE)
+  recall = sensitivity
+  
+  # Acierto sobre el total de las casas BARATAS
+  specificity =  sum(prediccion == test[,label] & test[,label] == FALSE) / sum(test[,label] == FALSE)
+  
+  # Acierto cuando el predicho es CARO
+  precision = sum(prediccion == test[,label] & prediccion == TRUE) / sum(prediccion == TRUE)
+  
+  # Acierto cuando el predicho es BARATO
+  npv = sum(prediccion == test[,label] & prediccion == FALSE) / sum(prediccion == FALSE)
+  
+  # F1_score
+  f1score = 2*precision*recall /(precision+recall)
+  conf_mat <- caret::confusionMatrix(table(prediccion, test[,label]), positive="TRUE")
+  metrics <- c(accuracy = accuracy, error = error, sensitivity = sensitivity, specificity = specificity, precision = precision, npv = npv, f1=f1score)
+  return(list(metrics, conf_mat))
+  
+}
+```
+
+
+# Utilizando la price_label
+En primer lugar, probaremos un bosque de árboles utilizando la etiqueta de clasificación *price_label*. Al igual que en la parte de árboles de decisión, se decide utilizar las variables originales del dataset, sin transformaciones.
+
+```{r}
+housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                     "price_label")]
+housesTrainOrigVar$price_label <- as.factor(housesTrainOrigVar$price_label)
+rf1 <- randomForest(price_label ~ ., data=housesTrainOrigVar,  ntree=100, importance=FALSE,
+                    proximity=TRUE, mtry=4, replace=FALSE)
+```
+
+
+```{r}
+preds <- predict(rf1, type = "class")
+table(pred = preds, obs = housesTrainOrigVar$price_label)
+metrics_function(preds, housesTrainOrigVar, 'price_label')
+```
+
+```{r}
+preds <- predict(rf1, type = "class")
+```
+
+
+```{r}
+th = 0.7
+preds_prob <- predict(rf1, type = "prob")
+predictions <- data.frame(price_label=housesTrainOrigVar$price_label, pred=preds_prob[,2])
+predictions$price_label <- ifelse(predictions$price_label==TRUE,1,0)
+df_preds <- pred_type_distribution(predictions, th, 'price_label')
+```
+
+
+```{r}
+ ggplot(data=df_preds, aes(x=price_label, y=pred)) + 
+    geom_violin(fill=rgb(1,1,1,alpha=0.6), color=NA) + 
+    geom_jitter(aes(color=pred_type), alpha=0.6) +
+    geom_hline(yintercept=th, color="red", alpha=0.6) +
+    scale_color_discrete(name = "type") +
+    labs(title=sprintf("Threshold at %.2f", th))
+```
+
+```{r}
+cost_of_fp <-1
+cost_of_fn <- 1
+th <- 0.5
+roc <- calculate_roc(predictions, 'price_label', cost_of_fp, cost_of_fn, n=500)
+plot_roc(roc, th, cost_of_fp, cost_of_fn)
+```
+
+```{r message=FALSE}
+auc_roc <- auc(predictions$price_label, predictions$pred)
+auc_roc
+```
+
+## Utilizando cross validation
+Vamos a intentar tunear el número de árboles con CV:
+
+```{r}
+rf <- RFTrainer$new()
+gst <-GridSearchCV$new(trainer = rf,
+                       parameters = list(n_estimators = c(100,200,500),
+                                        max_depth = c(5,2,10)),
+                                        n_folds = 3,
+                                        scoring = c('accuracy','auc'))
+gst$fit(housesTrainOrigVar, "price_label")
+```
+```{r}
+gst$best_iteration()
+```
+
+
+# Con price_label_high
+
+```{r}
+housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                     "price_label_high")]
+housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
+rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar,  ntree=100, importance=FALSE,
+                    proximity=TRUE, mtry=4, replace=FALSE)
+```
+
+
+```{r}
+preds <- predict(rf2, type = "class")
+table(pred = preds, obs = housesTrainOrigVar$price_label_high)
+metrics_function(preds, housesTrainOrigVar, 'price_label_high')
+```
+
+
+
+```{r}
+th = 0.7
+preds_prob <- predict(rf2, type = "prob")
+predictions <- data.frame(price_label_high=housesTrainOrigVar$price_label_high, pred=preds_prob[,2])
+predictions$price_label_high <- ifelse(predictions$price_label_high==TRUE,1,0)
+df_preds <- pred_type_distribution(predictions, th, 'price_label_high')
+```
+
+
+```{r}
+ ggplot(data=df_preds, aes(x=price_label_high, y=pred)) + 
+    geom_violin(fill=rgb(1,1,1,alpha=0.6), color=NA) + 
+    geom_jitter(aes(color=pred_type), alpha=0.6) +
+    geom_hline(yintercept=th, color="red", alpha=0.6) +
+    scale_color_discrete(name = "type") +
+    labs(title=sprintf("Threshold at %.2f", th))
+```
+
+```{r}
+cost_of_fp <-1
+cost_of_fn <- 1
+th <- 0.5
+roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
+plot_roc(roc, th, cost_of_fp, cost_of_fn)
+```
+
+```{r message=FALSE}
+auc_roc <- auc(predictions$price_label_high, predictions$pred)
+auc_roc
+```
+
+## Utilizando cross validation
+Vamos a intentar tunear el número de árboles con CV:
+
+```{r}
+library(superml)
+rf <- RFTrainer$new()
+gst <-GridSearchCV$new(trainer = rf,
+                       parameters = list(n_estimators = c(100,200,500),
+                                        max_depth = c(5,2,10)),
+                                        n_folds = 3,
+                                        scoring = c('accuracy','auc'))
+gst$fit(housesTrainOrigVar, "price_label_high")
+gst$best_iteration()
+```
+
