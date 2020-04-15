@@ -24,5 +24,5 @@ plot_roc <- function(roc, threshold, cost_of_fp, cost_of_fn) {
   
   sub_title <- sprintf("threshold at %.2f - cost of FP = %d, cost of FN = %d", threshold, cost_of_fp, cost_of_fn)
   
-  grid.arrange(p_roc, p_cost, ncol=2, sub=textGrob(sub_title, gp=gpar(cex=1), just="bottom"))
+  grid.arrange(p_roc, p_cost, ncol=2)
 }

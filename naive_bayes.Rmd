@@ -1,0 +1,120 @@
+---
+title: "naive_bayes"
+author: "Carlos Gomez Sanchez"
+date: "15 de abril de 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(e1071)
+library(pROC)
+source('utils/pred_type_distribution.R')
+source('utils/calculate_roc.R')
+source('utils/plot_roc.R')
+```
+
+
+# Naive Bayes
+Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando Naive Bayes.
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+```
+
+Como primera aproximación, utilizaremos las mismas variables utilizadas en el modelo de regresión lineal múltiple (aunque el escalado debería ser indiferente). Para variables numéricas asume una distribución gausiana para calcular la verosimilitud (likelihood). Lo que saca el mod es la media en la primera columna y la varianza en la segunda para las distribuciones condicionadas.
+
+```{r}
+mod <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data=housesTrain)
+mod
+```
+
+```{r}
+# Función que calcula distintas métricas de clasificación
+metrics_function <- function(prediccion, test, label){
+
+  # Medidas de precisión
+  
+  accuracy = sum(prediccion == test[,label]) /nrow(test)
+  error = 1-accuracy
+  
+  # Acierto sobre el total de las casas CARAS, sensitivity o recall
+  sensitivity = sum(prediccion == test[,label] & test[,label] == TRUE) / sum(test[,label] == TRUE)
+  recall = sensitivity
+  
+  # Acierto sobre el total de las casas BARATAS
+  specificity =  sum(prediccion == test[,label] & test[,label] == FALSE) / sum(test[,label] == FALSE)
+  
+  # Acierto cuando el predicho es CARO
+  precision = sum(prediccion == test[,label] & prediccion == TRUE) / sum(prediccion == TRUE)
+  
+  # Acierto cuando el predicho es BARATO
+  npv = sum(prediccion == test[,label] & prediccion == FALSE) / sum(prediccion == FALSE)
+  
+  # F1_score
+  f1score = 2*precision*recall /(precision+recall)
+  conf_mat <- caret::confusionMatrix(table(prediccion, test[,label]), positive="TRUE")
+  metrics <- c(accuracy = accuracy, error = error, sensitivity = sensitivity, specificity = specificity, precision = precision, npv = npv, f1=f1score)
+  return(list(metrics, conf_mat))
+  
+}
+```
+
+Métricas en train:
+
+```{r}
+preds <- predict(mod, housesTrain, type = "class")
+table(pred = preds, obs = housesTrain$price_label_high)
+metrics_function(preds, housesTrain, 'price_label_high')
+```
+```{r}
+preds_prob <- predict(mod, housesTrain, type = "raw")
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
+predictions$price_label_high <- ifelse(predictions$price_label_high==TRUE,1,0)
+
+cost_of_fp <-1
+cost_of_fn <- 1
+th <- 0.5
+roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
+plot_roc(roc, th, cost_of_fp, cost_of_fn)
+```
+
+
+```{r}
+auc_roc <- auc(predictions$price_label_high, predictions$pred)
+auc_roc
+```
+
+En test:
+
+```{r}
+housesTest <- read.csv('base_test.csv')
+```
+
+
+```{r}
+preds <- predict(mod, housesTest, type = "class")
+table(pred = preds, obs = housesTest$price_label_high)
+metrics_function(preds, housesTest, 'price_label_high')
+```
+
+```{r}
+preds_prob <- predict(mod, housesTest, type = "raw")
+predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=preds_prob[,2])
+predictions$price_label_high <- ifelse(predictions$price_label_high==TRUE,1,0)
+
+cost_of_fp <-1
+cost_of_fn <- 1
+th <- 0.5
+roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
+plot_roc(roc, th, cost_of_fp, cost_of_fn)
+```
+
+```{r}
+auc_roc <- auc(predictions$price_label_high, predictions$pred)
+auc_roc
+```
