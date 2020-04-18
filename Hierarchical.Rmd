@@ -1,0 +1,125 @@
+---
+title: "Machine Learning 1"
+author: Paula Santamaría Villaverde
+date: "18 de abril de 2020"
+output: html_document
+---
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(class)
+library(caret)
+library(cluster)
+library(factoextra)
+library(cowplot)
+library(scales)
+library(tidyr)
+library(InformationValue)
+library(rpart)
+library(rpart.plot)
+library(cluster)
+library(purrr)
+library(dendextend)
+
+set.seed(10)
+```
+
+```{r paleta34}
+#Paleta creada a partir de Brewer Dark2
+palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+```
+# Clustering
+
+## Hierarchical
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+housesTest <- read.csv('base_test.csv')
+```
+
+Se toma el mismo conjunto de variables que las empleadas en K-means, es decir, las variables cuantitativas y las cualitativas nominales estandarizadas.
+
+```{r}
+housesTrainHie <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTrainHie['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() %>% scale()
+
+housesTrainHie['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric() %>% scale()
+
+housesTrainHie['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+
+housesTrainHie['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() %>% scale()
+
+housesTrainHie['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
+```
+
+Se aplicará un cluster aglomerativo y se emplearán diferentes métodos de medida de la distancia entre clusters. 
+
+```{r hierarchical}
+# Dissimilarity matrix
+mat_dist <- dist(housesTrainHie, method = "euclidean")
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "single" )
+# Plot the obtained dendrogram
+den = as.dendrogram(hc1)
+plot(den)
+```
+
+A pesar de que el dendograma no ofrece una visualización clara debido al alto número de observaciones, sí se puede percibir como dos grandes clusteres siendo uno de ellos (el de la izquierda), aproximadamente, tres veces mayor que el otro.
+
+Una vez creado el dendrograma, vamos a evaluar hasta qué punto su estructura refleja las distancias originales entre observaciones empleando el coeficiente de correlación entre la altura de los nodos del dendrograma (distancia cophenetic) y la matriz de distancias original. Cuanto más cercano es el valor a 1, mejor refleja el dendrograma la verdadera similitud entre las observaciones. Valores superiores a 0.75 suelen considerarse como buenos. Esta medida puede emplearse como criterio de ayuda para escoger entre los distintos métodos de linkage.
+
+```{r}
+# Dendrogramas con linkage complete y average
+hc_euclidea_complete <- hclust(d = mat_dist, method = "complete")
+hc_euclidea_average  <- hclust(d = mat_dist, method = "average")
+hc_euclidea_single  <- hclust(d = mat_dist, method = "single")
+hc_euclidea_centroid  <- hclust(d = mat_dist, method = "centroid")
+cor(x = mat_dist, cophenetic(hc_euclidea_complete))
+cor(x = mat_dist, cophenetic(hc_euclidea_average))
+cor(x = mat_dist, cophenetic(hc_euclidea_single))
+cor(x = mat_dist, cophenetic(hc_euclidea_centroid))
+```
+
+A la vista de los resultados, el método que mejor refleja las distancias reales es el *average*. Este método supone un compromiso entre las dos características de los métodos en los que se emplea la distancia mínima (*single*) y en los que se emplea la máxima (*complete*). Un compromiso entre ser sensible a datos atípicos y manejar formas de clusters no elípticas.
+
+```{r HieVisua}
+set.seed(6)
+N <- nrow(housesTrainHie)
+n <- 500
+muestra = sample(1:N,n,replace=F)
+data <- housesTrainHie[muestra, ]
+
+hc_euclidea_average <- hclust(d = dist(x = data, method = "euclidean"),
+                               method = "average")
+
+fviz_dend(x = hc_euclidea_average, k = 2, cex = 0.6) +
+  geom_hline(yintercept = 5.5, linetype = "dashed") +
+  labs(title = "Herarchical clustering",
+       subtitle = "Distancia euclídea, Lincage average, K=2")
+
+fviz_cluster(object = list(data=data, cluster=cutree(hc_euclidea_average, k=2)),
+             ellipse.type = "convex", repel = TRUE, show.clust.cent = FALSE,
+             labelsize = 8)  +
+  labs(title = "Hierarchical clustering + Proyección PCA",
+       subtitle = "Distancia euclídea, Lincage average, K=2") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#¿Quién es el 10007?
+housesTrain[10007,]
+```
+
+ 
+
+
