@@ -1,0 +1,128 @@
+---
+title: "Machine Learning 1"
+author: Paula Santamaría Villaverde
+date: "16 de abril de 2020"
+output: html_document
+---
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(class)
+library(caret)
+library(cluster)
+library(factoextra)
+library(cowplot)
+library(scales)
+library(tidyr)
+library(InformationValue)
+library(rpart)
+library(rpart.plot)
+
+set.seed(10)
+```
+
+```{r paleta34}
+#Paleta creada a partir de Brewer Dark2
+palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+```
+# Clustering
+
+## k-means
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+housesTest <- read.csv('base_test.csv')
+```
+
+En primer lugar, vamos a definir la base de datos con las variables cuantitativas y cualitativas ordinales a partir del dataset *housesTrain*.
+Las variables cuantitativas las cogemos estandarizadas para eliminar el efecto de las distintas escalas de medida y las ordinales las estandarizamos al crearlas.
+
+```{r}
+housesTrainKmeans <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTrainKmeans['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() %>% scale()
+
+housesTrainKmeans['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric() %>% scale()
+
+housesTrainKmeans['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+
+housesTrainKmeans['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() %>% scale()
+
+housesTrainKmeans['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
+```
+
+Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible. Esto es lo mismo a buscar una divisióndonde una suma de cuadrados entre (betweens) sea suficientemente grande y, por tanto, una suma de cuadrados dentro lo suficientemente pequeña (withins).
+
+En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 2 hasta 15. Se obserba en ambas, que el punto donde se produce el cambio de tendencia es aproximadamente en el 3. Por esto se va a probar a realizar una clasificación en base a 3 grupos. 
+
+```{r kmeansKoptimo1}
+set.seed(123)
+bss <- kmeans(housesTrainKmeans[-10],centers=1)$betweenss
+ for (i in 2:15) bss[i] <- kmeans(housesTrainKmeans,centers=i)$betweenss
+plot(1:15, bss, type="b", xlab="Number de Clusters",ylab="Sum of squares between
+groups",pch=19, col=palette34[2])
+```
+
+```{r kmeansKoptimo2}
+SSW <- vector(mode = "numeric", length = 15)
+SSW[1] <- (n - 1) * sum(apply(X = housesTrainKmeans[-10], MARGIN = 2, FUN = 'var'))
+for (i in 2:15) SSW[i] <- sum(kmeans(housesTrainKmeans,centers=i,nstart=25)$withinss)
+plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
+```
+```{r}
+clusters3=kmeans(housesTrainKmeans[-10],centers=3,nstart=25)
+clusters3
+```
+
+Observando esl ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es inferior al 50%. 
+
+¿Lo siguiente tiene sentido? Yo de partida ya se que son 2
+```{r}
+MC = table(clusters3$cluster, housesTrainKmeans[,10],
+      dnn = list("cluster", "grupo real"))
+MC
+precision=(sum(diag(MC)))/sum(MC) 
+precision 
+
+error=1-precision 
+error
+```
+
+###PCA + visualización
+
+```{r}
+housesPCA <- prcomp(housesTrainKmeans[1:4], center = TRUE)
+summary(housesPCA)
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=clusters3$cluster)) + geom_point()
+```
+
+¿Por qué la legenda es continua?
+
+```{r}
+housesTestKmeans <- housesTest %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTestKmeans['rooms_cat']<- housesTest %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric()
+
+housesTestKmeans['car_cat'] <- housesTest %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+
+housesTestKmeans['bath_cat'] <-housesTest %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric()
+
+housesTestKmeans['bed_cat'] <-housesTest %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric()
+
+housesTestKmeans['sell_rate_cat'] <-housesTest %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric()
+```
+
