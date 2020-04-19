@@ -19,6 +19,8 @@ library(tidyr)
 library(InformationValue)
 library(rpart)
 library(rpart.plot)
+library(purrr)
+library(clustertend)
 
 set.seed(10)
 ```
@@ -29,8 +31,6 @@ palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A676
 ```
 # Clustering
 
-## k-means
-
 ```{r}
 housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
@@ -40,24 +40,52 @@ En primer lugar, vamos a definir la base de datos con las variables cuantitativa
 Las variables cuantitativas las cogemos estandarizadas para eliminar el efecto de las distintas escalas de medida y las ordinales las estandarizamos al crearlas.
 
 ```{r}
-housesTrainKmeans <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high)
+housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high)
 
 #las variables categóricas pasan a ser factores ordenados
-housesTrainKmeans['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
+housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
   ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() %>% scale()
 
-housesTrainKmeans['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
+housesTrainCluster['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
   ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric() %>% scale()
 
-housesTrainKmeans['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
+housesTrainCluster['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
   ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
 
-housesTrainKmeans['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
+housesTrainCluster['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
   ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() %>% scale()
 
-housesTrainKmeans['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
+housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
   ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
 ```
+
+## Estudio de la tendencia de clustering
+
+Un método de clustering permite encontrar agrupaciones en un conjunto de datos, pero no siempre estas agrupaciones existen de manera natural. En nuestro caso, hemos tomado la variable precio para dividir el dataset y poder emplear métodos de clasificación sobre él. Sin embargo, vamos a estudiar la tendencia de clustering real que tienen nuestros datos.
+
+Visual Assessment of cluster Tendency (VAT) es método que permite evaluar visualmente si los datos muestran indicios de algún tipo de agrupación.
+
+```{r}
+datos = housesTrainCluster[,-10]
+mat_dist <- dist(datos, method = "euclidean")
+
+fviz_dist(dist.obj = mat_dist, show_labels = FALSE) +
+          theme(legend.position = "bottom")
+
+```
+El estadístico Hopkins permite evaluar la tendencia de clustering de un conjunto de datos mediante el cálculo de la probabilidad de que dichos datos procedan de una distribución uniforme, es decir, estudia la distribución espacial aleatoria de las observaciones.
+
+H=∑ni=1yi∑ni=1xi+∑ni=1yi
+
+Valores de H en torno a 0.5 indican que ∑ni=1xi y ∑ni=1yi son muy cercanos el uno al otro, es decir, que los datos estudiados se distribuyen uniformemente y que por lo tanto no tiene sentido aplicar clustering. Cuanto más se aproxime a 0 el estadístico H, más evidencias se tienen a favor de que existen agrupaciones en los datos y de que, si se aplica clustering correctamente, los grupos resultantes serán reales. 
+
+```{r}
+# Estadístico H para el set de datos iris
+hopkins(data = datos, n = nrow(datos) - 1)
+```
+
+
+## k-means
 
 Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible. Esto es lo mismo a buscar una divisióndonde una suma de cuadrados entre (betweens) sea suficientemente grande y, por tanto, una suma de cuadrados dentro lo suficientemente pequeña (withins).
 
@@ -65,20 +93,21 @@ En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un
 
 ```{r kmeansKoptimo1}
 set.seed(123)
-bss <- kmeans(housesTrainKmeans[-10],centers=1)$betweenss
- for (i in 2:15) bss[i] <- kmeans(housesTrainKmeans,centers=i)$betweenss
+bss <- kmeans(housesTrainCluster[-10],centers=1)$betweenss
+ for (i in 2:15) bss[i] <- kmeans(housesTrainCluster,centers=i)$betweenss
 plot(1:15, bss, type="b", xlab="Number de Clusters",ylab="Sum of squares between
 groups",pch=19, col=palette34[2])
 ```
 
 ```{r kmeansKoptimo2}
 SSW <- vector(mode = "numeric", length = 15)
-SSW[1] <- (n - 1) * sum(apply(X = housesTrainKmeans[-10], MARGIN = 2, FUN = 'var'))
-for (i in 2:15) SSW[i] <- sum(kmeans(housesTrainKmeans,centers=i,nstart=25)$withinss)
+SSW[1] <- (n - 1) * sum(apply(X = housesTrainCluster[-10], MARGIN = 2, FUN = 'var'))
+for (i in 2:15) SSW[i] <- sum(kmeans(housesTrainCluster,centers=i,nstart=25)$withinss)
 plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
 ```
+
 ```{r}
-clusters3=kmeans(housesTrainKmeans[-10],centers=3,nstart=25)
+clusters3=kmeans(housesTrainCluster[-10],centers=3,nstart=25)
 clusters3
 ```
 
@@ -99,9 +128,10 @@ error
 ###PCA + visualización
 
 ```{r}
-housesPCA <- prcomp(housesTrainKmeans[1:4], center = TRUE)
+housesPCA <- prcomp(housesNum, center = TRUE, scale = TRUE)
 summary(housesPCA)
-df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=clusters3$cluster)) + geom_point()
+df_houses_pca <- data.frame(housesPCA$x[,1:2])
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=clusters3$cluster, colour = palette34)) + geom_point() 
 ```
 
 ¿Por qué la legenda es continua?
