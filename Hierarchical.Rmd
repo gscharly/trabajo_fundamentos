@@ -112,13 +112,9 @@ fviz_cluster(object = list(data=data, cluster=cutree(hc_euclidea_average, k=2)),
   labs(title = "Hierarchical clustering + Proyección PCA",
        subtitle = "Distancia euclídea, Lincage average, K=2") +
   theme_bw() +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom") + scale_colour_manual(values=palette34) +     scale_fill_manual(values=palette34)
 ```
 
-```{r}
-#¿Quién es el 10007?
-housesTrain[10007,]
-```
 
  
 
