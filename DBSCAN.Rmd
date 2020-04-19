@@ -1,0 +1,93 @@
+---
+title: "Machine Learning 1"
+author: Paula Santamaría Villaverde
+date: "18 de abril de 2020"
+output: html_document
+---
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(class)
+library(caret)
+library(cluster)
+library(factoextra)
+library(cowplot)
+library(scales)
+library(tidyr)
+library(InformationValue)
+library(rpart)
+library(rpart.plot)
+library(cluster)
+library(purrr)
+library(dendextend)
+library(dbscan)
+library(fpc)
+
+set.seed(10)
+```
+
+```{r paleta34}
+#Paleta creada a partir de Brewer Dark2
+palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+```
+# Clustering
+
+## DBSCAN
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+housesTest <- read.csv('base_test.csv')
+```
+
+Se toma el mismo conjunto de variables que las empleadas en K-means, es decir, las variables cuantitativas y las cualitativas nominales estandarizadas.
+
+```{r}
+housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric() %>% scale()
+
+housesTrainCluster['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
+```
+
+Los métodos de clusterin empleados anteriormenete, son buenos encontrando agrupaciones con forma esférica y sensibles a outliers,k-means, pero fallan al tratar de identificar formas arbitrarias que es lo que tenemos en este caso.
+
+DBSCAN evita este problema siguiendo la idea de que, para que una observación forme parte de un cluster, tiene que haber un mínimo de observaciones vecinas dentro de un radio de proximidad y de que los clusters están separados por regiones vacías o con pocas observaciones.
+
+
+```{r dbscanEpsi}
+datos = housesTrainCluster[,-10]
+dbscan::kNNdistplot(datos, k = 5)
+```
+
+La curva tiene el punto de inflexión en torno a 0.8, por lo que se escoge este valor como epsilon para DBSCAN.
+
+```{r dbscan}
+dbscan_cluster <- fpc::dbscan(data = datos, eps = 0.8, MinPts = 50)
+head(dbscan_cluster$cluster)
+# Visualización de los clusters
+fviz_cluster(object = dbscan_cluster, data = datos, stand = FALSE,
+             geom = "point", ellipse = FALSE, show.clust.cent = FALSE,
+             pallete = "palette34") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+
+
+ 
+
+
