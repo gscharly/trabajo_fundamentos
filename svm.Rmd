@@ -1,0 +1,338 @@
+---
+title: "svm"
+author: "Manuel Pertejo"
+date: "4/19/2020"
+output: html_document
+---
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(class)
+library(caret)
+library(cluster)
+library(factoextra)
+library(cowplot)
+library(scales)
+library(tidyr)
+library(InformationValue)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(ROCR)
+library(pROC)
+library(gridExtra)
+
+set.seed(10)
+```
+
+
+
+```{r, echo = F}
+# Función para el cáculo de las métricas
+#metrics_function(preds, test, 'price_label_high')
+metrics_function_num <- function(preds, test, label){
+  accuracy = sum(preds == test[,label]) / nrow(test)
+  recall = sum(preds == test[,label] & test[,label] == 1) / sum(test[,label] == 1)
+  precision = sum(preds == test[,label] & test[,label] == 1) / sum(preds == 1)
+  f1_score = 2*recall*precision/(recall+precision)
+  specificity = sum(preds == test[,label] & test[,label] == 0) / sum(test[,label] == 0)
+  metrics <- c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
+  cm <- caret::confusionMatrix(preds, test[,label], positive = '1')
+  return(list(metrics, cm))
+}
+
+
+# Funciones para dibujar matriz de confusión y curva ROC
+
+ggplotConfusionMatrix <- function(m){
+  mytitle <- paste("Accuracy", percent_format()(m$overall[1]))
+  p <-
+    ggplot(data = as.data.frame(m$table) ,
+           aes(x = Reference, y = Prediction)) +
+    geom_tile(aes(fill = log(Freq)), colour = "white") +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    geom_text(aes(x = Reference, y = Prediction, label = Freq)) +
+    theme(legend.position = "none") +
+    ggtitle(mytitle)
+  return(p)
+}
+
+ggplotROCCurve <- function(roc_object, interval = 0.2, breaks = seq(0, 1, interval)){
+  require(pROC)
+  if(class(roc) != "roc")
+    simpleError("Please provide roc object from pROC package")
+  ggroc(roc_object) + 
+              scale_x_reverse(name = "Specificity",limits = c(1,0), breaks = breaks, expand = c(0.001,0.001)) + 
+              scale_y_continuous(name = "Sensitivity", limits = c(0,1), breaks = breaks, expand = c(0.001, 0.001)) +
+              geom_segment(aes(x = 0, y = 1, xend = 1,yend = 0), alpha = 0.01) + 
+              theme_bw() + 
+              theme(axis.ticks = element_line(color = "grey80")) +
+              coord_equal() + 
+              annotate("text",x=-Inf,y=-Inf, label = paste("AUC =",sprintf("%.3f",roc_object$auc)), hjust= 1.2, vjust = -7)
+}
+
+
+```
+
+
+
+
+# SVM
+
+A continuación se va aplicar el algoritmo de SVM (con diferentes hiperparámetros) sobre nuestros datos. Este algoritmo se fundamenta en la idea de encontrar un hiperplano óptimo que separe perfectamente los puntos. Además, para la resolución de este problema se basa en el teorema de Cover, el cual afirma que para cualquier dataset, la separación lineal de las clases se hace más latente a medida que las dimensiones aumentan. 
+
+Para mapear los datos de entrada a un espacios de mayores dimensiones, se hace uso de un tipo de funciones llamadas funciones de kernel. Los kernels pueden ser de 3 tipos:
+
+- Lineales.
+- Polinómicos.
+- Gaussianos (basados en funciones de base radial).
+
+Lo adecuado que va a ser utilizar un tipo de kernel sobre otro va a estar totalmente determinado por el tipo de datos. En espacios con baja dimensionalidad (como mucho hasta 3 dimensiones y ni siquiera), resulta interesante darle un primer vistazo a cómo se reparten las clases en el espacio, para principalemente observar si son linearmente separables o no. 
+
+En nuestro conjunto de datos no contamos con esa posibilidad, ya que aparecen hasta 13 variables. Lo único que se puede hacer, es aplicar de nuevo alguna técnica de dimensionalidad (PCA), por si se pudiese intuir algo en dos dimensiones:
+
+```{r}
+train <- read.csv('base_train.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+train <- train %>%  select(-filter_cols)
+
+# Estandarización de variables categóricas ordinales
+cat_with_order = c("rooms_cat", "car_cat", "bath_cat", "bed_cat", "sell_rate_cat")
+
+train['rooms_cat']<- train %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
+train['car_cat'] <- train %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+train['bath_cat'] <- train %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
+train['bed_cat'] <- train %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() 
+train['sell_rate_cat'] <- train %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() 
+
+ordinal_variables <- train %>% select(cat_with_order) 
+normParam <- preProcess(ordinal_variables)
+ordinal_variables_norm <- predict(normParam, ordinal_variables)
+
+for(cat in cat_with_order){
+  train[cat] <- ordinal_variables_norm[cat]
+}
+
+train <- train %>% select(-c("year_built_cat", "Regionname", "Type", "Method"))
+
+
+train$price_label_high <- as.factor(train$price_label_high) 
+```
+
+
+```{r}
+housesNum <- train %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(housesNum, center = TRUE, scale = TRUE)
+df_houses_pca <- data.frame(housesPCA$x[,1:2])
+df_houses_pca$price_label <- train$price_label_high
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=price_label)) + geom_point()
+```
+
+Con esta represntación podemos ver que claramente nuestros datos no son linearmente separables si los reducimos a dos dimensiones. Aun así, no se va a descartar la realización de pruebas utilizando un kernel lineal, ya que como se ha dicho nuestros datos no están en dos, sino en 9 dimensiones. 
+
+## Kernel Lineal 
+
+Inicialmente se va a probar utilizando un kernel lineal para la SVM. En el caso de la utilización de un kernel lineal, aparece un hiperparámetro a utilizar, denominado parámetro de coste (C). Se van a probar diferentes valores de este parámetro.
+
+```{r pressure, echo=FALSE}
+svm_linear <- tune("svm", price_label_high ~ ., data = train,
+               kernel = 'linear',
+               ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+
+
+summary(svm_linear)
+
+```
+
+Como se puede el menor error de clasificación utilizando este kernel lineal se obtiene para C=1. Sin embargo a partir de 0.1 apenas varia de forma significativa este error. Además, las SVM tienen un cierto caracter aleatorio, que hace que en otra ejecución el mejor modelo podría conseguirse con un C distinto. Aún así, vamos a seleccionar como este modelo como el mejor con kernel linear y obtener algunas métricas adicionales de rendimiento:
+
+```{r}
+best_linear <- svm(price_label_high~., data = train, kernel = "linear", cost = 1, probability = T)
+x_train <- train[,1:9]
+pred_train <- predict(best_linear, x_train, probability = T)
+prob_values <- attr(pred_train, "probabilities")[,1] # La probabilidad de pertenecer a la clase "cara" (1)
+
+beta <- 1 #Beta value for F1 score
+pred_svm <- prediction(prob_values, train$price_label_high)
+perf_svm <- performance(pred_svm, "prec", "rec")
+f1_best_linear <- (1+beta^2)*perf_svm@y.values[[1]]*perf_svm@x.values[[1]]/(beta^2*perf_svm@y.values[[1]]+perf_svm@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_linear) # Mejor f1 score para este modelo
+prec_svm_opt=perf_svm@y.values[[1]][optimo]
+rec_svm_opt=perf_svm@x.values[[1]][optimo]
+f1_measure_svm_opt <- (1+beta^2)*prec_svm_opt*rec_svm_opt/(beta^2*prec_svm_opt+rec_svm_opt)
+threshold_optimo_svm <- perf_svm@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_svm_opt, precision = prec_svm_opt, recall = rec_svm_opt, threshold = threshold_optimo_svm))
+```
+
+
+
+
+```{r,message=F}
+
+preds <- as.factor(ifelse(prob_values > threshold_optimo_svm ,1,0))
+real_labels <-as.factor(ifelse(train$price_label_high==TRUE,1,0))
+cm <- caret::confusionMatrix(preds, real_labels, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_linear <- roc(real_labels,prob_values)
+roc_plot <- ggplotROCCurve(roc_linear)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+
+
+```
+
+
+
+Se ha alcanzado una f1_score de 0.7 aproximadamente sobre el conjunto de entrenamiento utilizando la svm con kernel lineal. A pesar de obtenerse una f1_score tan baja, el área bajo la curva es de 0.89, lo cual nos quiere decir que en general el modelo está realizando un basntante buen tranajo separando las dos clases. Sin embargo, se puede intuir que utilizando un tipo de kernel no lineal se podrían mejorar estos resultados. Para comprobarlo, se procede a probar el funcionamiento de una SVM haciendo uso de un kernel gaussiano. En este caso, además del parámetro de coste que ya conocíamos, aparece otro hiperparámetro que será necesario optimizar (gamma). Igualmente, se va a realizar un gridsearch con diferentes valores de gamma y C con el objetivo de encontrar el mejor modelo posible: 
+`
+
+
+```{r}
+# Tarda 52 minutos aprox. en ejecutarse
+svm_gaussian <- tune.svm(y=train[,10]
+              ,x=train[,1:9]
+              ,probability = TRUE,
+              kernel="radial"
+              ,gamma=10^(-2:2),
+              cost=10^(-1:1))
+
+svm_gaussian$best.parameters
+```
+
+Una vez obtenidos los mejores parámetros a través del grid search, se va a entrenar un modelo con los mismos (gamma=0.1 y C=10) y comprobar su performance sobre los datos de entrenamiento:
+
+
+```{r}
+#best_gaussian <-svm(y = train[,10], x = train[,1:9], probability = T, kernel = "radial", gamma = svm_gaussian$best.parameters[1], cost = svm_gaussian$best.parameters[2])
+best_gaussian <-svm(y = train[,10], x = train[,1:9], probability = T, kernel = "radial", gamma = 0.1, cost =10)
+x_train <- train[,1:9]
+pred_train <- predict(best_gaussian, x_train, probability = T)
+prob_values <- attr(pred_train, "probabilities")[,1] # La probabilidad de pertenecer a la clase "cara" (1)  
+
+beta <- 1 #Beta value for F1 score
+pred_svm <- prediction(prob_values, train$price_label_high)
+perf_svm <- performance(pred_svm, "prec", "rec")
+f1_best_linear <- (1+beta^2)*perf_svm@y.values[[1]]*perf_svm@x.values[[1]]/(beta^2*perf_svm@y.values[[1]]+perf_svm@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_linear) # Mejor f1 score para este modelo
+prec_svm_opt=perf_svm@y.values[[1]][optimo]
+rec_svm_opt=perf_svm@x.values[[1]][optimo]
+f1_measure_svm_opt <- (1+beta^2)*prec_svm_opt*rec_svm_opt/(beta^2*prec_svm_opt+rec_svm_opt)
+threshold_optimo_svm <- perf_svm@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_svm_opt, precision = prec_svm_opt, recall = rec_svm_opt, threshold = threshold_optimo_svm))
+
+
+```
+
+La mejor f1 score obtenida con este Kernel es 0.80, bastante superior al caso del kernel lineal (como era de esperar). En el siguiente gráfico se muestran la curva ROC y la matriz de confusión del modelo sobre los datos de entrenamiento:
+
+```{r, message=F}
+preds_train <- as.factor(ifelse(prob_values > threshold_optimo_svm ,1,0))
+real_labels <-as.factor(ifelse(train$price_label_high==TRUE,1,0))
+cm <- caret::confusionMatrix(preds_train, real_labels, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian <- roc(train$price_label_high,prob_values)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+
+```
+
+Como se puede apreciar, los resultados de este modelo son bastante buenos. El valor de 0.95 para el área bajo la curva demuestra que el modelo es capaz de separar correctamente ambas clases. En el siguiente gráfico se puede ver la distribución de las probabilidades obtenidas mediante el modelo, junto al threshold óptimo calculado: 
+
+```{r}
+
+probs_labels <- data.frame("probs" = prob_values, "labels" = real_labels)
+
+probs_labels %>% ggplot(aes(x=probs, color=labels)) +
+  geom_density() + geom_vline(aes(xintercept=threshold_optimo_svm),
+            color="blue", linetype="dashed")
+
+
+```
+
+Se puede ver que el modelo es muy bueno captando los 0. Tiene más problemas en el caso de los 1, y resulta especialmente preocupante que en lugar de disminuir la densidad de probabilidad para valores bajos, hay un pequeño repunte. Esto puede ser debido a que el algoritmo de SVM en un principio solo proporciona las etiquetas predichas, sin embargo, de cara a la optimización de ciertas métricas puede ser útil obtener probabilidades. Para obtenerlas, se aplica una técnica llamada calibrado de Platt, que a grandes rasgos consiste en aplicar una regresión logística sobre las etiquetas calculadas por la SVM. Por lo tanto, al no estar diseñadas las SVM para proporcionar outputs probabilísticos, tampoco hay que darle mayor importancia a esta gráfica.
+
+
+
+```{r, echo = F}
+
+test <- read.csv('base_test.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+test<- test %>%  select(-filter_cols)
+
+# Estandarización de variables categóricas ordinales
+cat_with_order = c("rooms_cat", "car_cat", "bath_cat", "bed_cat", "sell_rate_cat")
+
+test['rooms_cat']<- test %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
+test['car_cat'] <- test %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+test['bath_cat'] <- test %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
+test['bed_cat'] <- test %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() 
+test['sell_rate_cat'] <- test %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() 
+
+ordinal_variables <- test %>% select(cat_with_order) 
+ordinal_variables_norm <- predict(normParam, ordinal_variables) # Estandarizamos con el objeto estandarizador de train
+
+for(cat in cat_with_order){
+  test[cat] <- ordinal_variables_norm[cat]
+}
+
+test <- test %>% select(-c("year_built_cat", "Regionname", "Type", "Method"))
+
+
+test$price_label_high <- as.factor(test$price_label_high) 
+
+
+head(test)
+
+```
+
+
+```{r, echo = F}
+
+x_test <- test[,1:9]
+pred_test <- predict(best_gaussian, x_test, probability = T)
+prob_values_test <- attr(pred_test, "probabilities")[,1] # La probabilidad de pertenecer a la clase "cara" (1)  
+preds_test <- as.factor(ifelse(prob_values_test > threshold_optimo_svm ,1,0))
+
+test$price_label_high <- as.factor(ifelse(test$price_label_high==TRUE,1,0)) #Cuidado! solo ejecutar una vez, sino se hace un lio con los niveles
+
+metrics_function_num(preds_test, test, 'price_label_high')
+
+```
+
+
+```{r, message=F}
+preds_train <- as.factor(ifelse(prob_values > threshold_optimo_svm ,1,0))
+real_labels <-as.factor(ifelse(train$price_label_high==TRUE,1,0))
+cm <- caret::confusionMatrix(preds_test, test$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian_test <- roc(test$price_label_high,prob_values_test)
+roc_plot <- ggplotROCCurve(roc_gaussian_test)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+```
+
+
+Como era de esperar, las métricas disminuyen, sin embargo  no demasiado. La performance del modelo puede decirse que es bastante similar sobre los datos de test, lo cual quiere decir que apenas existe sobreajuste con este modelo.
+
+

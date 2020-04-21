@@ -31,9 +31,64 @@ library(tidyr)
 library(InformationValue)
 library(rpart)
 library(rpart.plot)
+library(e1071)
+library(ROCR)
+library(pROC)
+library(gridExtra)
+library(glmnetUtils)
 
 set.seed(10)
 ```
+
+
+```{r, echo = F}
+# Función para el cáculo de las métricas
+#Input necedario son las predicciones del modelo, el conjunto de datos y el nombre de la columna a predecir
+metrics_function_num <- function(preds, test, label){
+  accuracy = sum(preds == test[,label]) / nrow(test)
+  recall = sum(preds == test[,label] & test[,label] == 1) / sum(test[,label] == 1)
+  precision = sum(preds == test[,label] & test[,label] == 1) / sum(preds == 1)
+  f1_score = 2*recall*precision/(recall+precision)
+  specificity = sum(preds == test[,label] & test[,label] == 0) / sum(test[,label] == 0)
+  metrics <- c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
+  cm <- caret::confusionMatrix(preds, test[,label], positive = '1')
+  return(list(metrics, cm))
+}
+
+
+# Funciones para dibujar matriz de confusión y curva ROC
+#Input necesario es una confusionMatrix de caret
+ggplotConfusionMatrix <- function(m){
+  mytitle <- paste("Accuracy", percent_format()(m$overall[1]))
+  p <-
+    ggplot(data = as.data.frame(m$table) ,
+           aes(x = Reference, y = Prediction)) +
+    geom_tile(aes(fill = log(Freq)), colour = "white") +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    geom_text(aes(x = Reference, y = Prediction, label = Freq)) +
+    theme(legend.position = "none") +
+    ggtitle(mytitle)
+  return(p)
+}
+
+# Input necesario es un pROC object
+ggplotROCCurve <- function(roc_object, interval = 0.2, breaks = seq(0, 1, interval)){
+  require(pROC)
+  if(class(roc) != "roc")
+    simpleError("Please provide roc object from pROC package")
+  ggroc(roc_object) + 
+              scale_x_reverse(name = "Specificity",limits = c(1,0), breaks = breaks, expand = c(0.001,0.001)) + 
+              scale_y_continuous(name = "Sensitivity", limits = c(0,1), breaks = breaks, expand = c(0.001, 0.001)) +
+              geom_segment(aes(x = 0, y = 1, xend = 1,yend = 0), alpha = 0.01) + 
+              theme_bw() + 
+              theme(axis.ticks = element_line(color = "grey80")) +
+              coord_equal() + 
+              annotate("text",x=-Inf,y=-Inf, label = paste("AUC =",sprintf("%.3f",roc_object$auc)), hjust= 1.2, vjust = -7)
+}
+
+
+```
+
 
 NOTA IMPORTANTE: Se han generado los datasets base_train y base_tes con:
 - Variables originales
@@ -246,130 +301,149 @@ metrics_function(prediccion_knn7_train, housesTrain, 'price_label_high')
 #En test
 prediccion_knn7_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
                          k=7, cl=housesTrain$price_label_high)
+
 metrics_function(prediccion_knn7_test, housesTest, 'price_label_high')
 ```
 
 # Regresión logística
 
+En este apartado, se va imlementar un modelo regresión logística sobre los datos de entrenamiento. 
 
 ```{r}
 # Se creea la variable objetivo (75-25) y se eliminan los antiguos targets
 train <- read.csv('base_train.csv', encoding = 'UTF-8')
 filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
 train <- train %>%  select(-filter_cols)
-head(train)
+train$price_label_high <- as.factor(ifelse(train$price_label_high==TRUE,1,0))
+
+
+lr_model <- glm(price_label_high ~ ., family = binomial(link = 'logit'), data = train)
+summary(lr_model)
+```
+
+El resultado óptimo para este modelo, en cuanto a optimización de la f1_score se refiere es la siguiente:
+
+```{r}
+beta <- 1
+prob_values <- lr_model %>% predict(train[,1:13], type = "response")
+pred_lr <- prediction(prob_values, train$price_label_high)
+perf_lr <- performance(pred_lr, "prec", "rec")
+
+f1_best_lr <- (1+beta^2)*perf_lr@y.values[[1]]*perf_lr@x.values[[1]]/(beta^2*perf_lr@y.values[[1]]+perf_lr@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_lr) # Mejor f1 score para este modelo
+prec_lr_opt=perf_lr@y.values[[1]][optimo]
+rec_lr_opt=perf_lr@x.values[[1]][optimo]
+f1_measure_lr_opt <- (1+beta^2)*prec_lr_opt*rec_lr_opt/(beta^2*prec_lr_opt+rec_lr_opt)
+threshold_optimo_lr <- perf_lr@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_lr_opt, precision = prec_lr_opt, recall = rec_lr_opt, threshold = threshold_optimo_lr))
+```
+
+
+```{r,message=F}
+preds_train <- as.factor(ifelse(prob_values > threshold_optimo_lr ,1,0))
+cm <- caret::confusionMatrix(preds_train, train$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian <- roc(train$price_label_high,prob_values)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+```
+
+Como se puede observar, el valor no es muy alto, por lo que este resultado claramente puede mejorarse.
+
+Si echamos un ojo a la columna de los p-valores obtenidos durante el entrenamiento del modelo, podemos ver que algunos de ellos nos indican que no se puede asegurar que los coeficientes asociados a ciertas variables sean diferentes de 0. Sin embargo, estos p-valores tan bajos van asociados a ciertos niveles de variables categóricas, por lo que si eliminásemos la variable estaríamos perdiendo información del resto de niveles, la cual sí que es relevante. 
+
+Sin embargo, se podría aplicar alguna medida de regularización a través de la cual obtener más información sobre las posibles variables que no aportan demasiado al modelo y podrían ser eliminadas. A continuación, se va a utilizar una regresión logística Lasso y observar los coeficientes obtenidos para cada una de las variables:
+
+```{r}
+set.seed(123)
+cv.lasso <- cv.glmnet(price_label_high~., data = train, alpha = 1, type.measure = "deviance", family = "binomial") # Con 10-fold cross-validation
+#plot(cv.lasso)
+coef(cv.lasso, cv.lasso$lambda.1se)
 ```
 
 ```{r}
-model <- glm(price_label_high ~ ., family = binomial(link = 'logit'), data = train)
-summary(model)
+lr_regularized <- glm(price_label_high ~. -sell_rate_cat - Method - bed_cat, family = binomial(link = 'logit'), data = train)
+summary(lr_regularized)
 ```
 
 ```{r}
-# Se crea el test set
-test <- read.csv('base_test.csv', encoding = 'UTF-8')
-filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'CarImp', 'YearBuilt', 'CouncilArea', 'LandsizeImp', 'Price', 'log_price', 'price_label')
-test <- test %>% select(-filter_cols)
-# Se cambia el target a numérico y a factor
-test$price_label_high <- ifelse(test$price_label_high==TRUE,1,0)
-test$price_label_high <- as.factor(test$price_label_high)
-head(test)
+beta <- 1
+prob_values <- lr_regularized %>% predict(train[,1:13], type = "response")
+pred_lr <- prediction(prob_values, train$price_label_high)
+perf_lr <- performance(pred_lr, "prec", "rec")
+
+f1_best_lr <- (1+beta^2)*perf_lr@y.values[[1]]*perf_lr@x.values[[1]]/(beta^2*perf_lr@y.values[[1]]+perf_lr@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_lr) # Mejor f1 score para este modelo
+prec_lr_opt=perf_lr@y.values[[1]][optimo]
+rec_lr_opt=perf_lr@x.values[[1]][optimo]
+f1_measure_lr_opt <- (1+beta^2)*prec_lr_opt*rec_lr_opt/(beta^2*prec_lr_opt+rec_lr_opt)
+threshold_optimo_lr <- perf_lr@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_lr_opt, precision = prec_lr_opt, recall = rec_lr_opt, threshold = threshold_optimo_lr))
 ```
 
+```{r, message=F}
+preds_train <- as.factor(ifelse(prob_values > threshold_optimo_lr ,1,0))
+cm <- caret::confusionMatrix(preds_train, train$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
 
-```{r}
-threshold = 0.5
-probabilities <- predict(model, test, type="response") 
-preds <- ifelse(probabilities > threshold,1,0)
-preds <- factor(preds)
+roc_gaussian <- roc(train$price_label_high,prob_values)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
 ```
 
-
-```{r}
-#metrics_function(preds, test, 'price_label_high')
-metrics_function_num <- function(preds, test, label){
-  accuracy = sum(preds == test[,label]) / nrow(test)
-  recall = sum(preds == test[,label] & test[,label] == 1) / sum(test[,label] == 1)
-  precision = sum(preds == test[,label] & test[,label] == 1) / sum(preds == 1)
-  f1_score = 2*recall*precision/(recall+precision)
-  specificity = sum(preds == test[,label] & test[,label] == 0) / sum(test[,label] == 0)
-  metrics <- c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
-  cm <- caret::confusionMatrix(preds, test[,label], positive = '1')
-  return(list(metrics, cm))
+Vemos que, al eliminar ciertas variables que simplemente estaban introduciendo información redundante al modelo, el rendimiento obtenido es prácticamente el mismo (incluso mejora muy mínimamente).
   
-}
+```{r}
 
-metrics_function_num(preds, test, 'price_label_high')
+probs_labels <- data.frame("probs" = prob_values, "labels" = train$price_label_high)
+
+probs_labels %>% ggplot(aes(x=probs, color=labels)) +
+  geom_density() + geom_vline(aes(xintercept=threshold_optimo_lr),
+            color="blue", linetype="dashed")
+
+
 ```
 
+A continuación, se procede a comprobar el funcionamiento de este modelo de regresión lineal sobre los datos de test:
 
 ```{r}
-ggplotConfusionMatrix <- function(m){
-  mytitle <- paste("Accuracy", percent_format()(m$overall[1]))
-  p <-
-    ggplot(data = as.data.frame(m$table) ,
-           aes(x = Reference, y = Prediction)) +
-    geom_tile(aes(fill = log(Freq)), colour = "white") +
-    scale_fill_gradient(low = "white", high = "steelblue") +
-    geom_text(aes(x = Reference, y = Prediction, label = Freq)) +
-    theme(legend.position = "none") +
-    ggtitle(mytitle)
-  return(p)
-}
-cm <- caret::confusionMatrix(preds, test$price_label_high, positive = '1')
-ggplotConfusionMatrix(cm)
-```
+test<- read.csv('base_test.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+test <- test %>%  select(-filter_cols)
+test$price_label_high <- as.factor(ifelse(test$price_label_high==TRUE,1,0))
 
-```{r}
-optimal_threshold <- optimalCutoff(test$price_label_high,probabilities, optimiseFor='Both')[1]
-preds <- ifelse(probabilities > optimal_threshold,1,0)
-preds <- factor(preds)
-optimal_threshold
-```
 
-```{r}
-metrics_function_num(preds, test, 'price_label_high')
+x_test <- test[,13]
+prob_values_test <- lr_regularized %>% predict(test[,1:13], type = "response")
+preds_test <- as.factor(ifelse(prob_values_test > threshold_optimo_lr ,1,0))
+
+metrics_function_num(preds_test, test, 'price_label_high')
 ```
 
 
+```{r, message=F}
 
-```{r}
-probabilities_train <- predict(model, type = "response")
-train_numeric <- train %>% select_if(is.numeric)
-predictors <- colnames(train_numeric)
-train_numeric <- train_numeric %>%
-  mutate(logit = log(probabilities_train/(1-probabilities_train))) %>%
-  gather(key = "predictors", value = "predictor.value", -logit)
-```
+cm <- caret::confusionMatrix(preds_test, test$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
 
-```{r}
-ggplot(train_numeric, aes(logit, predictor.value))+
-  geom_point(size = 0.5, alpha = 0.5) +
-  geom_smooth(method = "loess") + 
-  theme_bw() + 
-  facet_wrap(~predictors, scales = "free_y")
-```
+roc_lr_test <- roc(test$price_label_high,prob_values_test)
+roc_plot <- ggplotROCCurve(roc_lr_test)
 
-```{r}
-car::vif(model)
-```
 
-```{r}
-model2<- glm(price_label_high ~ .-Regionname - Method, family = binomial(link = 'logit'), data = train)
-summary(model2)
+grid.arrange(roc_plot, cm_plot, ncol=2)
 ```
 
 
-```{r}
-threshold2 = 0.5
-probabilities2 <- predict(model2, test, type="response") 
-preds2 <- ifelse(probabilities2 > threshold,1,0)
-preds2 <- factor(preds2)
-```
+Se puede comprobar que el AUC se mantiene intacto. Si bien es cierto que la accuracy y la f1_score disminyen ligeramente, se puede afirmar que la regresión no sobreajusta para nada los datos.
 
-```{r}
-metrics_function_num(preds2, test, 'price_label_high')
-```
+
 
 # Árboles de decisión
 Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer lugar, se utilizarán las variables que se consideraron importantes en el análisis exploratorio, para después probar distintas formas de tuning e intentar evitar el sobreaprendizaje del árbol.
@@ -585,5 +659,6 @@ plot(k.values, avg_sil_values,
 ```
 
 Según las tres gráficas obtenidas, el k óptimo es 2. (dudo??)
+
 
 
