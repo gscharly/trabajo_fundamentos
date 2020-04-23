@@ -17,10 +17,13 @@ library(party)
 library(ROCR)
 library(ggplot2)
 library(dplyr)
-library(superml)
+library(tidymodels)
+#library(superml)
+#library(caret)
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
 source('utils/plot_roc.R')
+source('utils/metrics_function.R')
 set.seed(10)
 ```
 
@@ -29,131 +32,180 @@ set.seed(10)
 housesTrain <- read.csv('base_train.csv')
 ```
 
-```{r}
-metrics_function <- function(prediccion, test, label){
 
-  # Medidas de precisión
-  
-  accuracy = sum(prediccion == test[,label]) /nrow(test)
-  error = 1-accuracy
-  
-  # Acierto sobre el total de las casas CARAS, sensitivity o recall
-  sensitivity = sum(prediccion == test[,label] & test[,label] == TRUE) / sum(test[,label] == TRUE)
-  recall = sensitivity
-  
-  # Acierto sobre el total de las casas BARATAS
-  specificity =  sum(prediccion == test[,label] & test[,label] == FALSE) / sum(test[,label] == FALSE)
-  
-  # Acierto cuando el predicho es CARO
-  precision = sum(prediccion == test[,label] & prediccion == TRUE) / sum(prediccion == TRUE)
-  
-  # Acierto cuando el predicho es BARATO
-  npv = sum(prediccion == test[,label] & prediccion == FALSE) / sum(prediccion == FALSE)
-  
-  # F1_score
-  f1score = 2*precision*recall /(precision+recall)
-  conf_mat <- caret::confusionMatrix(table(prediccion, test[,label]), positive="TRUE")
-  metrics <- c(accuracy = accuracy, error = error, sensitivity = sensitivity, specificity = specificity, precision = precision, npv = npv, f1=f1score)
-  return(list(metrics, conf_mat))
-  
-}
-```
-
-
-# Utilizando la price_label
-En primer lugar, probaremos un bosque de árboles utilizando la etiqueta de clasificación *price_label*. Al igual que en la parte de árboles de decisión, se decide utilizar las variables originales del dataset, sin transformaciones.
+# Random Forest
+En este apartado se van a utilizar random forests para el problema de clasificación. Al no estar demasiado expuesto a los outliers, y aceptar variables categóricas como entrada, la primera prueba que se realizará será con la mayoría de variables del conjunto de datos, y con unos parámetros iniciales que después se modificarán en una etapa de elección de hiperparámetros.
 
 ```{r}
-housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
-                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
-                                     "price_label")]
-housesTrainOrigVar$price_label <- as.factor(housesTrainOrigVar$price_label)
-rf1 <- randomForest(price_label ~ ., data=housesTrainOrigVar,  ntree=100, importance=FALSE,
-                    proximity=TRUE, mtry=4, replace=FALSE)
-```
-
-
-```{r}
-preds <- predict(rf1, type = "class")
-table(pred = preds, obs = housesTrainOrigVar$price_label)
-metrics_function(preds, housesTrainOrigVar, 'price_label')
-```
-
-```{r}
-preds <- predict(rf1, type = "class")
-```
-
-
-```{r}
-th = 0.7
-preds_prob <- predict(rf1, type = "prob")
-predictions <- data.frame(price_label=housesTrainOrigVar$price_label, pred=preds_prob[,2])
-predictions$price_label <- ifelse(predictions$price_label==TRUE,1,0)
-df_preds <- pred_type_distribution(predictions, th, 'price_label')
-```
-
-
-```{r}
- ggplot(data=df_preds, aes(x=price_label, y=pred)) + 
-    geom_violin(fill=rgb(1,1,1,alpha=0.6), color=NA) + 
-    geom_jitter(aes(color=pred_type), alpha=0.6) +
-    geom_hline(yintercept=th, color="red", alpha=0.6) +
-    scale_color_discrete(name = "type") +
-    labs(title=sprintf("Threshold at %.2f", th))
-```
-
-```{r}
-cost_of_fp <-1
-cost_of_fn <- 1
-th <- 0.5
-roc <- calculate_roc(predictions, 'price_label', cost_of_fp, cost_of_fn, n=500)
-plot_roc(roc, th, cost_of_fp, cost_of_fn)
-```
-
-```{r message=FALSE}
-auc_roc <- auc(predictions$price_label, predictions$pred)
-auc_roc
-```
-
-## Utilizando cross validation
-Vamos a intentar tunear el número de árboles con CV:
-
-```{r}
-rf <- RFTrainer$new()
-gst <-GridSearchCV$new(trainer = rf,
-                       parameters = list(n_estimators = c(100,200,500),
-                                        max_depth = c(5,2,10)),
-                                        n_folds = 3,
-                                        scoring = c('accuracy','auc'))
-gst$fit(housesTrainOrigVar, "price_label")
-```
-```{r}
-gst$best_iteration()
-```
-
-
-# Con price_label_high
-
-```{r}
+set.seed(10)
 housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
                                     "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
                                      "price_label_high")]
 housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
-rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar,  ntree=100, importance=FALSE,
-                    proximity=TRUE, mtry=4, replace=FALSE)
+rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar, ntree=100)
 ```
 
 
 ```{r}
 preds <- predict(rf2, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label_high)
-metrics_function(preds, housesTrainOrigVar, 'price_label_high')
+metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
+```
+
+Si observamos la importancia de las variables (medida como la caída media en el índice gini que produce cada variable), vemos que las más importantes son aquellas relacionadas con la situación geográfica de la vivienda (cómo ya se había visto anteriormente): coordeandas, distancia al centro y región están en las 6 primeras posiciones, además de variables que informan sobre el tamaño de la vivienda (número de habitaciones y tamaño de la parcela).
+
+
+```{r}
+# Extracts variable importance (Mean Decrease in Gini Index)
+# Sorts by variable importance and relevels factors to match ordering
+var_importance <- data_frame(variable=setdiff(colnames(housesTrainOrigVar), "price_label_high"),
+                             importance=as.vector(importance(rf2)))
+var_importance <- arrange(var_importance, desc(importance))
+var_importance$variable <- factor(var_importance$variable, levels=var_importance$variable)
+
+p <- ggplot(var_importance, aes(x=variable, weight=importance, fill=variable))
+p <- p + geom_bar() + ggtitle("Importancia de variables")
+p <- p + xlab("Features") + ylab("Decrecimiento medio índice Gini")
+p <- p + scale_fill_discrete(name="Variable")
+p + theme(axis.text.x=element_blank(),
+          axis.text.y=element_text(size=12),
+          axis.title=element_text(size=16),
+          plot.title=element_text(size=18),
+          legend.title=element_text(size=16),
+          legend.text=element_text(size=12))
 ```
 
 
 
 ```{r}
-th = 0.7
+cost_of_fp <-1
+cost_of_fn <- 1
+th <- 0.5
+roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
+plot_roc(roc, th, cost_of_fp, cost_of_fn)
+```
+
+```{r message=FALSE}
+auc_roc <- auc(predictions$price_label_high, predictions$pred)
+auc_roc
+```
+
+```{r}
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
+```
+
+Tomando como referencia las métricas, y que las variables imporantes son bastante lógicas, este modelo arroja resultados muy válidos. Además, se podría utilizar como una primera parte en una etapa de ensamblado de modelos: se podría utilizar un Random Forest muy sobre ajustado (aumentando el número máximo de nodos terminales por ejemplo) para seleccionar las variables más importantes, que después se utilizarían como variables en otro modelo.
+
+
+## Utilizando cross validation
+Como primera prueba, y teniendo en cuenta que las variables importantes el modelo son bastante lógicas, los resultados de este modelo son bastante buenos. Ahora se va a intentar tunear el número de árboles y la profundidad máxima de los mismos con grid search y CV, para intentar obtener unos mejores resultados.
+
+
+- Número de árboles
+- Número de variables que se muestrean aleatoriamente al crear los árboles
+- Mínimo número de puntos para que un nodo se divida.
+
+Realizamos 10 Fold cross validation con 5 iteraciones.
+
+
+```{r}
+set.seed(10)
+rf_model <- rand_forest(trees=tune(), mtry=tune(), min_n=tune()) %>% set_mode('classification') %>% set_engine('randomForest')
+houses_rec <- recipe(price_label_high ~ ., data=housesTrainOrigVar)
+#rf_model %>% parameters() %>% update(trees = trees(c(25,1000)), mtry=mtry(c(1,5)), min_n=min_n(c(2,20)))
+# Create workflow
+rf_workflow <- workflow() %>% add_model(rf_model) %>% add_recipe(houses_rec)
+rf_workflow
+
+rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mtry=mtry(c(1,5)), min_n=min_n(c(2,20)))
+
+# Create grid
+rf_grid <- grid_regular(rf_param, levels=3)
+rf_grid
+#rf_fit <- fit(rf_model, price_label_high ~ ., housesTrainOrigVar)
+# Valores por defecto
+#trees()
+#mtry()
+#min_n()
+```
+
+```{r message=FALSE}
+# Parallelize
+library(doFuture)
+all_cores <- parallel::detectCores(logical = FALSE) - 2
+registerDoFuture()
+cl <- makeCluster(all_cores)
+plan(future::cluster, workers = cl)
+```
+
+```{r}
+houses_folds <- vfold_cv(housesTrainOrigVar, v = 10, repeats = 5)
+houses_folds
+rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
+```
+
+
+```{r}
+autoplot(rf_search) +
+    labs(title = "Results of Grid Search for Two Tuning Parameters of a Random Forest")
+```
+
+
+```{r}
+show_best(rf_search, metric='roc_auc')
+```
+
+```{r}
+# Prepare for final prediction
+rf_param_final <- select_best(rf_search, "roc_auc")
+rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
+```
+
+```{r}
+rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainOrigVar)
+```
+
+
+## Test
+
+```{r}
+housesTest <- read.csv('base_test.csv')
+housesTestOrigVar <- housesTest[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                     "price_label_high")]
+housesTestOrigVar$price_label_high <- as.factor(housesTestOrigVar$price_label_high)
+#levels(housesTestOrigVar$price_label_high) <- c("barata", "cara")
+
+housesTestOrigVar$.pred <- predict(rf_wflow_final_fit, 
+                          new_data = housesTestOrigVar)$.pred_class
+housesTestOrigVar$.pred_TRUE <- predict(rf_wflow_final_fit, 
+                          new_data = housesTestOrigVar, type='prob')$.pred_TRUE
+metrics(housesTestOrigVar, truth = price_label_high, .pred, .pred_TRUE)
+```
+
+```{r}
+predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=housesTestOrigVar$.pred_TRUE)
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
+```
+
+
+
+```{r}
+stopCluster(cl)
+```
+
+
+
+
+
+NOTA: ESTO MEJOR CUANDO ELIJAMOS EL MEJOR MODELO
+Mediante estos gráficos, podemos ver de una forma gráfica las muestras que quedarían clasificadas en función del umbral que se elija.
+
+```{r}
+th = 0.5
 preds_prob <- predict(rf2, type = "prob")
 predictions <- data.frame(price_label_high=housesTrainOrigVar$price_label_high, pred=preds_prob[,2])
 predictions$price_label_high <- ifelse(predictions$price_label_high==TRUE,1,0)
@@ -169,32 +221,3 @@ df_preds <- pred_type_distribution(predictions, th, 'price_label_high')
     scale_color_discrete(name = "type") +
     labs(title=sprintf("Threshold at %.2f", th))
 ```
-
-```{r}
-cost_of_fp <-1
-cost_of_fn <- 1
-th <- 0.5
-roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
-plot_roc(roc, th, cost_of_fp, cost_of_fn)
-```
-
-```{r message=FALSE}
-auc_roc <- auc(predictions$price_label_high, predictions$pred)
-auc_roc
-```
-
-## Utilizando cross validation
-Vamos a intentar tunear el número de árboles con CV:
-
-```{r}
-library(superml)
-rf <- RFTrainer$new()
-gst <-GridSearchCV$new(trainer = rf,
-                       parameters = list(n_estimators = c(100,200,500),
-                                        max_depth = c(5,2,10)),
-                                        n_folds = 3,
-                                        scoring = c('accuracy','auc'))
-gst$fit(housesTrainOrigVar, "price_label_high")
-gst$best_iteration()
-```
-

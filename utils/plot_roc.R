@@ -12,7 +12,7 @@ plot_roc <- function(roc, threshold, cost_of_fp, cost_of_fn) {
     geom_point(color=col_by_cost, size=4, alpha=0.5) +
     coord_fixed() +
     geom_line(aes(threshold,threshold), color=rgb(0,0,1,alpha=0.5)) +
-    labs(title = sprintf("ROC")) + xlab("FPR") + ylab("TPR") +
+    labs(title = sprintf("ROC")) + xlab("1-FPR") + ylab("TPR") +
     geom_hline(yintercept=roc[idx_threshold,"tpr"], alpha=0.5, linetype="dashed") +
     geom_vline(xintercept=roc[idx_threshold,"fpr"], alpha=0.5, linetype="dashed")
   

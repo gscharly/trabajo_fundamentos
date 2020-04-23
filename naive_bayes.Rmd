@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+library(ggplot2)
 library(dplyr)
 library(e1071)
 library(pROC)
@@ -26,6 +27,8 @@ Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando 
 housesTrain <- read.csv('base_train.csv')
 ```
 
+## Primer modelo
+
 Como primera aproximación, utilizaremos las mismas variables utilizadas en el modelo de regresión lineal múltiple (aunque el escalado debería ser indiferente). Para variables numéricas asume una distribución gausiana para calcular la verosimilitud (likelihood). Lo que saca el mod es la media en la primera columna y la varianza en la segunda para las distribuciones condicionadas.
 
 ```{r}
@@ -35,50 +38,69 @@ mod
 
 ```{r}
 # Función que calcula distintas métricas de clasificación
-metrics_function <- function(prediccion, test, label){
+metrics_function <- function(prediccion, test, label, bool){
 
+  if (bool==TRUE) {
+    val0 = FALSE
+    val1 = TRUE
+    positive = "TRUE"
+  }
+  else{
+    val0 = 0
+    val1 = 1
+    positive = 1
+  }
+  
+  
   # Medidas de precisión
   
   accuracy = sum(prediccion == test[,label]) /nrow(test)
   error = 1-accuracy
   
   # Acierto sobre el total de las casas CARAS, sensitivity o recall
-  sensitivity = sum(prediccion == test[,label] & test[,label] == TRUE) / sum(test[,label] == TRUE)
+  sensitivity = sum(prediccion == test[,label] & test[,label] == val1) / sum(test[,label] == val1)
   recall = sensitivity
   
   # Acierto sobre el total de las casas BARATAS
-  specificity =  sum(prediccion == test[,label] & test[,label] == FALSE) / sum(test[,label] == FALSE)
+  specificity =  sum(prediccion == test[,label] & test[,label] == val0) / sum(test[,label] == val0)
   
   # Acierto cuando el predicho es CARO
-  precision = sum(prediccion == test[,label] & prediccion == TRUE) / sum(prediccion == TRUE)
+  precision = sum(prediccion == test[,label] & prediccion == val1) / sum(prediccion == val1)
   
   # Acierto cuando el predicho es BARATO
-  npv = sum(prediccion == test[,label] & prediccion == FALSE) / sum(prediccion == FALSE)
+  npv = sum(prediccion == test[,label] & prediccion == val0) / sum(prediccion == val0)
   
   # F1_score
   f1score = 2*precision*recall /(precision+recall)
-  conf_mat <- caret::confusionMatrix(table(prediccion, test[,label]), positive="TRUE")
+  conf_mat <- caret::confusionMatrix(table(prediccion, test[,label]), positive=positive)
   metrics <- c(accuracy = accuracy, error = error, sensitivity = sensitivity, specificity = specificity, precision = precision, npv = npv, f1=f1score)
   return(list(metrics, conf_mat))
   
 }
 ```
 
-Métricas en train:
+Métricas en train. El f1 es flojillo, ya que ni el recall ni el precision son demasiado buenos. 
 
 ```{r}
 preds <- predict(mod, housesTrain, type = "class")
 table(pred = preds, obs = housesTrain$price_label_high)
-metrics_function(preds, housesTrain, 'price_label_high')
+metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
 ```
+Cambiando el th:
 ```{r}
 preds_prob <- predict(mod, housesTrain, type = "raw")
 predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
-predictions$price_label_high <- ifelse(predictions$price_label_high==TRUE,1,0)
+th = 0.5
+predictions <- predictions %>% mutate(predict_class = ifelse(pred >=th, TRUE, FALSE))
+table(pred = predictions$predict_class, obs = predictions$price_label_high)
+metrics_function(predictions$predict_class, housesTrain, 'price_label_high', bool=TRUE)
+```
 
+
+```{r}
 cost_of_fp <-1
 cost_of_fn <- 1
-th <- 0.5
+th <- 0.3
 roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
 plot_roc(roc, th, cost_of_fp, cost_of_fn)
 ```
@@ -89,24 +111,70 @@ auc_roc <- auc(predictions$price_label_high, predictions$pred)
 auc_roc
 ```
 
+```{r}
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
+```
+
+## Otros modelos probados
+
+Probando algún modelo con menos variables. A modo de resumen:
+
+- Utilizando solo las categóricas, los resultados empeoran, con un accuracy de 0.8079153, un f1 de 0.6207523 y una auc roc de 0.8552.
+- Utilizando únicamente las numéricas, el resultado lógicamente empeora, ya que Naive Bayes asume una distribución normal de las entradas numérocas, y trabaja mejor con categóricas al calcular las probabilidades de una forma más precisa conociendo las distribuciones. En este caso, tenemos un accuracy de 0.7727566, un f1 de 0.4759075 y una auc roc de 0.7913
+
+
+```{r}
+mod <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std, data=housesTrain)
+mod
+```
+
+```{r}
+preds <- predict(mod, housesTrain, type = "class")
+table(pred = preds, obs = housesTrain$price_label_high)
+metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
+```
+
+
+```{r}
+preds_prob <- predict(mod, housesTrain, type = "raw")
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
+th = 0.5
+predictions <- predictions %>% mutate(predict_class = ifelse(pred >=th, TRUE, FALSE))
+table(pred = predictions$predict_class, obs = predictions$price_label_high)
+metrics_function(predictions$predict_class, housesTrain, 'price_label_high', bool=TRUE)
+auc_roc <- auc(predictions$price_label_high, predictions$pred)
+auc_roc
+```
+
+## Test: mejor modelo
+
 En test:
 
 ```{r}
 housesTest <- read.csv('base_test.csv')
 ```
 
+```{r}
+mod <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data=housesTrain)
+mod
+```
 
 ```{r}
 preds <- predict(mod, housesTest, type = "class")
 table(pred = preds, obs = housesTest$price_label_high)
-metrics_function(preds, housesTest, 'price_label_high')
+metrics_function(preds, housesTest, 'price_label_high', bool = TRUE)
 ```
 
 ```{r}
-preds_prob <- predict(mod, housesTest, type = "raw")
-predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=preds_prob[,2])
-predictions$price_label_high <- ifelse(predictions$price_label_high==TRUE,1,0)
+preds_prob <- predict(mod, housesTrain, type = "raw")
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
+th = 0.5
+predictions <- predictions %>% mutate(predict_class = ifelse(pred >=th, TRUE, FALSE))
+```
 
+```{r}
 cost_of_fp <-1
 cost_of_fn <- 1
 th <- 0.5
