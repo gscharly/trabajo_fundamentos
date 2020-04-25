@@ -1,0 +1,121 @@
+---
+title: "dimensionality_reduction"
+author: "Carlos Gomez Sanchez"
+date: "14 de abril de 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(kmed)
+library(Rtsne)
+```
+
+
+# Métodos de reducción de dimensionalidad
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+```
+
+## PCA
+
+PCA debe trabajar con variables numéricas que además están normalizadas. Por ello, elegimos las 4 variables numéricas con las que trabajamos en la parte de regresión lineal múltiple (raíz cuadrada de la distancia, logaritmo de la parcela, latitud y longitud). Con las dos primeras componentes se explicaría un 66,3% de la varianza.
+
+
+```{r}
+housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(housesNum)
+summary(housesPCA)
+```
+
+
+```{r}
+train <- housesTrain %>% select(-Price)
+```
+
+```{r}
+train_pca <- data.frame(housesPCA$x[,1:3])
+train_cat <- train %>% select(Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, price_label_high)
+train_pca_cat <- merge(train_pca, train_cat, by.x=0, by.y=0)
+train_pca_cat$log_price <- train$log_price
+```
+
+Se prueba a representar las dos componentes principales en dos dimensiones, intentando añadir una tercera dimensión en forma de color utilizando otras variables, con el objetivo de ver si hay diferencias en estas direcciones. Vemos por ejemplo que las casas caras parece que se concentran (ya se vio anteriormente que la localización influía en el precio), mientras que las casas baratas están más desperdigadas. 
+
+Si pintamos la región, se pueden diferenciar fácilemente, ya que se han utilizado las coordenadas como entrada del PCA.
+
+
+```{r}
+train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point() + labs(title='PCA: price label')
+train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=Regionname)) + geom_point() + labs(title='PCA: Regionname')
+```
+
+
+## MDS
+Usaremos la distancia euclídea para realizar el MDS (debería ser muy parecido a PCA). Al tener bastantes datos, vamos a muestrear el train primero.
+
+```{r}
+set.seed(10)
+train_sample <- housesTrain[sample(nrow(housesNum), 2500),]
+train_num_sample <- train_sample %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+```
+
+```{r}
+# Distancia euclídea
+d <- dist(train_num_sample) 
+# MDS
+fit <- cmdscale(d,eig=TRUE, k=2)
+```
+
+```{r}
+df_fit <- data.frame(fit$points)
+df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high')
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname')
+```
+Se prueba también la distancia de manhattan
+
+```{r}
+# Distancia euclídea
+d <- dist(train_num_sample, method = 'manhattan') 
+# MDS
+fit <- cmdscale(d,eig=TRUE, k=2)
+```
+
+```{r}
+df_fit <- data.frame(fit$points)
+# No estoy seguro de hacer el join bien, se supone que es por indice
+df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high')
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname')
+```
+
+## tSNE
+Probamos tsne sobre nuestras variables numéricas escaladas, para que valores extremos no nos den problemas. El parámetro que se suele tocar es el perplexity, que es algo parecido al número de vecinos más cercanos cuando se comparan las distribuciones que utiliza tSNE.
+Fuente: https://www.analyticsvidhya.com/blog/2017/01/t-sne-implementation-r-python/
+
+De nuevo superponiendo distintas variables sobre el gráfico en dos dimensiones, podemos ver 
+
+```{r}
+houses_num_unique <- unique(housesNum)
+tsne <- Rtsne(houses_num_unique, dims = 2, perplexity=50, verbose=TRUE, max_iter = 500)
+```
+
+```{r}
+df_tsne <- data.frame(tsne$Y)
+df_train_no_dup <- housesTrain[!duplicated(housesTrain[c("sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std")]),]
+df_train_no_dup$X1 <- df_tsne$X1
+df_train_no_dup$X2 <- df_tsne$X2
+p1 <- df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='tSNE: price_label_high')
+p2 <- df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=sell_rate_cat)) + geom_point() + labs(title='tSNE: sell_rate_cat')
+p3 <- df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='tSNE: Regionname')
+p4 <- df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Type)) + geom_point() + labs(title='tSNE: Type')
+```
+
