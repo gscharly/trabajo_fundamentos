@@ -42,7 +42,7 @@ library(randomForest)
 library(grid)
 library(party)
 library(ROCR)
-library(tidymodels)
+#library(tidymodels)
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
 source('utils/plot_roc.R')
@@ -50,6 +50,10 @@ source('utils/metrics_functions.R')
 set.seed(10)
 ```
 
+```{r paleta34}
+#Paleta creada a partir de Brewer Dark2
+palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+```
 
 ```{r, echo = F}
 # Función para el cáculo de las métricas
@@ -314,6 +318,165 @@ prediccion_knn7_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
                          k=7, cl=housesTrain$price_label_high)
 
 metrics_function(prediccion_knn7_test, housesTest, 'price_label_high')
+```
+
+# Clustering
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+housesTest <- read.csv('base_test.csv')
+```
+
+En primer lugar, vamos a definir la base de datos con las variables cuantitativas y cualitativas ordinales a partir del dataset *housesTrain*.
+Las variables cuantitativas las cogemos estandarizadas para eliminar el efecto de las distintas escalas de medida y las ordinales las estandarizamos al crearlas.
+
+```{r}
+housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric() %>% scale()
+
+housesTrainCluster['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
+```
+
+## Estudio de la tendencia de clustering
+
+Un método de clustering permite encontrar agrupaciones en un conjunto de datos, pero no siempre estas agrupaciones existen de manera natural. En nuestro caso, hemos tomado la variable precio para dividir el dataset y poder emplear métodos de clasificación sobre él. Sin embargo, vamos a estudiar la tendencia de clustering real que tienen nuestros datos.
+
+Visual Assessment of cluster Tendency (VAT) es método que permite evaluar visualmente si los datos muestran indicios de algún tipo de agrupación.
+
+```{r}
+datos = housesTrainCluster
+mat_dist <- dist(datos, method = "euclidean")
+
+fviz_dist(dist.obj = mat_dist, show_labels = FALSE) +
+          theme(legend.position = "bottom")
+
+```
+El estadístico Hopkins permite evaluar la tendencia de clustering de un conjunto de datos mediante el cálculo de la probabilidad de que dichos datos procedan de una distribución uniforme, es decir, estudia la distribución espacial aleatoria de las observaciones.
+
+H=∑ni=1yi∑ni=1xi+∑ni=1yi
+
+Valores de H en torno a 0.5 indican que ∑ni=1xi y ∑ni=1yi son muy cercanos el uno al otro, es decir, que los datos estudiados se distribuyen uniformemente y que por lo tanto no tiene sentido aplicar clustering. Cuanto más se aproxime a 0 el estadístico H, más evidencias se tienen a favor de que existen agrupaciones en los datos y de que, si se aplica clustering correctamente, los grupos resultantes serán reales. 
+
+```{r}
+# Estadístico H para el set de datos iris
+hopkins(data = datos, n = nrow(datos) - 1)
+```
+
+
+## k-means
+
+Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible. Esto es lo mismo a buscar una divisióndonde una suma de cuadrados entre (betweens) sea suficientemente grande y, por tanto, una suma de cuadrados dentro lo suficientemente pequeña (withins).
+
+En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 2 hasta 15. Se obserba en ambas, que el punto donde se produce el cambio de tendencia es aproximadamente en el 3. Por esto se va a probar a realizar una clasificación en base a 3 grupos. 
+
+```{r kmeansKoptimo1}
+set.seed(123)
+bss <- kmeans(housesTrainCluster,centers=1)$betweenss
+ for (i in 2:15) bss[i] <- kmeans(housesTrainCluster,centers=i)$betweenss
+plot(1:15, bss, type="b", xlab="Number of Clusters",ylab="Sum of squares between groups",pch=19, col=palette34[2])
+```
+
+```{r kmeansKoptimo2}
+SSW <- vector(mode = "numeric", length = 15)
+SSW[1] <- (n - 1) * sum(apply(X = housesTrainCluster, MARGIN = 2, FUN = 'var'))
+for (i in 1:15) SSW[i] <- sum(kmeans(housesTrainCluster,centers=i,nstart=25)$withinss)
+plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
+```
+
+```{r}
+clusters3=kmeans(housesTrainCluster,centers=3,nstart=25)
+clusters3
+```
+
+Observando esl ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es inferior al 50%. 
+
+
+###PCA + visualización
+
+```{r}
+pca_var <- housesTrainCluster %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(pca_var, center = TRUE)
+summary(housesPCA)
+cluster_group <- clusters3$cluster %>%  as.factor()
+df_houses_pca <- data.frame(housesPCA$x[,1:2])
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
+```
+
+##Hierarchical
+
+Se aplicará un cluster aglomerativo y se emplearán diferentes métodos de medida de la distancia entre clusters. 
+
+```{r hierarchical}
+mat_dist <- dist(housesTrainCluster, method = "euclidean")
+hc1 <- hclust(d, method = "single" )
+den = as.dendrogram(hc1)
+plot(den)
+```
+
+A pesar de que el dendograma no ofrece una visualización clara debido al alto número de observaciones, sí se puede percibir como dos grandes clusteres siendo uno de ellos (el de la izquierda), aproximadamente, tres veces mayor que el otro.
+
+Una vez creado el dendrograma, vamos a evaluar hasta qué punto su estructura refleja las distancias originales entre observaciones empleando el coeficiente de correlación entre la altura de los nodos del dendrograma (distancia cophenetic) y la matriz de distancias original. Cuanto más cercano es el valor a 1, mejor refleja el dendrograma la verdadera similitud entre las observaciones. Valores superiores a 0.75 suelen considerarse como buenos. Esta medida puede emplearse como criterio de ayuda para escoger entre los distintos métodos de linkage.
+
+```{r}
+# Dendrogramas con linkage complete y average
+hc_euclidea_complete <- hclust(d = mat_dist, method = "complete")
+hc_euclidea_average  <- hclust(d = mat_dist, method = "average")
+hc_euclidea_single  <- hclust(d = mat_dist, method = "single")
+hc_euclidea_centroid  <- hclust(d = mat_dist, method = "centroid")
+cor(x = mat_dist, cophenetic(hc_euclidea_complete))
+cor(x = mat_dist, cophenetic(hc_euclidea_average))
+cor(x = mat_dist, cophenetic(hc_euclidea_single))
+cor(x = mat_dist, cophenetic(hc_euclidea_centroid))
+```
+
+A la vista de los resultados, el método que mejor refleja las distancias reales es el *average*. Este método supone un compromiso entre las dos características de los métodos en los que se emplea la distancia mínima (*single*) y en los que se emplea la máxima (*complete*). Un compromiso entre ser sensible a datos atípicos y manejar formas de clusters no elípticas.
+
+## DBSCAN
+
+Los métodos de clusterin empleados anteriormenete, son buenos encontrando agrupaciones con forma esférica y sensibles a outliers,k-means, pero fallan al tratar de identificar formas arbitrarias que es lo que tenemos en este caso.
+
+DBSCAN evita este problema siguiendo la idea de que, para que una observación forme parte de un cluster, tiene que haber un mínimo de observaciones vecinas dentro de un radio de proximidad y de que los clusters están separados por regiones vacías o con pocas observaciones.
+
+
+```{r dbscanEpsi}
+datos = housesTrainCluster
+dbscan::kNNdistplot(datos, k = 5)
+```
+
+La curva tiene el punto de inflexión en torno a 0.8, por lo que se escoge este valor como epsilon para DBSCAN.
+
+```{r dbscan}
+dbscan_cluster <- fpc::dbscan(data = datos, eps = 0.8, MinPts = 50)
+head(dbscan_cluster$cluster)
+
+# Visualización de los clusters
+
+pca_var <- housesTrainCluster %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(pca_var, center = TRUE)
+summary(housesPCA)
+cluster_group <- dbscan_cluster$cluster %>%  as.factor()
+df_houses_pca <- data.frame(housesPCA$x[,1:2])
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
+
+
+#fviz_cluster(object = dbscan_cluster, data = datos, stand = FALSE,
+#             geom = "point", ellipse = FALSE, show.clust.cent = FALSE,
+#             pallete = "palette34") +
+#  theme_bw() +
+#  theme(legend.position = "bottom")
 ```
 
 # Regresión logística
