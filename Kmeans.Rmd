@@ -40,7 +40,7 @@ En primer lugar, vamos a definir la base de datos con las variables cuantitativa
 Las variables cuantitativas las cogemos estandarizadas para eliminar el efecto de las distintas escalas de medida y las ordinales las estandarizamos al crearlas.
 
 ```{r}
-housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high)
+housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
 
 #las variables categóricas pasan a ser factores ordenados
 housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
@@ -66,7 +66,7 @@ Un método de clustering permite encontrar agrupaciones en un conjunto de datos,
 Visual Assessment of cluster Tendency (VAT) es método que permite evaluar visualmente si los datos muestran indicios de algún tipo de agrupación.
 
 ```{r}
-datos = housesTrainCluster[,-10]
+datos = housesTrainCluster
 mat_dist <- dist(datos, method = "euclidean")
 
 fviz_dist(dist.obj = mat_dist, show_labels = FALSE) +
@@ -93,66 +93,35 @@ En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un
 
 ```{r kmeansKoptimo1}
 set.seed(123)
-bss <- kmeans(housesTrainCluster[-10],centers=1)$betweenss
+bss <- kmeans(housesTrainCluster,centers=1)$betweenss
  for (i in 2:15) bss[i] <- kmeans(housesTrainCluster,centers=i)$betweenss
-plot(1:15, bss, type="b", xlab="Number de Clusters",ylab="Sum of squares between
+plot(1:15, bss, type="b", xlab="Number of Clusters",ylab="Sum of squares between
 groups",pch=19, col=palette34[2])
 ```
 
 ```{r kmeansKoptimo2}
 SSW <- vector(mode = "numeric", length = 15)
-SSW[1] <- (n - 1) * sum(apply(X = housesTrainCluster[-10], MARGIN = 2, FUN = 'var'))
-for (i in 2:15) SSW[i] <- sum(kmeans(housesTrainCluster,centers=i,nstart=25)$withinss)
+SSW[1] <- (n - 1) * sum(apply(X = housesTrainCluster, MARGIN = 2, FUN = 'var'))
+for (i in 1:15) SSW[i] <- sum(kmeans(housesTrainCluster,centers=i,nstart=25)$withinss)
 plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
 ```
 
 ```{r}
-clusters3=kmeans(housesTrainCluster[-10],centers=3,nstart=25)
+clusters3=kmeans(housesTrainCluster,centers=3,nstart=25)
 clusters3
 ```
 
 Observando esl ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es inferior al 50%. 
 
-¿Lo siguiente tiene sentido? Yo de partida ya se que son 2
-```{r}
-MC = table(clusters3$cluster, housesTrainKmeans[,10],
-      dnn = list("cluster", "grupo real"))
-MC
-precision=(sum(diag(MC)))/sum(MC) 
-precision 
-
-error=1-precision 
-error
-```
 
 ###PCA + visualización
 
 ```{r}
-housesPCA <- prcomp(housesNum, center = TRUE, scale = TRUE)
+pca_var <- housesTrainCluster %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(pca_var, center = TRUE)
 summary(housesPCA)
+cluster_group <- clusters3$cluster %>%  as.factor()
 df_houses_pca <- data.frame(housesPCA$x[,1:2])
-df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=clusters3$cluster, colour = palette34)) + geom_point() 
-```
-
-¿Por qué la legenda es continua?
-
-```{r}
-housesTestKmeans <- housesTest %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
-
-#las variables categóricas pasan a ser factores ordenados
-housesTestKmeans['rooms_cat']<- housesTest %>% pull('rooms_cat') %>% 
-  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric()
-
-housesTestKmeans['car_cat'] <- housesTest %>% pull('car_cat') %>% 
-  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
-
-housesTestKmeans['bath_cat'] <-housesTest %>% pull('bath_cat') %>% 
-  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric()
-
-housesTestKmeans['bed_cat'] <-housesTest %>% pull('bed_cat') %>% 
-  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric()
-
-housesTestKmeans['sell_rate_cat'] <-housesTest %>% pull('sell_rate_cat') %>% 
-  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric()
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
 ```
 
