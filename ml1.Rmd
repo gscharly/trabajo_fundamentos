@@ -46,7 +46,7 @@ library(ROCR)
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
 source('utils/plot_roc.R')
-source('utils/metrics_functions.R')
+source('utils/metrics_function.R')
 set.seed(10)
 ```
 
@@ -651,7 +651,7 @@ rpart.plot(housesTree1)
 ```{r metricsTree1}
 preds <- predict(housesTree1, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label)
-metrics_function(preds, housesTrainOrigVar, 'price_label')
+metrics_function(preds, housesTrainOrigVar, 'price_label', bool=TRUE)
 ```
 
 
@@ -676,7 +676,7 @@ Pondando el último nodo, se consiguen unas métricas ligeramente inferiores en 
 ```{r metricsPruneTree1}
 preds <- predict(pruneTREE1, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label)
-metrics_function(preds, housesTrainOrigVar, 'price_label')
+metrics_function(preds, housesTrainOrigVar, 'price_label', bool=TRUE)
 ```
 
 
@@ -706,7 +706,7 @@ rpart.rules(housesTree2, clip.facs = TRUE)
 ```{r metricsTree2}
 preds <- predict(housesTree2, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label_high)
-metrics_function(preds, housesTrainOrigVar, 'price_label_high')
+metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
 ```
 
 
@@ -730,8 +730,24 @@ rpart.plot(pruneTREE2, type=4, fallen.leaves = FALSE, tweak =1.75)
 ```{r metricsPruneTree2}
 preds <- predict(pruneTREE2, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label_high)
-metrics_function(preds, housesTrainOrigVar, 'price_label_high')
+metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
 ```
+
+```{r}
+preds_prob <- predict(pruneTREE2, housesTrainOrigVar, type = "prob")
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
+cost_of_fp <-1
+cost_of_fn <- 1
+th <- 0.3
+roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=100)
+plot_roc(roc, th, cost_of_fp, cost_of_fn)
+```
+
+```{r}
+auc_roc <- auc(predictions$price_label_high, predictions$pred)
+auc_roc
+```
+
 
 
 Bajando la complejidad hasta quedarnos solo con 4 hojas, observamos que el error aumenta en un 4% (hasta el 17%) y que el f1-score disminuye hasta 0.55, pero el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja, con el 75% de los datos, y con una tasa de acierto aceptable (el 84% serían baratas). Las casas con más de 4 habitaciones en Southern Metropolitan (son solo el 9%) se clasifican como caras el 86% de las veces. La última división es en función de la distancia al centro, y ya falla más.
@@ -744,8 +760,39 @@ rpart.plot(pruneTREE3, type=4, fallen.leaves = FALSE, tweak =1)
 ```{r metricsPruneTree3}
 preds <- predict(pruneTREE3, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label_high)
-metrics_function(preds, housesTrainOrigVar, 'price_label_high')
+metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
 ```
+
+## Test
+
+
+```{r}
+housesTest <- read.csv('base_test.csv')
+```
+
+```{r}
+preds <- predict(pruneTREE2, housesTest, type = "class")
+table(pred = preds, obs = housesTest$price_label_high)
+metrics_function(preds, housesTest, 'price_label_high', bool = TRUE)
+```
+```{r}
+preds_prob <- predict(pruneTREE2, housesTest, type = "prob")
+predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=preds_prob[,2])
+cost_of_fp <-1
+cost_of_fn <- 1
+th <- 0.3
+roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=100)
+plot_roc(roc, th, cost_of_fp, cost_of_fn)
+```
+
+
+
+```{r}
+auc_roc <- auc(predictions$price_label_high, predictions$pred)
+auc_roc
+```
+
+
 
 
 # Clustering
@@ -1008,28 +1055,21 @@ p + theme(axis.text.x=element_blank(),
           legend.text=element_text(size=12))
 ```
 
-
-
-```{r}
-cost_of_fp <-1
-cost_of_fn <- 1
-th <- 0.5
-roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
-plot_roc(roc, th, cost_of_fp, cost_of_fn)
-```
+PONER MAS BONITO
 
 ```{r message=FALSE}
-auc_roc <- auc(predictions$price_label_high, predictions$pred)
-auc_roc
+roc <- roc(housesTrain$price_label_high, rf2$votes[,2])
+plot(roc)
+auc(roc)
 ```
 
 ```{r}
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=rf2$votes[,2])
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
 predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
 ```
 
-Tomando como referencia las métricas, y que las variables imporantes son bastante lógicas, este modelo arroja resultados muy válidos. Además, se podría utilizar como una primera parte en una etapa de ensamblado de modelos: se podría utilizar un Random Forest muy sobre ajustado (aumentando el número máximo de nodos terminales por ejemplo) para seleccionar las variables más importantes, que después se utilizarían como variables en otro modelo.
+Tomando como referencia las métricas, y que las variables importantes son bastante lógicas, este modelo arroja resultados muy válidos. Además, se podría utilizar como una primera parte en una etapa de ensamblado de modelos: se podría utilizar un Random Forest muy sobre ajustado (aumentando el número máximo de nodos terminales por ejemplo) para seleccionar las variables más importantes, que después se utilizarían como variables en otro modelo.
 
 
 ## Utilizando cross validation
@@ -1073,7 +1113,7 @@ plan(future::cluster, workers = cl)
 ```
 
 ```{r}
-houses_folds <- vfold_cv(housesTrainOrigVar, v = 10, repeats = 5)
+houses_folds <- vfold_cv(housesTrainOrigVar, v = 10, repeats = 3)
 houses_folds
 rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
 ```
@@ -1116,6 +1156,12 @@ housesTestOrigVar$.pred_TRUE <- predict(rf_wflow_final_fit,
                           new_data = housesTestOrigVar, type='prob')$.pred_TRUE
 metrics(housesTestOrigVar, truth = price_label_high, .pred, .pred_TRUE)
 ```
+
+```{r}
+table(pred = housesTestOrigVar$.pred, obs = housesTestOrigVar$price_label_high)
+metrics_function(housesTestOrigVar$.pred, housesTestOrigVar, 'price_label_high', bool=TRUE)
+```
+
 
 ```{r}
 predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=housesTestOrigVar$.pred_TRUE)
