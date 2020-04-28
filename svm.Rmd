@@ -23,9 +23,13 @@ library(e1071)
 library(ROCR)
 library(pROC)
 library(gridExtra)
+library(tidymodels)
+library(workflows)
 
 set.seed(10)
 ```
+
+
 
 
 
@@ -122,8 +126,8 @@ for(cat in cat_with_order){
 
 train <- train %>% select(-c("year_built_cat", "Regionname", "Type", "Method"))
 
+train$price_label_high<-as.factor(ifelse(train$price_label_high==TRUE,1,0))
 
-train$price_label_high <- as.factor(train$price_label_high) 
 ```
 
 
@@ -334,5 +338,194 @@ grid.arrange(roc_plot, cm_plot, ncol=2)
 
 
 Como era de esperar, las métricas disminuyen, sin embargo  no demasiado. La performance del modelo puede decirse que es bastante similar sobre los datos de test, lo cual quiere decir que apenas existe sobreajuste con este modelo.
+
+
+```{r}
+head(train)
+```
+
+```{r}
+svm_mod <- svm_rbf(mode = "classification", cost = tune(), rbf_sigma = tune()) %>% set_engine("kernlab")
+svm_rec <- recipe(price_label_high ~ ., data=train)
+svm_wflow <- workflow() %>% add_model(svm_mod) %>% add_recipe(svm_rec)
+```
+
+```{r}
+svm_param <- svm_wflow %>% parameters() #%>% update(cost = cost(range = c()), rbf_sigma = rbf_sigma(range = c()))
+svm_param
+```
+```{r}
+# Parallelize
+all_cores <- parallel::detectCores(logical = FALSE) - 2
+registerDoFuture()
+cl <- makeCluster(all_cores)
+plan(future::cluster, workers = cl)
+```
+
+```{r}
+#tiempò aproximado de ejecución: 15 minutos
+set.seed(1291)
+
+svm_folds <- vfold_cv(train, v = 10, repeats = 1)
+
+svm_search <- tune_bayes(svm_wflow,
+                         resamples = svm_folds,
+                         param_info = svm_param,
+                         initial = 3,
+                         iter = 30,
+                         metrics = metric_set(roc_auc),
+                         control = control_bayes(no_improve = 15, verbose = TRUE))
+
+
+
+
+```
+
+
+```{r}
+#Execute after finishing training
+stopCluster(cl)
+
+```
+
+
+```{r}
+svm_search
+```
+
+```{r}
+show_best(svm_search, metric = "roc_auc")
+```
+
+```{r}
+autoplot(svm_search, type = "performance")
+```
+
+
+
+```{r}
+svm_param_best <- select_best(svm_search, metric = "roc_auc")
+svm_best <- finalize_workflow(svm_wflow, svm_param_best)
+svm_best_fit <- fit(svm_best, data = train)
+svm_best_fit
+```
+
+```{r}
+train$price_label_high<-as.factor(ifelse(train$price_label_high==TRUE,1,0))
+train$probs <- predict(svm_best_fit, new_data = train, type = "prob")$.pred_TRUE
+
+metrics_function_num(train$preds, train, 'price_label_high')
+```
+
+```{r}
+beta <- 1 #Beta value for F1 score
+train$probs <- predict(svm_best_fit, new_data = train, type = "prob")$.pred_TRUE
+pred_svm <- prediction(train$probs, train$price_label_high)
+perf_svm <- performance(pred_svm, "prec", "rec")
+f1_best_linear <- (1+beta^2)*perf_svm@y.values[[1]]*perf_svm@x.values[[1]]/(beta^2*perf_svm@y.values[[1]]+perf_svm@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_linear) # Mejor f1 score para este modelo
+prec_svm_opt=perf_svm@y.values[[1]][optimo]
+rec_svm_opt=perf_svm@x.values[[1]][optimo]
+f1_measure_svm_opt <- (1+beta^2)*prec_svm_opt*rec_svm_opt/(beta^2*prec_svm_opt+rec_svm_opt)
+threshold_optimo_svm <- perf_svm@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_svm_opt, precision = prec_svm_opt, recall = rec_svm_opt, threshold = threshold_optimo_svm))
+
+
+```
+
+```{r, message=F}
+
+train$preds <- as.factor(ifelse(train$probs > threshold_optimo_svm ,1,0))
+
+cm <- caret::confusionMatrix(train$preds, train$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian <- roc(train$price_label_high,train$probs)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+
+```
+
+
+```{r}
+
+train %>% ggplot(aes(x=probs, color=price_label_high)) +
+  geom_density() + geom_vline(aes(xintercept=threshold_optimo_svm),
+            color="blue", linetype="dashed")
+
+train %>% ggplot(aes(x=probs, fill=price_label_high)) + 
+  geom_histogram(alpha=0.5) + geom_vline(aes(xintercept=threshold_optimo_svm),
+            color="blue", linetype="dashed")
+
+```
+
+
+```{r, echo = F}
+
+test <- read.csv('base_test.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+test<- test %>%  select(-filter_cols)
+
+# Estandarización de variables categóricas ordinales
+cat_with_order = c("rooms_cat", "car_cat", "bath_cat", "bed_cat", "sell_rate_cat")
+
+test['rooms_cat']<- test %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
+test['car_cat'] <- test %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+test['bath_cat'] <- test %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
+test['bed_cat'] <- test %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() 
+test['sell_rate_cat'] <- test %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() 
+
+ordinal_variables <- test %>% select(cat_with_order) 
+ordinal_variables_norm <- predict(normParam, ordinal_variables) # Estandarizamos con el objeto estandarizador de train
+
+for(cat in cat_with_order){
+  test[cat] <- ordinal_variables_norm[cat]
+}
+
+test <- test %>% select(-c("year_built_cat", "Regionname", "Type", "Method"))
+
+
+test$price_label_high <- as.factor(ifelse(test$price_label_high==TRUE,1,0))
+
+
+head(test)
+
+```
+
+
+
+```{r}
+test$probs <- predict(svm_best_fit, new_data = test, type = "prob")$.pred_TRUE
+test$preds <- as.factor(ifelse(test$probs > threshold_optimo_svm ,1,0))
+
+
+metrics_function_num(test$preds, test, 'price_label_high')
+```
+
+
+```{r}
+
+cm <- caret::confusionMatrix(test$preds, test$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian <- roc(test$price_label_high,test$probs)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+```
+
+
+
+
+
 
 
