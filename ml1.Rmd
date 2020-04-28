@@ -55,272 +55,8 @@ set.seed(10)
 palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
 ```
 
-```{r, echo = F}
-# Función para el cáculo de las métricas
-#Input necedario son las predicciones del modelo, el conjunto de datos y el nombre de la columna a predecir
-metrics_function_num <- function(preds, test, label){
-  accuracy = sum(preds == test[,label]) / nrow(test)
-  recall = sum(preds == test[,label] & test[,label] == 1) / sum(test[,label] == 1)
-  precision = sum(preds == test[,label] & test[,label] == 1) / sum(preds == 1)
-  f1_score = 2*recall*precision/(recall+precision)
-  specificity = sum(preds == test[,label] & test[,label] == 0) / sum(test[,label] == 0)
-  metrics <- c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
-  cm <- caret::confusionMatrix(preds, test[,label], positive = '1')
-  return(list(metrics, cm))
-}
 
-
-# Funciones para dibujar matriz de confusión y curva ROC
-#Input necesario es una confusionMatrix de caret
-ggplotConfusionMatrix <- function(m){
-  mytitle <- paste("Accuracy", percent_format()(m$overall[1]))
-  p <-
-    ggplot(data = as.data.frame(m$table) ,
-           aes(x = Reference, y = Prediction)) +
-    geom_tile(aes(fill = log(Freq)), colour = "white") +
-    scale_fill_gradient(low = "white", high = "steelblue") +
-    geom_text(aes(x = Reference, y = Prediction, label = Freq)) +
-    theme(legend.position = "none") +
-    ggtitle(mytitle)
-  return(p)
-}
-
-# Input necesario es un pROC object
-ggplotROCCurve <- function(roc_object, interval = 0.2, breaks = seq(0, 1, interval)){
-  require(pROC)
-  if(class(roc) != "roc")
-    simpleError("Please provide roc object from pROC package")
-  ggroc(roc_object) + 
-              scale_x_reverse(name = "Specificity",limits = c(1,0), breaks = breaks, expand = c(0.001,0.001)) + 
-              scale_y_continuous(name = "Sensitivity", limits = c(0,1), breaks = breaks, expand = c(0.001, 0.001)) +
-              geom_segment(aes(x = 0, y = 1, xend = 1,yend = 0), alpha = 0.01) + 
-              theme_bw() + 
-              theme(axis.ticks = element_line(color = "grey80")) +
-              coord_equal() + 
-              annotate("text",x=-Inf,y=-Inf, label = paste("AUC =",sprintf("%.3f",roc_object$auc)), hjust= 1.2, vjust = -7)
-}
-
-
-```
-
-
-# Métodos de reducción de dimensionalidad
-
-```{r}
-housesTrain <- read.csv('base_train.csv')
-```
-
-## PCA
-
-PCA debe trabajar con variables numéricas que además están normalizadas. Por ello, elegimos las 4 variables numéricas con las que trabajamos en la parte de regresión lineal múltiple (raíz cuadrada de la distancia, logaritmo de la parcela, latitud y longitud). Con las dos primeras componentes se explicaría un 66,3% de la varianza.
-
-
-```{r}
-housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
-housesPCA <- prcomp(housesNum)
-summary(housesPCA)
-```
-
-
-```{r}
-train <- housesTrain %>% select(-Price)
-```
-
-```{r}
-train_pca <- data.frame(housesPCA$x[,1:3])
-train_cat <- train %>% select(Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, price_label_high)
-train_pca_cat <- merge(train_pca, train_cat, by.x=0, by.y=0)
-train_pca_cat$log_price <- train$log_price
-```
-
-Se prueba a representar las dos componentes principales en dos dimensiones, intentando añadir una tercera dimensión en forma de color utilizando otras variables, con el objetivo de ver si hay diferencias en estas direcciones. Vemos por ejemplo que las casas caras parece que se concentran (ya se vio anteriormente que la localización influía en el precio), mientras que las casas baratas están más desperdigadas. 
-
-Si pintamos la región, se pueden diferenciar fácilemente, ya que se han utilizado las coordenadas como entrada del PCA.
-
-
-```{r}
-train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point() + labs(title='PCA: price label')
-train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=Regionname)) + geom_point() + labs(title='PCA: Regionname')
-```
-
-
-## MDS
-Usaremos la distancia euclídea para realizar el MDS (debería ser muy parecido a PCA). Al tener bastantes datos, vamos a muestrear el train primero.
-
-```{r}
-set.seed(10)
-train_sample <- housesTrain[sample(nrow(housesNum), 2500),]
-train_num_sample <- train_sample %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
-```
-
-```{r}
-# Distancia euclídea
-d <- dist(train_num_sample) 
-# MDS
-fit <- cmdscale(d,eig=TRUE, k=2)
-```
-
-```{r}
-df_fit <- data.frame(fit$points)
-df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high')
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname')
-```
-Se prueba también la distancia de manhattan
-
-```{r}
-# Distancia euclídea
-d <- dist(train_num_sample, method = 'manhattan') 
-# MDS
-fit <- cmdscale(d,eig=TRUE, k=2)
-```
-
-```{r}
-df_fit <- data.frame(fit$points)
-# No estoy seguro de hacer el join bien, se supone que es por indice
-df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high')
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname')
-```
-
-## tSNE
-Probamos tsne sobre nuestras variables numéricas escaladas, para que valores extremos no nos den problemas. El parámetro que se suele tocar es el perplexity, que es algo parecido al número de vecinos más cercanos cuando se comparan las distribuciones que utiliza tSNE.
-Fuente: https://www.analyticsvidhya.com/blog/2017/01/t-sne-implementation-r-python/
-
-De nuevo superponiendo distintas variables sobre el gráfico en dos dimensiones, podemos ver 
-
-```{r}
-houses_num_unique <- unique(housesNum)
-tsne <- Rtsne(houses_num_unique, dims = 2, perplexity=50, verbose=TRUE, max_iter = 500)
-```
-
-```{r}
-df_tsne <- data.frame(tsne$Y)
-df_train_no_dup <- housesTrain[!duplicated(housesTrain[c("sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std")]),]
-df_train_no_dup$X1 <- df_tsne$X1
-df_train_no_dup$X2 <- df_tsne$X2
-p1 <- df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='tSNE: price_label_high')
-p2 <- df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=sell_rate_cat)) + geom_point() + labs(title='tSNE: sell_rate_cat')
-p3 <- df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='tSNE: Regionname')
-p4 <- df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Type)) + geom_point() + labs(title='tSNE: Type')
-```
-
-
-Mapa de Melbourne :) (lo podemos poner el algún sitio)
-```{r}
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=price_label_high)) + geom_point()
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Regionname)) + geom_point()
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Type)) + geom_point()
-```
-
-
-# kNN
-El siguiente algoritmo que se va a probar es kNN. Para ello, necesitamos que los datos estén de nuevo estandarizados, ya que es un método basado en distancias, y las variables necesitan estar en el mismo rango de valores.
-
-PARA HACER: intentar probar otras distancias
-
-```{r}
-housesTrain <- read.csv('base_train.csv')
-housesTest <- read.csv('base_test.csv')
-# Para que funcione confusionMatrix de caret, el target debe ser un factor
-housesTrain$price_label <- as.factor(housesTrain$price_label)
-housesTrain$price_label_high <- as.factor(housesTrain$price_label_high)
-housesTest$price_label <- as.factor(housesTest$price_label)
-housesTest$price_label_high <- as.factor(housesTest$price_label_high)
-```
-
-```{r knn_functions}
-perform_knn <- function(train, test, label, k, cols) {
-  predictions <- knn(train[,cols], test[,cols], k=k, cl=train[,label])
-  test_metrics <- metrics_function(predictions, test, label, bool=TRUE)
-  return(test_metrics)
-  
-}
-```
-
-
-```{r knn1}
-num_std_cols <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std')
-metrics <- perform_knn(housesTrain, housesTest, 'price_label_high', 1, num_std_cols)
-metrics
-```
-
-## k óptimo
-ESTO HABRIA QUE HACERLO SOBRE VALIDACIÓN NO?
-Para price_label:
-
-```{r}
-plot_acc_f1_k <- function(train, label, cols){
-  long = 15
-  accuracy = rep(0,long)
-  f1score = rep(0,long)
-  recall = rep(0,long)
-  precision = rep(0,long)
-  for (i in 1:long)
-  {
-    prediccion_knn_cv =knn.cv(train[,cols], 
-                              k=i, cl=train[,label])
-    accuracy[i] = sum(prediccion_knn_cv == train[,label]) /nrow(train)
-    recall[i] = sum(prediccion_knn_cv == train[,label] & train[,label] == TRUE) / sum(train[,label] == TRUE)
-    precision[i] = sum(prediccion_knn_cv == train[,label] & prediccion_knn_cv == TRUE) / sum(prediccion_knn_cv == TRUE)
-    f1score[i] = 2*precision[i]*recall[i]/(precision[i]+recall[i])
-  }
-  resultados_knn = as.data.frame(cbind(accuracy,f1score,precision,recall))
-  resultados_knn = resultados_knn %>% mutate(index=as.factor(seq(1:long)))
-  
-  max(resultados_knn$f1score)
-  which.max(resultados_knn$f1score)
-  
-  
-  p1 <- ggplot(data=resultados_knn,aes(x=index,y=accuracy)) + 
-    geom_col(colour="cyan4",fill="cyan3")+
-    ggtitle("Accuracy")
-  
-  
-  p2 <- ggplot(data=resultados_knn,aes(x=index,y=f1score)) + 
-    geom_col(colour="orange4",fill="orange3") +
-    ggtitle("F1_score values")
-  
-  plot_grid(p1, p2, rel_heights = c(1/2, 1/2))
-  }
-
-plot_acc_f1_k(housesTrain, 'price_label', num_std_cols)
-```
-Para k=5 obtenemos un accuracy y un f1 score entre 0.75 y 0.8. Se observa que a medida que k va aumentando, las métricas no incrementan.
-
-HABRIA QUE SACAR F1
-```{r knn5}
-# En train
-prediccion_knn5_train =knn.cv(housesTrain[,num_std_cols], 
-                              k=5, cl=housesTrain$price_label)
-metrics_function(prediccion_knn5_train, housesTrain, 'price_label')
-
-#En test
-prediccion_knn5_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
-                         k=5, cl=housesTrain$price_label)
-metrics_function(prediccion_knn5_test, housesTest, 'price_label')
-```
-
-
-Para price_label_high, vemos de nuevo que el f1-score es menor. Los mejores valores de k podrían ser 5 o 7.
-
-```{r}
-plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
-```
-```{r knn7high}
-# En train
-prediccion_knn7_train =knn.cv(housesTrain[,num_std_cols], 
-                              k=7, cl=housesTrain$price_label_high)
-metrics_function(prediccion_knn7_train, housesTrain, 'price_label_high')
-
-#En test
-prediccion_knn7_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
-                         k=7, cl=housesTrain$price_label_high)
-
-metrics_function(prediccion_knn7_test, housesTest, 'price_label_high')
-```
-
-# Clustering
+# Aprendizaje no supervisado
 
 ```{r}
 housesTrain <- read.csv('base_train.csv')
@@ -479,7 +215,118 @@ df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() 
 #  theme(legend.position = "bottom")
 ```
 
-# Regresión logística
+
+# Métodos de reducción de dimensionalidad
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+```
+
+## PCA
+
+PCA debe trabajar con variables numéricas que además están normalizadas. Por ello, elegimos las 4 variables numéricas con las que trabajamos en la parte de regresión lineal múltiple (raíz cuadrada de la distancia, logaritmo de la parcela, latitud y longitud). Con las dos primeras componentes se explicaría un 66,3% de la varianza.
+
+
+```{r}
+housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(housesNum)
+summary(housesPCA)
+```
+
+
+```{r}
+train <- housesTrain %>% select(-Price)
+train_pca <- data.frame(housesPCA$x[,1:3])
+train_cat <- train %>% select(Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, price_label_high)
+train_pca_cat <- merge(train_pca, train_cat, by.x=0, by.y=0)
+train_pca_cat$log_price <- train$log_price
+```
+
+Se prueba a representar las dos componentes principales en dos dimensiones, intentando añadir una tercera dimensión en forma de color utilizando otras variables, con el objetivo de ver si hay diferencias en estas direcciones. Vemos por ejemplo que las casas caras parece que se concentran (ya se vio anteriormente que la localización influía en el precio), mientras que las casas baratas están más desperdigadas. 
+
+Si pintamos la región, se pueden diferenciar fácilemente, ya que se han utilizado las coordenadas como entrada del PCA.
+
+
+```{r}
+train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point() + labs(title='PCA: price label')
+train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=Regionname)) + geom_point() + labs(title='PCA: Regionname')
+```
+
+
+## MDS
+Usaremos la distancia euclídea para realizar el MDS (debería ser muy parecido a PCA). Al tener bastantes datos, vamos a muestrear el train primero.
+
+```{r}
+set.seed(10)
+train_sample <- housesTrain[sample(nrow(housesNum), 2500),]
+train_num_sample <- train_sample %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+```
+
+```{r}
+# Distancia euclídea
+d <- dist(train_num_sample) 
+# MDS
+fit <- cmdscale(d,eig=TRUE, k=2)
+```
+
+```{r}
+df_fit <- data.frame(fit$points)
+df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high')
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname')
+```
+Se prueba también la distancia de manhattan
+
+```{r}
+# Distancia euclídea
+d <- dist(train_num_sample, method = 'manhattan') 
+# MDS
+fit <- cmdscale(d,eig=TRUE, k=2)
+```
+
+```{r}
+df_fit <- data.frame(fit$points)
+# No estoy seguro de hacer el join bien, se supone que es por indice
+df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high')
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname')
+```
+
+## tSNE
+Probamos tsne sobre nuestras variables numéricas escaladas, para que valores extremos no nos den problemas. El parámetro que se suele tocar es el perplexity, que es algo parecido al número de vecinos más cercanos cuando se comparan las distribuciones que utiliza tSNE.
+Fuente: https://www.analyticsvidhya.com/blog/2017/01/t-sne-implementation-r-python/
+
+De nuevo superponiendo distintas variables sobre el gráfico en dos dimensiones, podemos ver 
+
+```{r}
+houses_num_unique <- unique(housesNum)
+tsne <- Rtsne(houses_num_unique, dims = 2, perplexity=50, verbose=TRUE, max_iter = 500)
+```
+
+```{r}
+df_tsne <- data.frame(tsne$Y)
+df_train_no_dup <- housesTrain[!duplicated(housesTrain[c("sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std")]),]
+df_train_no_dup$X1 <- df_tsne$X1
+df_train_no_dup$X2 <- df_tsne$X2
+df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='tSNE: price_label_high')
+df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=sell_rate_cat)) + geom_point() + labs(title='tSNE: sell_rate_cat')
+df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='tSNE: Regionname')
+df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Type)) + geom_point() + labs(title='tSNE: Type')
+
+```
+
+
+Mapa de Melbourne :) (lo podemos poner el algún sitio)
+```{r}
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=price_label_high)) + geom_point()
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Regionname)) + geom_point()
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Type)) + geom_point()
+```
+
+# Aprendizaje supervisado
+
+
+## Regresión logística
 
 En este apartado, se va imlementar un modelo regresión logística sobre los datos de entrenamiento. 
 
@@ -585,7 +432,7 @@ probs_labels %>% ggplot(aes(x=probs, color=labels)) +
 
 ```
 
-A continuación, se procede a comprobar el funcionamiento de este modelo de regresión lineal sobre los datos de test:
+A continuación, se procede a comprobar el funcionamiento de este modelo de regresión logística sobre los datos de test:
 
 ```{r}
 test<- read.csv('base_test.csv', encoding = 'UTF-8')
@@ -618,75 +465,12 @@ grid.arrange(roc_plot, cm_plot, ncol=2)
 Se puede comprobar que el AUC se mantiene intacto. Si bien es cierto que la accuracy y la f1_score disminyen ligeramente, se puede afirmar que la regresión no sobreajusta para nada los datos.
 
 
-
-# Árboles de decisión
+## Árboles de decisión
 Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer lugar, se utilizarán las variables que se consideraron importantes en el análisis exploratorio, para después probar distintas formas de tuning e intentar evitar el sobreaprendizaje del árbol.
 
-## Utilizando directamente las variables estudiadas
+### Utilizando las variables estudiadas
 Se utilizarán directamente las variables estudiadas en el análisis exploratorio, dejando de lado transformaciones y estandarizaciones, además de variables categóricas con muchas categorías. Además, si recordamos, para la regresión lineal tuvimos que convertir varias features numéricas en categóricas (número de habitaciones, año de construcción...). Podemos probar a introducir las variables originales para ver qué cortes propone el árbol.
 
-
-### Con la variable price mediana
-
-Como se puede ver con el árbol, la principal división se realiza por el tipo de vivienda (en este caso unifamiliar, se puede entender que separa casas grandes de pequeñas). Si la casa es u (pequeña), se clasificaría con buena tasa el 22% de los datos (92% de las veces serían 0, casas baratas). Por el otro lado del árbol, separa por localización (si se observa el mapa, tiene bastante sentido, las casas caras aparecen en el Noreste). Habría unos nodos con más fallos. Además, la última división por distancia al centro, nos deja un nodo con el 50% de la población, de los cuales el 84% se clasifican como casas caras, mientras que nos deja un nodo con solo un 3%. Esto quiźas se podría mejorar parando antes.
-
-
-
-```{r load_variables}
-housesTrain <- read.csv('base_train.csv')
-housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
-                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
-                                     "price_label")]
-n = dim(housesTrainOrigVar)[1]
-# Hay que factorizar el label para que se construya bien el árbol
-housesTrainOrigVar$price_label <- as.factor(housesTrainOrigVar$price_label)
-```
-
-```{r tree1_price_label}
-housesTree1 = rpart(price_label ~ ., data = housesTrainOrigVar)
-rpart.plot(housesTree1)
-#summary(housesTree1)
-```
-
-```{r metricsTree1}
-preds <- predict(housesTree1, type = "class")
-table(pred = preds, obs = housesTrainOrigVar$price_label)
-metrics_function(preds, housesTrainOrigVar, 'price_label', bool=TRUE)
-```
-
-
-
-### Podando el árbol 
-Queremos quedarnos con el árbol más pequeño que tenga el menor error de cross validation. Nos quedamos con 4 hojas, aumentando un poco el error.
-
-```{r}
-printcp(housesTree1)
-```
-```{r}
-plotcp(housesTree1)
-```
-
-```{r}
-#pruneTREE1 = prune(housesTree1, cp = housesTree1$cptable[which.min(housesTree1$cptable[,"xerror"]), "CP"])
-pruneTREE1 = prune(housesTree1, cp = housesTree1$cptable[4,"CP"])
-rpart.plot(pruneTREE1)
-```
-Pondando el último nodo, se consiguen unas métricas ligeramente inferiores en train.
-
-```{r metricsPruneTree1}
-preds <- predict(pruneTREE1, type = "class")
-table(pred = preds, obs = housesTrainOrigVar$price_label)
-metrics_function(preds, housesTrainOrigVar, 'price_label', bool=TRUE)
-```
-
-
-### Con la variable price 75%
-
-Al aumentar el corte de la distinción entre barato y caro, observamos que el accuracy mejora ligeramente, pero el f1-score empeora (de 0.83 a 0.69). Esto se debe a la caída del recall (positivos acertados respecto al total de positivos reales), y es lógico, ya que ahora hay menos positivos, y es más difícil diferenciar entre las clases. 
-
-En los cortes ahora se tiene en cuenta el número de habitaciones como corte principal (de nuevo diferenciando entre casas pequeñas y grandes). El siguiente corte se realiza en base a la región (de nuevo localización, estaría bien saber las regiones porque no se ve...). Parece que la región por la que se discrimina es Southern Metropolitan. Si la casa es pequeña y está en cualquier región que no sea esa, se clasifica como barata la mayoría de las veces. REVISAR!!
-
-Algo que también se puede ver es que hay varios nodos con pocas muestras (los que vienen de la distinción de tipo de casa es Southern Metropolitan). Vemos además que hay un montón de falsos negativos (casas caras que se etiquetan como baratas).
 
 ```{r load_variables_high}
 housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
@@ -696,6 +480,12 @@ n = dim(housesTrainOrigVar)[1]
 # Hay que factorizar el label para que se construya bien el árbol
 housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
 ```
+
+
+En los cortes se tiene en cuenta el número de habitaciones como corte principal (diferenciando entre casas pequeñas y grandes). El siguiente corte se realiza en base a la región (localización). Parece que la región por la que se discrimina es Southern Metropolitan. Si la casa es pequeña y está en cualquier región que no sea esa, se clasifica como barata la mayoría de las veces. 
+
+Algo que también se puede ver es que hay varios nodos con pocas muestras (los que vienen de la distinción de tipo de casa es Southern Metropolitan). Vemos además que hay un bastantes falsos negativos (casas caras que se etiquetan como baratas).
+
 
 ```{r tree2_price_label}
 housesTree2 = rpart(price_label_high ~ ., data = housesTrainOrigVar)
@@ -708,7 +498,6 @@ preds <- predict(housesTree2, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label_high)
 metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
 ```
-
 
 ### Podando el árbol 
 Intentamos eliminar esas últimas hojas que hemos comentado. Prácticamente no habría diferencia entre tener 7 hojas u 8. Podemos probar a ver si con 4 hojas el error aumenta mucho.
@@ -749,7 +538,6 @@ auc_roc
 ```
 
 
-
 Bajando la complejidad hasta quedarnos solo con 4 hojas, observamos que el error aumenta en un 4% (hasta el 17%) y que el f1-score disminuye hasta 0.55, pero el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja, con el 75% de los datos, y con una tasa de acierto aceptable (el 84% serían baratas). Las casas con más de 4 habitaciones en Southern Metropolitan (son solo el 9%) se clasifican como caras el 86% de las veces. La última división es en función de la distancia al centro, y ya falla más.
 
 ```{r pruneTree3}
@@ -763,20 +551,47 @@ table(pred = preds, obs = housesTrainOrigVar$price_label_high)
 metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
 ```
 
-## Test
+```{r}
+preds_prob <- predict(pruneTREE3, housesTrainOrigVar, type = "prob")
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
+auc_roc <- auc(predictions$price_label_high, predictions$pred)
+auc_roc
+```
 
+### Eliminando variables
+Hemos visto que en los árboles anteriores, las variables por las que se realizaban las divisiones eran *Rooms*, *Regionname*, *Distance*, *Type*. Previsiblemente, si solo introducimos estas variables, el resultado será el mismo, reduciendo operaciones al árbol.
+
+
+```{r}
+housesTrainImpVars <- housesTrain[c("Rooms", "Type", "Distance", "Regionname", "price_label_high")]
+n = dim(housesTrainImpVars)[1]
+# Hay que factorizar el label para que se construya bien el árbol
+housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
+```
+
+```{r}
+housesTree4 = rpart(price_label_high ~ ., data = housesTrainImpVars)
+pruneTREE4 = prune(housesTree4, cp = housesTree4$cptable[4,"CP"])
+preds <- predict(pruneTREE4, type = "class")
+table(pred = preds, obs = housesTrainImpVars$price_label_high)
+metrics_function(preds, housesTrainImpVars, 'price_label_high', bool=TRUE)
+```
+
+
+## Test
+Observamos que no se produce sobreajuste, ya que las métricas en test son muy parecidas a train (utilizando el árbol entrenado con 4 variables)
 
 ```{r}
 housesTest <- read.csv('base_test.csv')
 ```
 
 ```{r}
-preds <- predict(pruneTREE2, housesTest, type = "class")
+preds <- predict(pruneTREE4, housesTest, type = "class")
 table(pred = preds, obs = housesTest$price_label_high)
 metrics_function(preds, housesTest, 'price_label_high', bool = TRUE)
 ```
 ```{r}
-preds_prob <- predict(pruneTREE2, housesTest, type = "prob")
+preds_prob <- predict(pruneTREE4, housesTest, type = "prob")
 predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=preds_prob[,2])
 cost_of_fp <-1
 cost_of_fn <- 1
@@ -792,94 +607,315 @@ auc_roc <- auc(predictions$price_label_high, predictions$pred)
 auc_roc
 ```
 
-
-
-
-# Clustering
-
-## k-means
+## Random Forest
+En este apartado se van a utilizar random forests para el problema de clasificación. Al no estar demasiado expuesto a los outliers, y aceptar variables categóricas como entrada, la primera prueba que se realizará será con la mayoría de variables del conjunto de datos, y con unos parámetros iniciales que después se modificarán en una etapa de selección de hiperparámetros.
 
 ```{r}
 housesTrain <- read.csv('base_train.csv')
 ```
 
-NOTA: Habría que revisar estas variables con el nuevo cambio de dataset. Además, lo de las siluetas a veces me peta
+```{r}
+set.seed(10)
+housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                     "price_label_high")]
+housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
+rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar, ntree=100)
+```
+
 
 ```{r}
-#Antes:
-#housesTrainKmeans <- housesTrain %>% dplyr::select(-Regionname, -Type, -Method, -year_built_cat)
-housesTrainKmeans <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
-
-#las variables categóricas pasan a ser factores ordenados
-housesTrainKmeans['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
-  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric()
-
-housesTrainKmeans['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
-  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
-
-housesTrainKmeans['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
-  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric()
-
-housesTrainKmeans['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
-  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric()
-
-housesTrainKmeans['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
-  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric()
+preds <- predict(rf2, type = "class")
+table(pred = preds, obs = housesTrainOrigVar$price_label_high)
+metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
 ```
 
-```{r kmeans}
-#nume <- housesTrainKmeans %>% dplyr::select(sqrt_distance, log_landsize, Lattitude, Longtitude, Price, log_price)
 
-fac = as.matrix(housesTrainKmeans)
+```{r message=FALSE}
+roc <- roc(housesTrain$price_label_high, rf2$votes[,2])
+ggplotROCCurve(roc)
+```
 
-#Guardamos el número filas
-n <- nrow(fac)
+```{r}
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=rf2$votes[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
+```
 
-#Probamos un cluster de 2 grupos
-clusters2=kmeans(fac,centers=2,nstart=25)
+Tomando como referencia las métricas, y que las variables importantes son bastante lógicas, este modelo arroja resultados muy válidos. Además, se podría utilizar como una primera parte en una etapa de ensamblado de modelos: se podría utilizar un Random Forest muy sobre ajustado (aumentando el número máximo de nodos terminales por ejemplo) para seleccionar las variables más importantes, que después se utilizarían como variables en otro modelo.
 
-#Para ver la variabilidad dentro de los grupos correspondiente a esos dos clusters
-clusters2$withinss
+### Selección de variables
 
-#Buscamos el número de clusters óptimo 
+Si observamos la importancia de las variables del anterior (medida como la caída media en el índice gini que produce cada variable), vemos que las más importantes son aquellas relacionadas con la situación geográfica de la vivienda (cómo ya se había visto anteriormente): coordenadas, distancia al centro y región están en las 6 primeras posiciones, además de variables que informan sobre el tamaño de la vivienda (número de habitaciones y tamaño de la parcela). 
 
-#Inicializamos el vector
-SSW <- vector(mode = "numeric", length = 15)
-#Variabilidad de todos los datos, es decir, todos los datos como un único cluster
-SSW[1] <- (n - 1) * sum(apply(X = fac, MARGIN = 2, FUN = 'var'))
-#Variabilidad de cada modelo, desde 2 clusters hasta 15 clusters
-for (i in 2:15) SSW[i] <- sum(kmeans(fac,centers=i,nstart=25)$withinss)
-#Dibujamos un gráfico con el resultado
-plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within
-groups",pch=19, col="steelblue4")
 
-#Otra manera de encontrar el número de clusters óptimo: silhouette coefficient 
-#This coefficiente ranges from  −1  to  1 , so that:
-  #Near +1 indicate that the sample is far away from the neighboring clusters.
-  #A value of 0 indicates that the sample is on or very close to the decision boundary     between two neighboring clusters and
-  #Negative values indicate that those samples might have been assigned to the wrong       cluster.
+```{r}
+# Extracts variable importance (Mean Decrease in Gini Index)
+# Sorts by variable importance and relevels factors to match ordering
+var_importance <- data_frame(variable=setdiff(colnames(housesTrainOrigVar), "price_label_high"),
+                             importance=as.vector(importance(rf2)))
+var_importance <- arrange(var_importance, desc(importance))
+var_importance$variable <- factor(var_importance$variable, levels=var_importance$variable)
 
-fviz_nbclust(fac, kmeans, method='silhouette')
+p <- ggplot(var_importance, aes(x=variable, weight=importance, fill=variable))
+p <- p + geom_bar() + ggtitle("Importancia de variables")
+p <- p + xlab("Features") + ylab("Decrecimiento medio índice Gini")
+p <- p + scale_fill_discrete(name="Variable")
+p + theme(axis.text.x=element_blank(),
+          axis.text.y=element_text(size=12),
+          axis.title=element_text(size=16),
+          plot.title=element_text(size=18),
+          legend.title=element_text(size=16),
+          legend.text=element_text(size=12))
+```
 
-avg_sil <- function(k) {
-  km.res <- kmeans(fac, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(fac))
-  mean(ss[, 3])
+Podemos probar si seleccionado las variables más imporantes y volviendo a entrenar un modelo con los mismos parámetros, obtenemos resultados parecidos.
+
+Si nos quedamos con las 6 primeras, el accuracy desciende ligeramente hasta 0.89, pero el f1 score baja hasta 0.77. Si se incluye la variable *Type* adicionalmente, se consiguen resultados muy parecidos a los del primer modelo, reduciendo la complejidad.
+
+```{r}
+set.seed(10)
+housesTrainImpVars <- housesTrain[c("Rooms", "Distance", "LandsizeImp",
+                                    "Lattitude", "Longtitude", "Regionname", "Type",
+                                     "price_label_high")]
+housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
+rf3 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=100)
+```
+
+
+```{r}
+preds <- predict(rf3, type = "class")
+table(pred = preds, obs = housesTrainImpVars$price_label_high)
+metrics_function(preds, housesTrainImpVars, 'price_label_high', bool=TRUE)
+```
+
+```{r}
+var_importance <- data_frame(variable=setdiff(colnames(housesTrainImpVars), "price_label_high"),
+                             importance=as.vector(importance(rf3)))
+var_importance <- arrange(var_importance, desc(importance))
+var_importance$variable <- factor(var_importance$variable, levels=var_importance$variable)
+
+p <- ggplot(var_importance, aes(x=variable, weight=importance, fill=variable))
+p <- p + geom_bar() + ggtitle("Importancia de variables")
+p <- p + xlab("Features") + ylab("Decrecimiento medio índice Gini")
+p <- p + scale_fill_discrete(name="Variable")
+p + theme(axis.text.x=element_blank(),
+          axis.text.y=element_text(size=12),
+          axis.title=element_text(size=16),
+          plot.title=element_text(size=18),
+          legend.title=element_text(size=16),
+          legend.text=element_text(size=12))
+```
+
+
+## Utilizando cross validation
+Como primera prueba, y teniendo en cuenta que las variables importantes el modelo son bastante lógicas, los resultados de este modelo son bastante buenos. Ahora se va a intentar tunear el número de árboles y la profundidad máxima de los mismos con grid search y CV, para intentar obtener unos mejores resultados.
+
+
+- Número de árboles
+- Número de variables que se muestrean aleatoriamente al crear los árboles
+- Mínimo número de puntos para que un nodo se divida.
+
+Realizamos 10 Fold cross validation con 5 iteraciones.
+
+Se utilizan las variables que se han comentado en el apartado anterior.
+
+
+```{r}
+set.seed(10)
+rf_model <- rand_forest(trees=tune(), mtry=tune(), min_n=tune()) %>% set_mode('classification') %>% set_engine('randomForest')
+houses_rec <- recipe(price_label_high ~ ., data=housesTrainImpVars)
+#rf_model %>% parameters() %>% update(trees = trees(c(25,1000)), mtry=mtry(c(1,5)), min_n=min_n(c(2,20)))
+# Create workflow
+rf_workflow <- workflow() %>% add_model(rf_model) %>% add_recipe(houses_rec)
+rf_workflow
+
+rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mtry=mtry(c(1,5)), min_n=min_n(c(2,20)))
+
+# Create grid
+rf_grid <- grid_regular(rf_param, levels=3)
+rf_grid
+#rf_fit <- fit(rf_model, price_label_high ~ ., housesTrainOrigVar)
+# Valores por defecto
+#trees()
+#mtry()
+#min_n()
+```
+
+```{r message=FALSE}
+# Parallelize
+all_cores <- parallel::detectCores(logical = FALSE) - 2
+registerDoFuture()
+cl <- makeCluster(all_cores)
+plan(future::cluster, workers = cl)
+```
+
+```{r}
+houses_folds <- vfold_cv(housesTrainOrigVar, v = 10, repeats = 3)
+houses_folds
+rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
+```
+
+```{r}
+#Execute after finishing training
+stopCluster(cl)
+```
+
+```{r}
+autoplot(rf_search) +
+    labs(title = "Results of Grid Search for Two Tuning Parameters of a Random Forest")
+```
+
+```{r}
+show_best(rf_search, metric='roc_auc')
+```
+
+```{r}
+# Prepare for final prediction
+rf_param_final <- select_best(rf_search, "roc_auc")
+rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
+rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainOrigVar)
+```
+
+
+## Test
+
+```{r}
+housesTest <- read.csv('base_test.csv')
+housesTestOrigVar <- housesTest[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                     "price_label_high")]
+housesTestOrigVar$price_label_high <- as.factor(housesTestOrigVar$price_label_high)
+#levels(housesTestOrigVar$price_label_high) <- c("barata", "cara")
+
+housesTestOrigVar$.pred <- predict(rf_wflow_final_fit, 
+                          new_data = housesTestOrigVar)$.pred_class
+housesTestOrigVar$.pred_TRUE <- predict(rf_wflow_final_fit, 
+                          new_data = housesTestOrigVar, type='prob')$.pred_TRUE
+metrics(housesTestOrigVar, truth = price_label_high, .pred, .pred_TRUE)
+```
+
+```{r}
+table(pred = housesTestOrigVar$.pred, obs = housesTestOrigVar$price_label_high)
+metrics_function(housesTestOrigVar$.pred, housesTestOrigVar, 'price_label_high', bool=TRUE)
+```
+
+
+```{r}
+predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=housesTestOrigVar$.pred_TRUE)
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
+```
+
+
+
+
+
+## kNN
+El siguiente algoritmo que se va a probar es kNN. Para ello, necesitamos que los datos estén de nuevo estandarizados, ya que es un método basado en distancias, y las variables necesitan estar en el mismo rango de valores.
+
+PARA HACER: intentar probar otras distancias
+
+```{r}
+housesTrain <- read.csv('base_train.csv')
+housesTest <- read.csv('base_test.csv')
+# Para que funcione confusionMatrix de caret, el target debe ser un factor
+housesTrain$price_label <- as.factor(housesTrain$price_label)
+housesTrain$price_label_high <- as.factor(housesTrain$price_label_high)
+housesTest$price_label <- as.factor(housesTest$price_label)
+housesTest$price_label_high <- as.factor(housesTest$price_label_high)
+```
+
+```{r knn_functions}
+perform_knn <- function(train, test, label, k, cols) {
+  predictions <- knn(train[,cols], test[,cols], k=k, cl=train[,label])
+  test_metrics <- metrics_function(predictions, test, label, bool=TRUE)
+  return(test_metrics)
+  
 }
-
-# Compute and plot wss for k = 2 to k = 15
-k.values <- 2:15
-
-# extract avg silhouette for 2-15 clusters
-avg_sil_values <- sapply(k.values, avg_sil)
-
-plot(k.values, avg_sil_values,
-       type = "b", pch = 19, frame = FALSE, 
-       xlab = "Number of clusters K",
-       ylab = "Average Silhouettes")
 ```
 
-Según las tres gráficas obtenidas, el k óptimo es 2. (dudo??)
+
+```{r knn1}
+num_std_cols <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std')
+metrics <- perform_knn(housesTrain, housesTest, 'price_label_high', 1, num_std_cols)
+metrics
+```
+
+## k óptimo
+ESTO HABRIA QUE HACERLO SOBRE VALIDACIÓN NO?
+Para price_label:
+
+```{r}
+plot_acc_f1_k <- function(train, label, cols){
+  long = 15
+  accuracy = rep(0,long)
+  f1score = rep(0,long)
+  recall = rep(0,long)
+  precision = rep(0,long)
+  for (i in 1:long)
+  {
+    prediccion_knn_cv =knn.cv(train[,cols], 
+                              k=i, cl=train[,label])
+    accuracy[i] = sum(prediccion_knn_cv == train[,label]) /nrow(train)
+    recall[i] = sum(prediccion_knn_cv == train[,label] & train[,label] == TRUE) / sum(train[,label] == TRUE)
+    precision[i] = sum(prediccion_knn_cv == train[,label] & prediccion_knn_cv == TRUE) / sum(prediccion_knn_cv == TRUE)
+    f1score[i] = 2*precision[i]*recall[i]/(precision[i]+recall[i])
+  }
+  resultados_knn = as.data.frame(cbind(accuracy,f1score,precision,recall))
+  resultados_knn = resultados_knn %>% mutate(index=as.factor(seq(1:long)))
+  
+  max(resultados_knn$f1score)
+  which.max(resultados_knn$f1score)
+  
+  
+  p1 <- ggplot(data=resultados_knn,aes(x=index,y=accuracy)) + 
+    geom_col(colour="cyan4",fill="cyan3")+
+    ggtitle("Accuracy")
+  
+  
+  p2 <- ggplot(data=resultados_knn,aes(x=index,y=f1score)) + 
+    geom_col(colour="orange4",fill="orange3") +
+    ggtitle("F1_score values")
+  
+  plot_grid(p1, p2, rel_heights = c(1/2, 1/2))
+  }
+
+plot_acc_f1_k(housesTrain, 'price_label', num_std_cols)
+```
+Para k=5 obtenemos un accuracy y un f1 score entre 0.75 y 0.8. Se observa que a medida que k va aumentando, las métricas no incrementan.
+
+HABRIA QUE SACAR F1
+```{r knn5}
+# En train
+prediccion_knn5_train =knn.cv(housesTrain[,num_std_cols], 
+                              k=5, cl=housesTrain$price_label)
+metrics_function(prediccion_knn5_train, housesTrain, 'price_label')
+
+#En test
+prediccion_knn5_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
+                         k=5, cl=housesTrain$price_label)
+metrics_function(prediccion_knn5_test, housesTest, 'price_label')
+```
+
+
+Para price_label_high, vemos de nuevo que el f1-score es menor. Los mejores valores de k podrían ser 5 o 7.
+
+```{r}
+plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
+```
+```{r knn7high}
+# En train
+prediccion_knn7_train =knn.cv(housesTrain[,num_std_cols], 
+                              k=7, cl=housesTrain$price_label_high)
+metrics_function(prediccion_knn7_train, housesTrain, 'price_label_high')
+
+#En test
+prediccion_knn7_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
+                         k=7, cl=housesTrain$price_label_high)
+
+metrics_function(prediccion_knn7_test, housesTest, 'price_label_high')
+```
 
 
 
@@ -1005,168 +1041,6 @@ plot_roc(roc, th, cost_of_fp, cost_of_fn)
 ```{r}
 auc_roc <- auc(predictions$price_label_high, predictions$pred)
 auc_roc
-```
-
-
-
-# Random Forest
-En este apartado se van a utilizar random forests para el problema de clasificación. Al no estar demasiado expuesto a los outliers, y aceptar variables categóricas como entrada, la primera prueba que se realizará será con la mayoría de variables del conjunto de datos, y con unos parámetros iniciales que después se modificarán en una etapa de elección de hiperparámetros.
-
-```{r}
-housesTrain <- read.csv('base_train.csv')
-```
-
-```{r}
-set.seed(10)
-housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
-                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
-                                     "price_label_high")]
-housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
-rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar, ntree=100)
-```
-
-
-```{r}
-preds <- predict(rf2, type = "class")
-table(pred = preds, obs = housesTrainOrigVar$price_label_high)
-metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
-```
-
-Si observamos la importancia de las variables (medida como la caída media en el índice gini que produce cada variable), vemos que las más importantes son aquellas relacionadas con la situación geográfica de la vivienda (cómo ya se había visto anteriormente): coordeandas, distancia al centro y región están en las 6 primeras posiciones, además de variables que informan sobre el tamaño de la vivienda (número de habitaciones y tamaño de la parcela).
-
-
-```{r}
-# Extracts variable importance (Mean Decrease in Gini Index)
-# Sorts by variable importance and relevels factors to match ordering
-var_importance <- data_frame(variable=setdiff(colnames(housesTrainOrigVar), "price_label_high"),
-                             importance=as.vector(importance(rf2)))
-var_importance <- arrange(var_importance, desc(importance))
-var_importance$variable <- factor(var_importance$variable, levels=var_importance$variable)
-
-p <- ggplot(var_importance, aes(x=variable, weight=importance, fill=variable))
-p <- p + geom_bar() + ggtitle("Importancia de variables")
-p <- p + xlab("Features") + ylab("Decrecimiento medio índice Gini")
-p <- p + scale_fill_discrete(name="Variable")
-p + theme(axis.text.x=element_blank(),
-          axis.text.y=element_text(size=12),
-          axis.title=element_text(size=16),
-          plot.title=element_text(size=18),
-          legend.title=element_text(size=16),
-          legend.text=element_text(size=12))
-```
-
-PONER MAS BONITO
-
-```{r message=FALSE}
-roc <- roc(housesTrain$price_label_high, rf2$votes[,2])
-plot(roc)
-auc(roc)
-```
-
-```{r}
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=rf2$votes[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
-```
-
-Tomando como referencia las métricas, y que las variables importantes son bastante lógicas, este modelo arroja resultados muy válidos. Además, se podría utilizar como una primera parte en una etapa de ensamblado de modelos: se podría utilizar un Random Forest muy sobre ajustado (aumentando el número máximo de nodos terminales por ejemplo) para seleccionar las variables más importantes, que después se utilizarían como variables en otro modelo.
-
-
-## Utilizando cross validation
-Como primera prueba, y teniendo en cuenta que las variables importantes el modelo son bastante lógicas, los resultados de este modelo son bastante buenos. Ahora se va a intentar tunear el número de árboles y la profundidad máxima de los mismos con grid search y CV, para intentar obtener unos mejores resultados.
-
-
-- Número de árboles
-- Número de variables que se muestrean aleatoriamente al crear los árboles
-- Mínimo número de puntos para que un nodo se divida.
-
-Realizamos 10 Fold cross validation con 5 iteraciones.
-
-
-```{r}
-set.seed(10)
-rf_model <- rand_forest(trees=tune(), mtry=tune(), min_n=tune()) %>% set_mode('classification') %>% set_engine('randomForest')
-houses_rec <- recipe(price_label_high ~ ., data=housesTrainOrigVar)
-#rf_model %>% parameters() %>% update(trees = trees(c(25,1000)), mtry=mtry(c(1,5)), min_n=min_n(c(2,20)))
-# Create workflow
-rf_workflow <- workflow() %>% add_model(rf_model) %>% add_recipe(houses_rec)
-rf_workflow
-
-rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mtry=mtry(c(1,5)), min_n=min_n(c(2,20)))
-
-# Create grid
-rf_grid <- grid_regular(rf_param, levels=3)
-rf_grid
-#rf_fit <- fit(rf_model, price_label_high ~ ., housesTrainOrigVar)
-# Valores por defecto
-#trees()
-#mtry()
-#min_n()
-```
-
-```{r message=FALSE}
-# Parallelize
-all_cores <- parallel::detectCores(logical = FALSE) - 2
-registerDoFuture()
-cl <- makeCluster(all_cores)
-plan(future::cluster, workers = cl)
-```
-
-```{r}
-houses_folds <- vfold_cv(housesTrainOrigVar, v = 10, repeats = 3)
-houses_folds
-rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
-```
-
-```{r}
-#Execute after finishing training
-stopCluster(cl)
-```
-
-```{r}
-autoplot(rf_search) +
-    labs(title = "Results of Grid Search for Two Tuning Parameters of a Random Forest")
-```
-
-```{r}
-show_best(rf_search, metric='roc_auc')
-```
-
-```{r}
-# Prepare for final prediction
-rf_param_final <- select_best(rf_search, "roc_auc")
-rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
-rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainOrigVar)
-```
-
-
-## Test
-
-```{r}
-housesTest <- read.csv('base_test.csv')
-housesTestOrigVar <- housesTest[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
-                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
-                                     "price_label_high")]
-housesTestOrigVar$price_label_high <- as.factor(housesTestOrigVar$price_label_high)
-#levels(housesTestOrigVar$price_label_high) <- c("barata", "cara")
-
-housesTestOrigVar$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesTestOrigVar)$.pred_class
-housesTestOrigVar$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesTestOrigVar, type='prob')$.pred_TRUE
-metrics(housesTestOrigVar, truth = price_label_high, .pred, .pred_TRUE)
-```
-
-```{r}
-table(pred = housesTestOrigVar$.pred, obs = housesTestOrigVar$price_label_high)
-metrics_function(housesTestOrigVar$.pred, housesTestOrigVar, 'price_label_high', bool=TRUE)
-```
-
-
-```{r}
-predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=housesTestOrigVar$.pred_TRUE)
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
 ```
 
 
