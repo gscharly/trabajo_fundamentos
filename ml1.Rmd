@@ -86,31 +86,6 @@ housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>%
   ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
 ```
 
-## Estudio de la tendencia de clustering
-
-Un método de clustering permite encontrar agrupaciones en un conjunto de datos, pero no siempre estas agrupaciones existen de manera natural. En nuestro caso, hemos tomado la variable precio para dividir el dataset y poder emplear métodos de clasificación sobre él. Sin embargo, vamos a estudiar la tendencia de clustering real que tienen nuestros datos.
-
-Visual Assessment of cluster Tendency (VAT) es método que permite evaluar visualmente si los datos muestran indicios de algún tipo de agrupación.
-
-```{r}
-datos = housesTrainCluster
-mat_dist <- dist(datos, method = "euclidean")
-
-fviz_dist(dist.obj = mat_dist, show_labels = FALSE) +
-          theme(legend.position = "bottom")
-
-```
-El estadístico Hopkins permite evaluar la tendencia de clustering de un conjunto de datos mediante el cálculo de la probabilidad de que dichos datos procedan de una distribución uniforme, es decir, estudia la distribución espacial aleatoria de las observaciones.
-
-H=∑ni=1yi∑ni=1xi+∑ni=1yi
-
-Valores de H en torno a 0.5 indican que ∑ni=1xi y ∑ni=1yi son muy cercanos el uno al otro, es decir, que los datos estudiados se distribuyen uniformemente y que por lo tanto no tiene sentido aplicar clustering. Cuanto más se aproxime a 0 el estadístico H, más evidencias se tienen a favor de que existen agrupaciones en los datos y de que, si se aplica clustering correctamente, los grupos resultantes serán reales. 
-
-```{r}
-# Estadístico H para el set de datos iris
-hopkins(data = datos, n = nrow(datos) - 1)
-```
-
 
 ## k-means
 
