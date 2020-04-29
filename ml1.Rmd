@@ -42,7 +42,9 @@ library(randomForest)
 library(grid)
 library(party)
 library(ROCR)
-#library(tidymodels)
+library(tidymodels)
+library(workflows)
+
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
 source('utils/plot_roc.R')
@@ -906,7 +908,277 @@ knn_test=knn(housesTrainKnnNorm[,std_cols], housesTestKnnNorm[,std_cols],
 metrics_function(knn_test, housesTestKnnNorm, 'price_label_high', bool=TRUE)
 ```
 
+##SVM
 
+A continuación se va aplicar el algoritmo de SVM (con diferentes hiperparámetros) sobre nuestros datos. Este algoritmo se fundamenta en la idea de encontrar un hiperplano óptimo que separe perfectamente los puntos. Además, para la resolución de este problema se basa en el teorema de Cover, el cual afirma que para cualquier dataset, la separación lineal de las clases se hace más latente a medida que las dimensiones aumentan. 
+
+Para mapear los datos de entrada a un espacios de mayores dimensiones, se hace uso de un tipo de funciones llamadas funciones de kernel. Los kernels pueden ser de 3 tipos:
+
+- Lineales.
+- Polinómicos.
+- Gaussianos (basados en funciones de base radial).
+
+Lo adecuado que va a ser utilizar un tipo de kernel sobre otro va a estar totalmente determinado por el tipo de datos. En espacios con baja dimensionalidad (como mucho hasta 3 dimensiones y ni siquiera), resulta interesante darle un primer vistazo a cómo se reparten las clases en el espacio, para principalemente observar si son linearmente separables o no. 
+
+En nuestro conjunto de datos no contamos con esa posibilidad, ya que aparecen hasta 13 variables. Lo único que se puede hacer, es aplicar de nuevo alguna técnica de dimensionalidad (PCA), por si se pudiese intuir algo en dos dimensiones:
+
+```{r, echo=F}
+train <- read.csv('base_train.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+train <- train %>%  select(-filter_cols)
+
+# Estandarización de variables categóricas ordinales
+cat_with_order = c("rooms_cat", "car_cat", "bath_cat", "bed_cat", "sell_rate_cat")
+
+train['rooms_cat']<- train %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
+train['car_cat'] <- train %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+train['bath_cat'] <- train %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
+train['bed_cat'] <- train %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() 
+train['sell_rate_cat'] <- train %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() 
+
+ordinal_variables <- train %>% select(cat_with_order) 
+normParam <- preProcess(ordinal_variables)
+ordinal_variables_norm <- predict(normParam, ordinal_variables)
+
+for(cat in cat_with_order){
+  train[cat] <- ordinal_variables_norm[cat]
+}
+
+train <- train %>% select(-c("year_built_cat", "Regionname", "Type", "Method"))
+train$price_label_high<-as.factor(ifelse(train$price_label_high==TRUE,1,0))
+    
+```
+
+
+```{r}
+housesNum <- train %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(housesNum, center = TRUE, scale = TRUE)
+df_houses_pca <- data.frame(housesPCA$x[,1:2])
+df_houses_pca$price_label <- train$price_label_high
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=price_label)) + geom_point()
+```
+
+Con esta represntación podemos ver que claramente nuestros datos no son linearmente separables si los reducimos a dos dimensiones. Aun así, no se va a descartar la realización de pruebas utilizando un kernel lineal, ya que como se ha dicho nuestros datos no están en dos, sino en 9 dimensiones. 
+
+## Kernel Lineal 
+
+Inicialmente se va a probar utilizando un kernel lineal para la SVM. En el caso de la utilización de un kernel lineal, aparece un hiperparámetro a utilizar, denominado parámetro de coste (C). Se van a probar diferentes valores de este parámetro:
+
+
+```{r pressure, echo=FALSE}
+# Tarda aproximadamente 7 minutos
+svm_linear <- e1071::tune("svm", price_label_high ~ ., data = train,
+               kernel = 'linear',
+               ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+
+
+summary(svm_linear)
+
+```
+
+Como se puede el menor error de clasificación utilizando este kernel lineal se obtiene para C=100. Sin embargo a partir de 0.1 apenas varia de forma significativa este error. Además, las SVM tienen un cierto caracter aleatorio, que hace que en otra ejecución el mejor modelo podría conseguirse con un C distinto. Aún así, vamos a seleccionar como este modelo como el mejor con kernel linear y obtener algunas métricas adicionales de rendimiento:
+
+```{r, meassage=f}
+best_linear <- svm(price_label_high~., data = train, kernel = "linear", cost = svm_linear$best.parameters$cost, probability = T)
+x_train <- train[,1:9]
+pred_train <- predict(best_linear, x_train, probability = T)
+prob_values <- attr(pred_train, "probabilities")[,1] # La probabilidad de pertenecer a la clase "cara" (1)
+
+beta <- 1 #Beta value for F1 score
+pred_svm <- prediction(prob_values, train$price_label_high)
+perf_svm <- performance(pred_svm, "prec", "rec")
+f1_best_linear <- (1+beta^2)*perf_svm@y.values[[1]]*perf_svm@x.values[[1]]/(beta^2*perf_svm@y.values[[1]]+perf_svm@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_linear) # Mejor f1 score para este modelo
+prec_svm_opt=perf_svm@y.values[[1]][optimo]
+rec_svm_opt=perf_svm@x.values[[1]][optimo]
+f1_measure_svm_opt <- (1+beta^2)*prec_svm_opt*rec_svm_opt/(beta^2*prec_svm_opt+rec_svm_opt)
+threshold_optimo_svm <- perf_svm@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_svm_opt, precision = prec_svm_opt, recall = rec_svm_opt, threshold = threshold_optimo_svm))
+```
+
+
+```{r,message=F}
+
+preds <- as.factor(ifelse(prob_values > threshold_optimo_svm ,1,0))
+cm <- caret::confusionMatrix(preds, train$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_linear <- roc(train$price_label_high,prob_values)
+roc_plot <- ggplotROCCurve(roc_linear)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+
+
+```
+
+
+Se ha alcanzado una f1_score de 0.70 aproximadamente sobre el conjunto de entrenamiento utilizando la svm con kernel lineal. A pesar de obtenerse una f1_score tan baja, el área bajo la curva es de 0.89, lo cual nos quiere decir que en general el modelo está realizando un bastante buen trabajo separando las dos clases. Sin embargo, se puede intuir que utilizando un tipo de kernel no lineal se podrían mejorar estos resultados. Para comprobarlo, se procede a probar el funcionamiento de una SVM haciendo uso de un kernel gaussiano. En este caso, además del parámetro de coste que ya conocíamos, aparece otro hiperparámetro que será necesario optimizar (gamma). Esta vez, para buscar los mejores hiperparámetros posibles para el modelo, se va a hacer una búsqueda bayesiana. Los resultados obtenidos se muestan a continuación:
+
+```{r}
+svm_mod <- svm_rbf(mode = "classification", cost = tune(), rbf_sigma = tune()) %>% set_engine("kernlab")
+svm_rec <- recipe(price_label_high ~ ., data=train)
+svm_wflow <- workflow() %>% add_model(svm_mod) %>% add_recipe(svm_rec)
+svm_param <- svm_wflow %>% parameters() #%>% update(cost = cost(range = c()), rbf_sigma = rbf_sigma(range = c()))
+svm_param
+```
+
+```{r message=FALSE}
+# Parallelize
+all_cores <- parallel::detectCores(logical = FALSE) - 2
+registerDoFuture()
+cl <- makeCluster(all_cores)
+plan(future::cluster, workers = cl)
+```
+
+```{r}
+#tiempò aproximado de ejecución: 15 minutos
+set.seed(1291)
+
+svm_folds <- vfold_cv(train, v = 10, repeats = 1)
+
+svm_search <- tune_bayes(svm_wflow,
+                         resamples = svm_folds,
+                         param_info = svm_param,
+                         initial = 5,
+                         iter = 30,
+                         metrics = metric_set(roc_auc),
+                         control = control_bayes(no_improve = 15, verbose = FALSE))
+
+
+show_best(svm_search, metric = "roc_auc")
+
+```
+
+En le anterior tabla se muestran los 5 mejores resultados obtenidos (en cuanto a área bajo la curva). Para el cáculo de métricas y búsqueda del mejor threshold, no se va a utilizar el mejor modelo devuelto, sino que se va a hacer uso de la "one-standard error rule" propuesta por Breinman y seleccionar el modelo cuya área bajo la curva se encuentra a una desviación estándar de distancia del modelo con mejor auc. Con esto, estaremos intentando reducir en la medida de lo posbile el sobreajuste a los datos de entrenamiento: A continuación se muestran los resultados obtenidos tras el proceso de búsqueda del thrshold óptimo para el modelo:
+
+```{r}
+svm_param_best <- select_by_one_std_err(svm_search, rbf_sigma, cost, metric = "roc_auc")
+svm_best <- finalize_workflow(svm_wflow, svm_param_best)
+svm_best_fit <- fit(svm_best, data = train)
+svm_best_fit
+```
+
+Una vez seleccionado el modelo, se pretende buscar el threshold óptimo. Se entiende por threshold óptimo, el que hace que el modelo alcanze la mayor f1-score. Los resultados han sido los siguientes:
+
+```{r}
+beta <- 1 #Beta value for F1 score
+train$probs <- predict(svm_best_fit, new_data = train, type = "prob")$.pred_1
+pred_svm <- prediction(train$probs, train$price_label_high)
+perf_svm <- performance(pred_svm, "prec", "rec")
+f1_best_linear <- (1+beta^2)*perf_svm@y.values[[1]]*perf_svm@x.values[[1]]/(beta^2*perf_svm@y.values[[1]]+perf_svm@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_linear) # Mejor f1 score para este modelo
+prec_svm_opt=perf_svm@y.values[[1]][optimo]
+rec_svm_opt=perf_svm@x.values[[1]][optimo]
+f1_measure_svm_opt <- (1+beta^2)*prec_svm_opt*rec_svm_opt/(beta^2*prec_svm_opt+rec_svm_opt)
+threshold_optimo_svm <- perf_svm@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_svm_opt, precision = prec_svm_opt, recall = rec_svm_opt, threshold = threshold_optimo_svm))
+
+```
+
+La mejor f1 score obtenida con este Kernel es 0.82, bastante superior al caso del kernel lineal (como era de esperar). En el siguiente gráfico se muestran la curva ROC y la matriz de confusión del modelo sobre los datos de entrenamiento:
+
+
+```{r, message=F}
+
+train$preds <- as.factor(ifelse(train$probs > threshold_optimo_svm ,1,0))
+
+cm <- caret::confusionMatrix(train$preds, train$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian <- roc(train$price_label_high,train$probs)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+
+```
+
+Como se puede apreciar, los resultados de este modelo son bastante buenos. El valor de 0.96 para el área bajo la curva demuestra que el modelo es capaz de separar correctamente ambas clases. En el siguiente gráfico se puede ver la distribución de las probabilidades y obtenidas mediante el modelo, junto al threshold óptimo calculado. También se muestra en forma de histograma: 
+
+
+```{r}
+
+train %>% ggplot(aes(x=probs, color=price_label_high)) +
+  geom_density() + geom_vline(aes(xintercept=threshold_optimo_svm),
+            color="blue", linetype="dashed")
+
+train %>% ggplot(aes(x=probs, fill=price_label_high)) + 
+  geom_histogram(alpha=0.5) + geom_vline(aes(xintercept=threshold_optimo_svm),
+            color="blue", linetype="dashed")
+
+```
+
+
+Se puede ver que el modelo es muy bueno captando los 0. Parece que tiene más problemas en el caso de los 1, aunque si nos fijamos en el histograma, se puede ver que el problema no es tan grave como parecía en la función de densidad de probabilidad.
+
+Cabe destacar que eL algoritmo de SVM, en un principio solo proporciona las etiquetas predichas. Sin embargo, de cara a la optimización de ciertas métricas puede ser útil obtener probabilidades. Para obtenerlas, se aplica una técnica llamada calibrado de Platt, que a grandes rasgos consiste en aplicar una regresión logística sobre las etiquetas calculadas por la SVM. Por lo tanto, al no estar diseñadas las SVM para proporcionar outputs probabilísticos, tampoco hay que darle mayor importancia a esta gráfica.
+
+A continuación, se procede a validar el modelo utilizando el conjunto de test:
+
+```{r, echo = F}
+
+test <- read.csv('base_test.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+test<- test %>%  select(-filter_cols)
+
+# Estandarización de variables categóricas ordinales
+cat_with_order = c("rooms_cat", "car_cat", "bath_cat", "bed_cat", "sell_rate_cat")
+
+test['rooms_cat']<- test %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
+test['car_cat'] <- test %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+test['bath_cat'] <- test %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
+test['bed_cat'] <- test %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() 
+test['sell_rate_cat'] <- test %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() 
+
+ordinal_variables <- test %>% select(cat_with_order) 
+ordinal_variables_norm <- predict(normParam, ordinal_variables) # Estandarizamos con el objeto estandarizador de train
+
+for(cat in cat_with_order){
+  test[cat] <- ordinal_variables_norm[cat]
+}
+
+test <- test %>% select(-c("year_built_cat", "Regionname", "Type", "Method"))
+
+
+test$price_label_high <- as.factor(ifelse(test$price_label_high==TRUE,1,0))
+
+```
+
+```{r}
+test$probs <- predict(svm_best_fit, new_data = test, type = "prob")$.pred_1
+test$preds <- as.factor(ifelse(test$probs > threshold_optimo_svm ,1,0))
+
+
+metrics_function_num(test$preds, test, 'price_label_high')
+```
+
+
+```{r}
+
+cm <- caret::confusionMatrix(test$preds, test$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian <- roc(test$price_label_high,test$probs)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+```
+
+Como era de esperar, las métricas disminuyen, sin embargo  no demasiado. La performance del modelo puede decirse que es bastante similar sobre los datos de test, lo cual quiere decir que apenas existe sobreajuste con este modelo.
 
 
 ## Naive Bayes

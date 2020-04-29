@@ -25,6 +25,7 @@ library(pROC)
 library(gridExtra)
 library(tidymodels)
 library(workflows)
+library(doFuture)
 
 set.seed(10)
 ```
@@ -126,6 +127,7 @@ for(cat in cat_with_order){
 
 train <- train %>% select(-c("year_built_cat", "Regionname", "Type", "Method"))
 
+#train$price_label_high <- as.factor(train$price_label_high)
 train$price_label_high<-as.factor(ifelse(train$price_label_high==TRUE,1,0))
 
 ```
@@ -348,13 +350,11 @@ head(train)
 svm_mod <- svm_rbf(mode = "classification", cost = tune(), rbf_sigma = tune()) %>% set_engine("kernlab")
 svm_rec <- recipe(price_label_high ~ ., data=train)
 svm_wflow <- workflow() %>% add_model(svm_mod) %>% add_recipe(svm_rec)
-```
-
-```{r}
 svm_param <- svm_wflow %>% parameters() #%>% update(cost = cost(range = c()), rbf_sigma = rbf_sigma(range = c()))
 svm_param
 ```
-```{r}
+
+```{r message=FALSE}
 # Parallelize
 all_cores <- parallel::detectCores(logical = FALSE) - 2
 registerDoFuture()
@@ -371,7 +371,7 @@ svm_folds <- vfold_cv(train, v = 10, repeats = 1)
 svm_search <- tune_bayes(svm_wflow,
                          resamples = svm_folds,
                          param_info = svm_param,
-                         initial = 3,
+                         initial = 5,
                          iter = 30,
                          metrics = metric_set(roc_auc),
                          control = control_bayes(no_improve = 15, verbose = TRUE))
@@ -388,14 +388,16 @@ stopCluster(cl)
 
 ```
 
-
-```{r}
-svm_search
-```
-
 ```{r}
 show_best(svm_search, metric = "roc_auc")
 ```
+
+```{r}
+show_best(svm_search, metric = "roc_auc")$cost[5]
+```
+
+
+
 
 ```{r}
 autoplot(svm_search, type = "performance")
@@ -405,21 +407,54 @@ autoplot(svm_search, type = "performance")
 
 ```{r}
 svm_param_best <- select_best(svm_search, metric = "roc_auc")
+#svm_param_std_error <- select_by_one_std_err(svm_search, rbf_sigma, cost, metric = "roc_auc") # Con un error a una std de distancia del error mínimo (regularizado)
 svm_best <- finalize_workflow(svm_wflow, svm_param_best)
+#svm_reg <- finalize_workflow(svm_wflow, param_reg)
 svm_best_fit <- fit(svm_best, data = train)
+#svm_reg_fit <- fit(svm_reg, data = train)
 svm_best_fit
 ```
 
+
 ```{r}
-train$price_label_high<-as.factor(ifelse(train$price_label_high==TRUE,1,0))
+svm_reg <- svm_rbf(mode = "classification", cost = show_best(svm_search, metric = "roc_auc")$cost[5], rbf_sigma = show_best(svm_search, metric = "roc_auc")$rbf_sigma[5]) %>% set_engine("kernlab") %>%
+              fit(price_label_high ~ ., train)
+
+svm_reg
+```
+
+```{r}
+predict(svm_reg, test)
+```
+
+```{r}
+predict(svm_reg, test, type = "prob")
+```
+
+
+```{r}
+train$preds <- predict(svm_best_fit, new_data = train)$.pred_class
+train$preds <- as.factor(ifelse(train$preds==TRUE,1,0))
 train$probs <- predict(svm_best_fit, new_data = train, type = "prob")$.pred_TRUE
 
 metrics_function_num(train$preds, train, 'price_label_high')
 ```
+```{r}
 
+#train$preds <- as.factor(ifelse(train$probs > threshold_optimo_svm ,1,0))
+
+cm <- caret::confusionMatrix(train$preds, train$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian <- roc(train$price_label_high,train$probs)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+
+```
 ```{r}
 beta <- 1 #Beta value for F1 score
-train$probs <- predict(svm_best_fit, new_data = train, type = "prob")$.pred_TRUE
 pred_svm <- prediction(train$probs, train$price_label_high)
 perf_svm <- performance(pred_svm, "prec", "rec")
 f1_best_linear <- (1+beta^2)*perf_svm@y.values[[1]]*perf_svm@x.values[[1]]/(beta^2*perf_svm@y.values[[1]]+perf_svm@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
@@ -431,6 +466,27 @@ f1_measure_svm_opt <- (1+beta^2)*prec_svm_opt*rec_svm_opt/(beta^2*prec_svm_opt+r
 threshold_optimo_svm <- perf_svm@alpha.values[[1]][optimo+1]
 print(c(f1_opt= f1_measure_svm_opt, precision = prec_svm_opt, recall = rec_svm_opt, threshold = threshold_optimo_svm))
 
+
+```
+
+
+```{r}
+predict(svm_reg, train, type = "prob")
+```
+
+```{r}
+beta <- 1 #Beta value for F1 score
+train$probs <- predict(svm_reg, new_data = train, type = "prob")$.pred_1
+pred_svm <- prediction(train$probs, train$price_label_high)
+perf_svm <- performance(pred_svm, "prec", "rec")
+f1_best_linear <- (1+beta^2)*perf_svm@y.values[[1]]*perf_svm@x.values[[1]]/(beta^2*perf_svm@y.values[[1]]+perf_svm@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_linear) # Mejor f1 score para este modelo
+prec_svm_opt=perf_svm@y.values[[1]][optimo]
+rec_svm_opt=perf_svm@x.values[[1]][optimo]
+f1_measure_svm_opt <- (1+beta^2)*prec_svm_opt*rec_svm_opt/(beta^2*prec_svm_opt+rec_svm_opt)
+threshold_optimo_svm <- perf_svm@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_svm_opt, precision = prec_svm_opt, recall = rec_svm_opt, threshold = threshold_optimo_svm))
 
 ```
 
@@ -500,8 +556,6 @@ head(test)
 
 ```
 
-
-
 ```{r}
 test$probs <- predict(svm_best_fit, new_data = test, type = "prob")$.pred_TRUE
 test$preds <- as.factor(ifelse(test$probs > threshold_optimo_svm ,1,0))
@@ -510,6 +564,18 @@ test$preds <- as.factor(ifelse(test$probs > threshold_optimo_svm ,1,0))
 metrics_function_num(test$preds, test, 'price_label_high')
 ```
 
+```{r}
+test$probs <- predict(svm_reg, new_data = test, type = "prob")$.pred_1
+test$preds <- as.factor(ifelse(test$probs > threshold_optimo_svm ,1,0))
+
+
+metrics_function_num(test$preds, test, 'price_label_high')
+```
+
+
+```{r}
+predict(svm_reg, new_data = test, type = "prob")$.pred_1
+```
 
 ```{r}
 
