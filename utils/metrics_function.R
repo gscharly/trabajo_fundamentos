@@ -82,3 +82,44 @@ ggplotROCCurve <- function(roc_object, interval = 0.2, breaks = seq(0, 1, interv
     coord_equal() + 
     annotate("text",x=-Inf,y=-Inf, label = paste("AUC =",sprintf("%.3f",roc_object$auc)), hjust= 1.2, vjust = -7)
 }
+
+perform_knn <- function(train, test, label, k, cols) {
+  predictions <- knn(train[,cols], test[,cols], k=k, cl=train[,label])
+  test_metrics <- metrics_function(predictions, test, label, bool=TRUE)
+  return(test_metrics)
+  
+}
+
+plot_acc_f1_k <- function(train, label, cols){
+  long = 15
+  accuracy = rep(0,long)
+  f1score = rep(0,long)
+  recall = rep(0,long)
+  precision = rep(0,long)
+  for (i in 1:long)
+  {
+    prediccion_knn_cv =knn.cv(train[,cols], 
+                              k=i, cl=train[,label])
+    accuracy[i] = sum(prediccion_knn_cv == train[,label]) /nrow(train)
+    recall[i] = sum(prediccion_knn_cv == train[,label] & train[,label] == TRUE) / sum(train[,label] == TRUE)
+    precision[i] = sum(prediccion_knn_cv == train[,label] & prediccion_knn_cv == TRUE) / sum(prediccion_knn_cv == TRUE)
+    f1score[i] = 2*precision[i]*recall[i]/(precision[i]+recall[i])
+  }
+  resultados_knn = as.data.frame(cbind(accuracy,f1score,precision,recall))
+  resultados_knn = resultados_knn %>% mutate(index=as.factor(seq(1:long)))
+  
+  max(resultados_knn$f1score)
+  which.max(resultados_knn$f1score)
+  
+  
+  p1 <- ggplot(data=resultados_knn,aes(x=index,y=accuracy)) + 
+    geom_col(colour="cyan4",fill="cyan3")+
+    ggtitle("Accuracy")
+  
+  
+  p2 <- ggplot(data=resultados_knn,aes(x=index,y=f1score)) + 
+    geom_col(colour="orange4",fill="orange3") +
+    ggtitle("F1_score values")
+  
+  plot_grid(p1, p2, rel_heights = c(1/2, 1/2))
+}

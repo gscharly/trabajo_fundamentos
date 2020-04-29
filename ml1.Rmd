@@ -56,7 +56,7 @@ palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A676
 ```
 
 
-# Aprendizaje no supervisado
+# Aprendizaje no supervisado: clustering
 
 ```{r}
 housesTrain <- read.csv('base_train.csv')
@@ -89,9 +89,9 @@ housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>%
 
 ## k-means
 
-Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible. Esto es lo mismo a buscar una divisióndonde una suma de cuadrados entre (betweens) sea suficientemente grande y, por tanto, una suma de cuadrados dentro lo suficientemente pequeña (withins).
+Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible. Esto es lo mismo a buscar una división donde una suma de cuadrados entre (betweens) sea suficientemente grande y, por tanto, una suma de cuadrados dentro lo suficientemente pequeña (withins).
 
-En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 2 hasta 15. Se obserba en ambas, que el punto donde se produce el cambio de tendencia es aproximadamente en el 3. Por esto se va a probar a realizar una clasificación en base a 3 grupos. 
+En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 2 hasta 15. Se observa en ambas, que el punto donde se produce el cambio de tendencia es aproximadamente en el 3. Por esto se va a probar a realizar una clasificación en base a 3 grupos. 
 
 ```{r kmeansKoptimo1}
 set.seed(123)
@@ -112,10 +112,10 @@ clusters3=kmeans(housesTrainCluster,centers=3,nstart=25)
 clusters3
 ```
 
-Observando esl ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es inferior al 50%. 
+Observando el ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es inferior al 50%. 
 
 
-###PCA + visualización
+### PCA + visualización
 
 ```{r}
 pca_var <- housesTrainCluster %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
@@ -126,13 +126,13 @@ df_houses_pca <- data.frame(housesPCA$x[,1:2])
 df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
 ```
 
-##Hierarchical
+## Hierarchical
 
 Se aplicará un cluster aglomerativo y se emplearán diferentes métodos de medida de la distancia entre clusters. 
 
 ```{r hierarchical}
 mat_dist <- dist(housesTrainCluster, method = "euclidean")
-hc1 <- hclust(d, method = "single" )
+hc1 <- hclust(mat_dist, method = "single" )
 den = as.dendrogram(hc1)
 plot(den)
 ```
@@ -157,7 +157,7 @@ A la vista de los resultados, el método que mejor refleja las distancias reales
 
 ## DBSCAN
 
-Los métodos de clusterin empleados anteriormenete, son buenos encontrando agrupaciones con forma esférica y sensibles a outliers,k-means, pero fallan al tratar de identificar formas arbitrarias que es lo que tenemos en este caso.
+Los métodos de clustering empleados anteriormenete, son buenos encontrando agrupaciones con forma esférica y sensibles a outliers, pero fallan al tratar de identificar formas arbitrarias que es lo que tenemos en este caso.
 
 DBSCAN evita este problema siguiendo la idea de que, para que una observación forme parte de un cluster, tiene que haber un mínimo de observaciones vecinas dentro de un radio de proximidad y de que los clusters están separados por regiones vacías o con pocas observaciones.
 
@@ -170,7 +170,8 @@ dbscan::kNNdistplot(datos, k = 5)
 La curva tiene el punto de inflexión en torno a 0.8, por lo que se escoge este valor como epsilon para DBSCAN.
 
 ```{r dbscan}
-dbscan_cluster <- fpc::dbscan(data = datos, eps = 0.8, MinPts = 50)
+set.seed(10)
+dbscan_cluster <- fpc::dbscan(data = datos, eps = 0.5, MinPts = 70)
 head(dbscan_cluster$cluster)
 
 # Visualización de los clusters
@@ -795,19 +796,8 @@ PARA HACER: intentar probar otras distancias
 housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
 # Para que funcione confusionMatrix de caret, el target debe ser un factor
-housesTrain$price_label <- as.factor(housesTrain$price_label)
 housesTrain$price_label_high <- as.factor(housesTrain$price_label_high)
-housesTest$price_label <- as.factor(housesTest$price_label)
 housesTest$price_label_high <- as.factor(housesTest$price_label_high)
-```
-
-```{r knn_functions}
-perform_knn <- function(train, test, label, k, cols) {
-  predictions <- knn(train[,cols], test[,cols], k=k, cl=train[,label])
-  test_metrics <- metrics_function(predictions, test, label, bool=TRUE)
-  return(test_metrics)
-  
-}
 ```
 
 
@@ -817,91 +807,116 @@ metrics <- perform_knn(housesTrain, housesTest, 'price_label_high', 1, num_std_c
 metrics
 ```
 
-## k óptimo
-ESTO HABRIA QUE HACERLO SOBRE VALIDACIÓN NO?
-Para price_label:
-
-```{r}
-plot_acc_f1_k <- function(train, label, cols){
-  long = 15
-  accuracy = rep(0,long)
-  f1score = rep(0,long)
-  recall = rep(0,long)
-  precision = rep(0,long)
-  for (i in 1:long)
-  {
-    prediccion_knn_cv =knn.cv(train[,cols], 
-                              k=i, cl=train[,label])
-    accuracy[i] = sum(prediccion_knn_cv == train[,label]) /nrow(train)
-    recall[i] = sum(prediccion_knn_cv == train[,label] & train[,label] == TRUE) / sum(train[,label] == TRUE)
-    precision[i] = sum(prediccion_knn_cv == train[,label] & prediccion_knn_cv == TRUE) / sum(prediccion_knn_cv == TRUE)
-    f1score[i] = 2*precision[i]*recall[i]/(precision[i]+recall[i])
-  }
-  resultados_knn = as.data.frame(cbind(accuracy,f1score,precision,recall))
-  resultados_knn = resultados_knn %>% mutate(index=as.factor(seq(1:long)))
-  
-  max(resultados_knn$f1score)
-  which.max(resultados_knn$f1score)
-  
-  
-  p1 <- ggplot(data=resultados_knn,aes(x=index,y=accuracy)) + 
-    geom_col(colour="cyan4",fill="cyan3")+
-    ggtitle("Accuracy")
-  
-  
-  p2 <- ggplot(data=resultados_knn,aes(x=index,y=f1score)) + 
-    geom_col(colour="orange4",fill="orange3") +
-    ggtitle("F1_score values")
-  
-  plot_grid(p1, p2, rel_heights = c(1/2, 1/2))
-  }
-
-plot_acc_f1_k(housesTrain, 'price_label', num_std_cols)
-```
-Para k=5 obtenemos un accuracy y un f1 score entre 0.75 y 0.8. Se observa que a medida que k va aumentando, las métricas no incrementan.
-
-HABRIA QUE SACAR F1
-```{r knn5}
-# En train
-prediccion_knn5_train =knn.cv(housesTrain[,num_std_cols], 
-                              k=5, cl=housesTrain$price_label)
-metrics_function(prediccion_knn5_train, housesTrain, 'price_label')
-
-#En test
-prediccion_knn5_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
-                         k=5, cl=housesTrain$price_label)
-metrics_function(prediccion_knn5_test, housesTest, 'price_label')
-```
-
-
-Para price_label_high, vemos de nuevo que el f1-score es menor. Los mejores valores de k podrían ser 5 o 7.
+### k óptimo
+Se muestra en la gráfica los distintos valores de accuracy y F1 que se obtendrían cambiando los valores de k. Se observa que el f1 score es bastante bajo, dejando de mejorar a partir de k=5 o k=7. El accuracy no pasa de 0.8 a partir de k=3.
 
 ```{r}
 plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
 ```
+
+DUDA: CURVA ROC EN KNN? PROBABILIDADES?
 ```{r knn7high}
 # En train
-prediccion_knn7_train =knn.cv(housesTrain[,num_std_cols], 
+prediccion_knn7_train = knn.cv(housesTrain[,num_std_cols], 
                               k=7, cl=housesTrain$price_label_high)
-metrics_function(prediccion_knn7_train, housesTrain, 'price_label_high')
+metrics_function(prediccion_knn7_train, housesTrain, 'price_label_high', bool=TRUE)
 
 #En test
 prediccion_knn7_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
                          k=7, cl=housesTrain$price_label_high)
 
-metrics_function(prediccion_knn7_test, housesTest, 'price_label_high')
+metrics_function(prediccion_knn7_test, housesTest, 'price_label_high', bool=TRUE)
+```
+
+### Usando otras variables
+Hasta ahora, se han utilizado las 4 variables numéricas que teníamos identificadas. El resto de variables son categóricas, pero algunas además son ordinales, por lo que tendría sentido aplicar distancias utilizando también esas variables.
+
+Además, se puede probar a crear otras variables adicionales como combinaciones de ordinales y numéricas. Por ejemplo, habitaciones por unidad de parcela.
+
+```{r}
+housesTrain <- housesTrain %>% mutate(room_land = Rooms/LandsizeImp*1000)
+housesTrain %>% filter(room_land<1000) %>% ggplot(aes(y=room_land)) + geom_boxplot()
+```
+
+
+```{r}
+housesTrainKnn <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+
+
+#las variables categóricas pasan a ser factores ordenados
+housesTrainKnn['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric()
+
+housesTrainKnn['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+
+housesTrainKnn['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric()
+
+housesTrainKnn['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric()
+
+housesTrainKnn['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric()
+
+# Norm
+normParam <- preProcess(housesTrainKnn)
+housesTrainKnnNorm <- predict(normParam, housesTrainKnn)
+
+housesTrainKnnNorm$price_label_high <- as.factor(housesTrain$price_label_high)
+```
+
+Observamos que con estas variables conseguimos incrementar tanto el accuracy como el f1 score, y que además a partir de k=3 se mantendrian constantes.
+
+```{r}
+std_cols <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std', 'rooms_cat', 'car_cat', 'bath_cat', 'bed_cat', 'sell_rate_cat')
+plot_acc_f1_k(housesTrainKnn, 'price_label_high', std_cols)
+```
+
+
+```{r}
+housesTestKnn <- housesTest %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTestKnn['rooms_cat']<- housesTest %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric()
+
+housesTestKnn['car_cat'] <- housesTest %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
+
+housesTestKnn['bath_cat'] <-housesTest %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric()
+
+housesTestKnn['bed_cat'] <-housesTest %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() 
+
+housesTestKnn['sell_rate_cat'] <-housesTest %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() 
+
+# Se utiliza el std de train
+housesTestKnnNorm <- predict(normParam, housesTestKnn)
+housesTestKnnNorm$price_label_high <- as.factor(housesTest$price_label_high)
+```
+
+```{r}
+#En test
+knn_test=knn(housesTrainKnnNorm[,std_cols], housesTestKnnNorm[,std_cols],
+                         k=3, cl=housesTrain$price_label_high)
+
+metrics_function(knn_test, housesTestKnnNorm, 'price_label_high', bool=TRUE)
 ```
 
 
 
-# Naive Bayes
+
+## Naive Bayes
 Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando Naive Bayes.
 
 ```{r}
 housesTrain <- read.csv('base_train.csv')
 ```
 
-## Primer modelo
+### Primer modelo
 
 Como primera aproximación, utilizaremos las mismas variables utilizadas en el modelo de regresión lineal múltiple (aunque el escalado debería ser indiferente). Para variables numéricas asume una distribución gausiana para calcular la verosimilitud (likelihood). Lo que saca el mod es la media en la primera columna y la varianza en la segunda para las distribuciones condicionadas.
 
