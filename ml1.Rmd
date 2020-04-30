@@ -1326,20 +1326,6 @@ df_preds <- pred_type_distribution(predictions, th, 'price_label_high')
 
 # Evaluación
 
-1. Regresión logística
-accuracy      recall specificity   precision          f1 
-  0.8644567   0.7751479   0.8940657   0.7081081   0.7401130
-
-2. Árbol de decisión 
-accuracy       error sensitivity specificity   precision         npv          f1 
-  0.8633517   0.1366483   0.6420118   0.9367337   0.7708703   0.8875465   0.7005650 
-  
-3. Random forest (no se me ejecuta)
-
-4. KNN
-   accuracy       error sensitivity specificity   precision         npv          f1 
-  0.8666667   0.1333333   0.7352071   0.9102501   0.7308824   0.9120393   0.7330383 
-  
 ```{r}
 dfMetricas <- data.frame(
   Modelos = c('Regresión logística', 'Árbol de decisión', 'Random forest', 'KNN'),
