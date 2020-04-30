@@ -44,6 +44,9 @@ library(party)
 library(ROCR)
 library(tidymodels)
 library(workflows)
+library(knitr)
+library(kableExtra)
+
 
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
@@ -103,6 +106,7 @@ plot(1:15, bss, type="b", xlab="Number of Clusters",ylab="Sum of squares between
 ```
 
 ```{r kmeansKoptimo2}
+n = nrow(housesTrain)
 SSW <- vector(mode = "numeric", length = 15)
 SSW[1] <- (n - 1) * sum(apply(X = housesTrainCluster, MARGIN = 2, FUN = 'var'))
 for (i in 1:15) SSW[i] <- sum(kmeans(housesTrainCluster,centers=i,nstart=25)$withinss)
@@ -169,7 +173,7 @@ datos = housesTrainCluster
 dbscan::kNNdistplot(datos, k = 5)
 ```
 
-La curva tiene el punto de inflexión en torno a 0.8, por lo que se escoge este valor como epsilon para DBSCAN.
+La curva tiene el punto de inflexión en torno a 0.5, por lo que se escoge este valor como epsilon para DBSCAN.
 
 ```{r dbscan}
 set.seed(10)
@@ -183,14 +187,8 @@ housesPCA <- prcomp(pca_var, center = TRUE)
 summary(housesPCA)
 cluster_group <- dbscan_cluster$cluster %>%  as.factor()
 df_houses_pca <- data.frame(housesPCA$x[,1:2])
-df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34) + labs(title='PCA: DBSCAN clusters')
 
-
-#fviz_cluster(object = dbscan_cluster, data = datos, stand = FALSE,
-#             geom = "point", ellipse = FALSE, show.clust.cent = FALSE,
-#             pallete = "palette34") +
-#  theme_bw() +
-#  theme(legend.position = "bottom")
 ```
 
 
@@ -210,6 +208,10 @@ housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitu
 housesPCA <- prcomp(housesNum)
 summary(housesPCA)
 ```
+```{r}
+fviz_screeplot(housesPCA, ncp = 4, barfill = palette34[6], barcolor = palette34[6], linecolor = palette34[1], addlabels = TRUE, hjust = 0)
+```
+
 
 
 ```{r}
@@ -226,8 +228,8 @@ Si pintamos la región, se pueden diferenciar fácilemente, ya que se han utiliz
 
 
 ```{r}
-train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point() + labs(title='PCA: price label')
-train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=Regionname)) + geom_point() + labs(title='PCA: Regionname')
+train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point() + labs(title='PCA: price label') + scale_color_manual(values = palette34)
+train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=Regionname)) + geom_point() + labs(title='PCA: Regionname') + scale_color_manual(values = palette34)
 ```
 
 
@@ -250,8 +252,8 @@ fit <- cmdscale(d,eig=TRUE, k=2)
 ```{r}
 df_fit <- data.frame(fit$points)
 df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high')
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname')
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high') + scale_color_manual(values = palette34)
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname') + scale_color_manual(values = palette34)
 ```
 Se prueba también la distancia de manhattan
 
@@ -266,8 +268,8 @@ fit <- cmdscale(d,eig=TRUE, k=2)
 df_fit <- data.frame(fit$points)
 # No estoy seguro de hacer el join bien, se supone que es por indice
 df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high')
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname')
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high') + scale_color_manual(values = palette34)
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname') + scale_color_manual(values = palette34)
 ```
 
 ## tSNE
@@ -286,19 +288,19 @@ df_tsne <- data.frame(tsne$Y)
 df_train_no_dup <- housesTrain[!duplicated(housesTrain[c("sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std")]),]
 df_train_no_dup$X1 <- df_tsne$X1
 df_train_no_dup$X2 <- df_tsne$X2
-df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='tSNE: price_label_high')
-df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=sell_rate_cat)) + geom_point() + labs(title='tSNE: sell_rate_cat')
-df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='tSNE: Regionname')
-df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Type)) + geom_point() + labs(title='tSNE: Type')
+df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='tSNE: price_label_high') + scale_color_manual(values = palette34)
+df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=sell_rate_cat)) + geom_point() + labs(title='tSNE: sell_rate_cat') + scale_color_manual(values = palette34)
+df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='tSNE: Regionname') + scale_color_manual(values = palette34)
+df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Type)) + geom_point() + labs(title='tSNE: Type') + scale_color_manual(values = palette34)
 
 ```
 
 
 Mapa de Melbourne :) (lo podemos poner el algún sitio)
 ```{r}
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=price_label_high)) + geom_point()
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Regionname)) + geom_point()
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Type)) + geom_point()
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=price_label_high)) + geom_point() + scale_color_manual(values = palette34)
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Regionname)) + geom_point() + scale_color_manual(values = palette34)
+housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Type)) + geom_point()+ scale_color_manual(values = palette34)
 ```
 
 # Aprendizaje supervisado
@@ -342,11 +344,10 @@ print(c(f1_opt= f1_measure_lr_opt, precision = prec_lr_opt, recall = rec_lr_opt,
 ```{r,message=F}
 preds_train <- as.factor(ifelse(prob_values > threshold_optimo_lr ,1,0))
 cm <- caret::confusionMatrix(preds_train, train$price_label_high, positive = '1')
-cm_plot <- ggplotConfusionMatrix(cm)
+cm_plot <- ggplotConfusionMatrix(cm) + scale_fill_gradient2(low = "#132B43", high = "#56B1F7")
 
 roc_gaussian <- roc(train$price_label_high,prob_values)
 roc_plot <- ggplotROCCurve(roc_gaussian)
-
 
 grid.arrange(roc_plot, cm_plot, ncol=2)
 ```
@@ -403,10 +404,10 @@ Vemos que, al eliminar ciertas variables que simplemente estaban introduciendo i
 
 probs_labels <- data.frame("probs" = prob_values, "labels" = train$price_label_high)
 
-probs_labels %>% ggplot(aes(x=probs, color=labels)) +
-  geom_density() + geom_vline(aes(xintercept=threshold_optimo_lr),
-            color="blue", linetype="dashed")
+probs_labels %>% ggplot(aes(x=probs, fill= labels)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34)
 
+probs_labels %>% ggplot(aes(x=probs, color=labels)) + geom_density() + geom_vline(aes(xintercept=threshold_optimo_lr),
+            color=palette34[8], linetype="dashed") + scale_color_manual(values = palette34)
 
 ```
 
@@ -421,9 +422,9 @@ test$price_label_high <- as.factor(ifelse(test$price_label_high==TRUE,1,0))
 
 x_test <- test[,13]
 prob_values_test <- lr_regularized %>% predict(test[,1:13], type = "response")
-preds_test <- as.factor(ifelse(prob_values_test > threshold_optimo_lr ,1,0))
+preds_test_rl <- as.factor(ifelse(prob_values_test > threshold_optimo_lr ,1,0))
 
-metrics_function_num(preds_test, test, 'price_label_high')
+metrics_function_num(preds_test_rl, test, 'price_label_high')
 ```
 
 
@@ -449,11 +450,9 @@ Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer
 ### Utilizando las variables estudiadas
 Se utilizarán directamente las variables estudiadas en el análisis exploratorio, dejando de lado transformaciones y estandarizaciones, además de variables categóricas con muchas categorías. Además, si recordamos, para la regresión lineal tuvimos que convertir varias features numéricas en categóricas (número de habitaciones, año de construcción...). Podemos probar a introducir las variables originales para ver qué cortes propone el árbol.
 
-
 ```{r load_variables_high}
-housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
-                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
-                                     "price_label_high")]
+housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+"price_label_high")]
 n = dim(housesTrainOrigVar)[1]
 # Hay que factorizar el label para que se construya bien el árbol
 housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
@@ -616,8 +615,8 @@ ggplotROCCurve(roc)
 
 ```{r}
 predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=rf2$votes[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34)
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34)
 ```
 
 Tomando como referencia las métricas, y que las variables importantes son bastante lógicas, este modelo arroja resultados muy válidos. Además, se podría utilizar como una primera parte en una etapa de ensamblado de modelos: se podría utilizar un Random Forest muy sobre ajustado (aumentando el número máximo de nodos terminales por ejemplo) para seleccionar las variables más importantes, que después se utilizarían como variables en otro modelo.
@@ -638,7 +637,7 @@ var_importance$variable <- factor(var_importance$variable, levels=var_importance
 p <- ggplot(var_importance, aes(x=variable, weight=importance, fill=variable))
 p <- p + geom_bar() + ggtitle("Importancia de variables")
 p <- p + xlab("Features") + ylab("Decrecimiento medio índice Gini")
-p <- p + scale_fill_discrete(name="Variable")
+p <- p+ scale_fill_manual(values = palette34, name = "Variable")
 p + theme(axis.text.x=element_blank(),
           axis.text.y=element_text(size=12),
           axis.title=element_text(size=16),
@@ -676,7 +675,7 @@ var_importance$variable <- factor(var_importance$variable, levels=var_importance
 p <- ggplot(var_importance, aes(x=variable, weight=importance, fill=variable))
 p <- p + geom_bar() + ggtitle("Importancia de variables")
 p <- p + xlab("Features") + ylab("Decrecimiento medio índice Gini")
-p <- p + scale_fill_discrete(name="Variable")
+p <- p + scale_fill_manual(values = palette34, name="Variable")
 p + theme(axis.text.x=element_blank(),
           axis.text.y=element_text(size=12),
           axis.title=element_text(size=16),
@@ -688,7 +687,6 @@ p + theme(axis.text.x=element_blank(),
 
 ## Utilizando cross validation
 Como primera prueba, y teniendo en cuenta que las variables importantes el modelo son bastante lógicas, los resultados de este modelo son bastante buenos. Ahora se va a intentar tunear el número de árboles y la profundidad máxima de los mismos con grid search y CV, para intentar obtener unos mejores resultados.
-
 
 - Número de árboles
 - Número de variables que se muestrean aleatoriamente al crear los árboles
@@ -784,8 +782,6 @@ predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=hou
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
 predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
 ```
-
-
 
 
 
@@ -960,7 +956,7 @@ housesNum <- train %>% select(sqrt_distance_std, log_landsize_std, lattitude_std
 housesPCA <- prcomp(housesNum, center = TRUE, scale = TRUE)
 df_houses_pca <- data.frame(housesPCA$x[,1:2])
 df_houses_pca$price_label <- train$price_label_high
-df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=price_label)) + geom_point()
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=price_label)) + geom_point() + scale_color_manual(values = palette34)
 ```
 
 Con esta represntación podemos ver que claramente nuestros datos no son linearmente separables si los reducimos a dos dimensiones. Aun así, no se va a descartar la realización de pruebas utilizando un kernel lineal, ya que como se ha dicho nuestros datos no están en dos, sino en 9 dimensiones. 
@@ -1326,6 +1322,30 @@ df_preds <- pred_type_distribution(predictions, th, 'price_label_high')
     geom_hline(yintercept=th, color="red", alpha=0.6) +
     scale_color_discrete(name = "type") +
     labs(title=sprintf("Threshold at %.2f", th))
+```
+
+# Evaluación
+
+1. Regresión logística
+accuracy      recall specificity   precision          f1 
+  0.8644567   0.7751479   0.8940657   0.7081081   0.7401130
+
+2. Árbol de decisión 
+accuracy       error sensitivity specificity   precision         npv          f1 
+  0.8633517   0.1366483   0.6420118   0.9367337   0.7708703   0.8875465   0.7005650 
+  
+3. Random forest (no se me ejecuta)
+
+4. KNN
+   accuracy       error sensitivity specificity   precision         npv          f1 
+  0.8666667   0.1333333   0.7352071   0.9102501   0.7308824   0.9120393   0.7330383 
+  
+```{r}
+dfMetricas <- data.frame(
+  Modelos = c('Regresión logística', 'Árbol de decisión', 'Random forest', 'KNN'),
+  F1 = c('0.7401130', '0.7005650', 'x', '0.7330383'))
+
+dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center')
 ```
 
 
