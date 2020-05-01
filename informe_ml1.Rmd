@@ -465,6 +465,13 @@ housesTrain %>% ggplot() + geom_bar(aes(x=Regionname, fill=price_label_high), po
     scale_fill_manual(values=palette34)
 ```
 
+Test Chi cuadrado para establecer independencia entre dos variables.
+H0: variables independientes
+H1: variables no son independientes
+
+```{r}
+chisq.test(housesTrain$Regionname, housesTrain$price_label_high)
+```
 
 __Type__
 
@@ -492,6 +499,11 @@ housesTrain %>% ggplot() + geom_bar(aes(x=Type, fill=price_label_high)) + theme(
 housesTrain %>% ggplot() + geom_bar(aes(x=Type, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
     scale_fill_manual(values=palette34)
 ```
+
+```{r}
+chisq.test(housesTrain$Type, housesTrain$price_label_high)
+```
+
 
 __Method__
 
@@ -522,6 +534,10 @@ housesTrain %>% ggplot() + geom_bar(aes(x=Method, fill=price_label_high), positi
     scale_fill_manual(values=palette34)
 ```
 
+```{r}
+chisq.test(housesTrain$Method, housesTrain$price_label_high)
+```
+
 
 __CouncilArea__
 
@@ -540,6 +556,11 @@ housesTrain %>% ggplot() + geom_bar(aes(x=CouncilArea, fill=price_label_high)) +
     scale_fill_manual(values=palette34)
 housesTrain %>% ggplot() + geom_bar(aes(x=CouncilArea, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
     scale_fill_manual(values=palette34)
+```
+
+```{r}
+# Muchas categorías
+chisq.test(housesTrain$CouncilArea, housesTrain$price_label_high)
 ```
 
 
@@ -625,11 +646,11 @@ Esta información puede ser completada con las distribuciones de las variables:
 
 ```{r message=FALSE}
 
-numeric_cols <- c("Rooms", "sqrt_distance", "Bedroom2", "Bathroom", "Car", "price_label")
+numeric_cols <- c("Rooms", "sqrt_distance", "Bedroom2", "Bathroom", "Car", "price_label_high")
 
 p<-housesTrain %>% select(numeric_cols) %>%
   na.omit() %>%
-  ggpairs(columns=1:6, ggplot2::aes(colour=price_label))
+  ggpairs(columns=1:6, ggplot2::aes(colour=price_label_high))
 
 for(i in 1:p$nrow) {
   for(j in 1:p$ncol){
@@ -641,11 +662,11 @@ for(i in 1:p$nrow) {
 
 p
 
-numeric_cols2 <- c("Landsize", "BuildingArea", "YearBuilt", 'Lattitude', 'Longtitude', "price_label")
+numeric_cols2 <- c("Landsize", "BuildingArea", "YearBuilt", 'Lattitude', 'Longtitude', "price_label_high")
 
 p<-housesTrain %>% select(numeric_cols2) %>%
   na.omit() %>%
-  ggpairs(columns=1:6, ggplot2::aes(colour=price_label))
+  ggpairs(columns=1:6, ggplot2::aes(colour=price_label_high))
 
 for(i in 1:p$nrow) {
   for(j in 1:p$ncol){
@@ -736,7 +757,10 @@ housesTrain %>% mutate(rooms_cat = cut(housesTrain$Rooms, breaks = c(1,3,4,10), 
     scale_fill_manual(values=palette34)
 ```
 
-
+```{r}
+housesTrain$rooms_cat <- cut(housesTrain$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
+chisq.test(housesTrain$rooms_cat, housesTrain$price_label_high)
+```
 
 __Bathrooms__
 
@@ -802,6 +826,10 @@ housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2))  %>%
     scale_fill_manual(values=palette34)
 ```
 
+```{r}
+housesTrain <- housesTrain %>% mutate(bath_cat = cut2(housesTrain$Bathroom, g=2))
+chisq.test(housesTrain$bath_cat, housesTrain$price_label_high)
+```
 
 __Bedroom2__
 
@@ -880,6 +908,13 @@ housesTrain %>%
     scale_fill_manual(values=palette34)
 ```
 
+
+
+```{r}
+housesTrain$bed_cat <- factor(cut2(housesTrain$Bedroom2, g=2), labels=c("Pocos_dormitorios", "Muchos_dormitorios"))
+chisq.test(housesTrain$bed_cat, housesTrain$price_label_high)
+```
+
 __Car__
 
 Los valores de *Car* se concentran en 1 o 2 por lo que, al igual que las anteriores, es firme candidata a discretización.
@@ -930,15 +965,23 @@ housesTrain %>%
 housesTrain %>% 
   na.omit() %>%
   mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
-  ggplot() + geom_bar(aes(x=car_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggplot() + geom_bar(aes(x=car_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
     scale_fill_manual(values=palette34)
 
 housesTrain %>% 
   na.omit() %>%
   mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE)) %>%
-  ggplot() + geom_bar(aes(x=car_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggplot() + geom_bar(aes(x=car_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
     scale_fill_manual(values=palette34)
 
+```
+
+
+```{r}
+housesTrain <- housesTrain %>% 
+  na.omit() %>%
+  mutate(car_cat = cut(Car, breaks = c(0,2,20), labels = c("Hasta 1", "Más de 2"), include.lowest = TRUE, right = FALSE))
+chisq.test(housesTrain$car_cat, housesTrain$price_label_high)
 ```
 
 __Distance__
@@ -977,6 +1020,13 @@ for(i in 1:p$nrow) {
 }
 
 p
+```
+One way anova test: permite ver si hay diferencias entre la media de una variable numérica en los distintos grupos de una categórica
+H0: no hay diferencia en la media de los grupos
+H1: al menos la media de un grupo es diferente
+
+```{r}
+summary(aov(price_label_high~sqrt_distance, data=housesTrain))
 ```
 
 
@@ -1019,6 +1069,11 @@ for(i in 1:p$nrow) {
 p
 ```
 
+```{r}
+summary(aov(price_label_high~Lattitude, data=housesTrain))
+summary(aov(price_label_high~Longtitude, data=housesTrain))
+```
+
 __Sell date__
 
 Lo primero que hacemos con esta variable será extraer el año, ya que viene en formato dd/MM/yyyy, y probablemente el año nos proporcione más información acerca del precio de venta de la casa.
@@ -1042,6 +1097,11 @@ housesTrain %>%
   ggplot() + geom_bar(aes(x=sellYear, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
     scale_fill_manual(values=palette34)
 ```
+
+```{r}
+chisq.test(housesTrain$sellYear, housesTrain$price_label_high)
+```
+
 
 __PropertyCount__
 
@@ -1078,6 +1138,12 @@ housesTrain %>% mutate(property_count_cat = cut2(sell_rate_suburb, g=2)) %>%  gg
 ```
 
 Tampoco parece que el hecho de que el barrio sea más "popular" (en cuanto a número de viviendas vendidas) sea influyente para el precio de venta de las mismas.
+
+```{r}
+housesTrain$sell_rate_cat <- factor(cut2(housesTrain$sell_rate_suburb, g=2), labels=c("Menos_populares", "Más_populares"))
+chisq.test(housesTrain$sell_rate_cat, housesTrain$price_label_high)
+```
+
 
 <br>
 
