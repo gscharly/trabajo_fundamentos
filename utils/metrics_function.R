@@ -123,3 +123,17 @@ plot_acc_f1_k <- function(train, label, cols){
   
   plot_grid(p1, p2, rel_heights = c(1/2, 1/2))
 }
+
+dt_metrics <- function(df, features, label){
+  df_f <- df[c(features, label)]
+  # Hay que factorizar el label para que se construya bien el árbol
+  df_f[,label] <- as.factor(df[,label])
+  dt_form <- as.formula(paste(paste(label), " ~ ", paste(features, collapse = " + "), sep = ""))
+  dt = rpart(dt_form, data = df_f)
+  rpart.plot(dt, type=4, fallen.leaves = FALSE, tweak =1.75)
+  preds <- predict(dt, type = "class")
+  table(pred = preds, obs = df[,label])
+  metrics <- metrics_function(preds, df_f, 'price_label_high', bool=TRUE)
+  return(metrics)
+}
+
