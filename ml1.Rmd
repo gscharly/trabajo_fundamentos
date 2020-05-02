@@ -51,6 +51,7 @@ source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
 source('utils/plot_roc.R')
 source('utils/metrics_function.R')
+source('utils/plot_utils.R')
 set.seed(10)
 ```
 
@@ -92,12 +93,9 @@ __Regionname__
 Representamos el número de casas baratas/cara en cada región, tanto en valor absoluto como porcentual. Se puede observar que el barrio con mayor número de casas caras es Southern Metropolitan, mientras que Eastern Metropolitan tiene mayor porcentaje de casas caras.
 
 ```{r}
-p1 <- housesTrain %>% ggplot() + geom_bar(aes(x=Regionname, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% ggplot() + geom_bar(aes(x=Regionname, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+bar_plot_target(housesTrain, "Regionname", "price_label_high")
 ```
+
 
 Se rechaza la hipótesis de independencia:
 ```{r}
@@ -114,12 +112,8 @@ Recordemos los distintos tipos de casas que hay:
 
 Se puede observar que al mayoría de casas caras se engloban en el tipo h.
 
-```{r TypePrice}
-p1 <- housesTrain %>% ggplot() + geom_bar(aes(x=Type, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% ggplot() + geom_bar(aes(x=Type, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+```{r}
+bar_plot_target(housesTrain, "Type", "price_label_high")
 ```
 
 Se rechaza la hipótesis de independencia:
@@ -140,12 +134,8 @@ Los métodos de venta son los siguientes:
 
 Porcentualmente, parece que hay más casas caras vendidas con el método VB.
 
-```{r MethodPrice}
-p1 <- housesTrain %>% ggplot() + geom_bar(aes(x=Method, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% ggplot() + geom_bar(aes(x=Method, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+```{r}
+bar_plot_target(housesTrain, "Method", "price_label_high")
 ```
 
 Se rechaza la hipótesis de independencia:
@@ -173,10 +163,7 @@ Parece que hay mas casas caras porcentualmente en aquellas zonas con posibles vi
 water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
 housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
 
-housesTrain %>% ggplot() + geom_bar(aes(x=may_have_water, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-housesTrain %>% ggplot() + geom_bar(aes(x=may_have_water, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
+bar_plot_target(housesTrain, "may_have_water", "price_label_high")
 ```
 
 Se rechaza la hipótesis de independencia:
@@ -189,11 +176,7 @@ __rooms_cat__
 Como es lógico, aquellas casas con más habitaciones son más caras.
 
 ```{r}
-p1 <- housesTrain %>% ggplot() + geom_bar(aes(x=rooms_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% ggplot() + geom_bar(aes(x=rooms_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+bar_plot_target(housesTrain, "rooms_cat", "price_label_high")
 ```
 
 Se rechaza la hipótesis de independencia:
@@ -206,11 +189,7 @@ __bath_cat__
 Exactamente lo mismo que con el número de habitaciones.
 
 ```{r}
-p1 <- housesTrain %>% ggplot() + geom_bar(aes(x=bath_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% ggplot() + geom_bar(aes(x=bath_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+bar_plot_target(housesTrain, "bath_cat", "price_label_high")
 ```
 
 Se rechaza la hipótesis de independencia:
@@ -222,12 +201,9 @@ __bed_cat__
 De nuevo, si tiene más dormitorios, la casa suele ser cara.
 
 ```{r}
-p1 <- housesTrain %>% ggplot() + geom_bar(aes(x=bed_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% ggplot() + geom_bar(aes(x=bed_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+bar_plot_target(housesTrain, "bed_cat", "price_label_high")
 ```
+
 
 Se rechaza la hipótesis de independencia:
 ```{r}
@@ -239,11 +215,7 @@ __car_cat__
 Mismas (y lógicas) conclusiones.
 
 ```{r}
-p1 <- housesTrain %>% ggplot() + geom_bar(aes(x=car_cat, fill=price_label_high)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% ggplot() + geom_bar(aes(x=car_cat, fill=price_label_high), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+bar_plot_target(housesTrain, "car_cat", "price_label_high")
 ```
 
 Se rechaza la hipótesis de independencia:
@@ -264,13 +236,7 @@ housesTrain$sellYear <-factor(housesTrain$sellYear, levels=c("2016", "2017"))
 Observamos que solo hay 2 años de venta, y que no tiene demasiada relación con el precio.
 
 ```{r SellYearPrice, message=FALSE}
-p1 <- housesTrain %>% 
-  ggplot() + geom_bar(aes(x=sellYear, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% 
-  ggplot() + geom_bar(aes(x=sellYear, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+bar_plot_target(housesTrain, "sellYear", "price_label_high")
 ```
 
 En este caso, no se puede rechazar la hipótesis nula.
@@ -282,13 +248,7 @@ __sell_rate_cat__
 Recordemos que esta variable indica si el barrio en el que está una casa tiene muchas casas vendidas. Parece que hay una ligera diferencia porcentualmente entre barrios populares y no populares en cuanto a casas caras.
 
 ```{r, message=FALSE}
-p1 <- housesTrain %>% 
-  ggplot() + geom_bar(aes(x=sell_rate_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% 
-  ggplot() + geom_bar(aes(x=sell_rate_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+bar_plot_target(housesTrain, "sell_rate_cat", "price_label_high")
 ```
 
 Se puede rechazar la hipótesis de independencia.
@@ -301,13 +261,7 @@ __year_built_cat__
 El problema con esta variable venía con que había muchas casas sin fecha de construcción informada. Sí que se puede intuir que hay más casas caras porcentualmente en la categoría de casas antiguas.
 
 ```{r, message=FALSE}
-p1 <- housesTrain %>% 
-  ggplot() + geom_bar(aes(x=year_built_cat, fill=price_label)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-p2 <- housesTrain %>% 
-  ggplot() + geom_bar(aes(x=year_built_cat, fill=price_label), position='fill') + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_fill_manual(values=palette34)
-ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE)
+bar_plot_target(housesTrain, "year_built_cat", "price_label_high")
 ```
 
 ```{r}
