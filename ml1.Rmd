@@ -761,139 +761,130 @@ Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer
 ### Utilizando las variables estudiadas
 Se utilizarán directamente las variables estudiadas en el análisis exploratorio, dejando de lado transformaciones y estandarizaciones, además de variables categóricas con muchas categorías. Además, si recordamos, para la regresión lineal tuvimos que convertir varias features numéricas en categóricas (número de habitaciones, año de construcción...). Podemos probar a introducir las variables originales para ver qué cortes propone el árbol.
 
-```{r load_variables_high}
-housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
-"price_label_high")]
-n = dim(housesTrainOrigVar)[1]
-# Hay que factorizar el label para que se construya bien el árbol
-housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
-```
 
-
-En los cortes se tiene en cuenta el número de habitaciones como corte principal (diferenciando entre casas pequeñas y grandes). El siguiente corte se realiza en base a la región (localización). Parece que la región por la que se discrimina es Southern Metropolitan. Si la casa es pequeña y está en cualquier región que no sea esa, se clasifica como barata la mayoría de las veces. 
+En los cortes se tiene en cuenta el número de habitaciones como corte principal (diferenciando entre casas pequeñas y grandes). El siguiente corte se realiza en base a la región (localización). Parece que la región por la que se discrimina es Southern Metropolitan (como se ha visto en el análisis, es la que más porcentaje de casas caras posee). Si la casa es pequeña y está en cualquier región que no sea esa, se clasifica como barata la mayoría de las veces. 
 
 Algo que también se puede ver es que hay varios nodos con pocas muestras (los que vienen de la distinción de tipo de casa es Southern Metropolitan). Vemos además que hay un bastantes falsos negativos (casas caras que se etiquetan como baratas).
 
-
-```{r tree2_price_label}
-housesTree2 = rpart(price_label_high ~ ., data = housesTrainOrigVar)
-rpart.plot(housesTree2, type=4, fallen.leaves = FALSE, tweak =1.75)
-rpart.rules(housesTree2, clip.facs = TRUE)
+```{r}
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat"),
+           "price_label_high")
+model_metrics$metrics
 ```
 
-```{r metricsTree2}
-preds <- predict(housesTree2, type = "class")
-table(pred = preds, obs = housesTrainOrigVar$price_label_high)
-metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
+```{r, message=FALSE}
+prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
 ```
+
+
+Observamos que el árbol solo discrimina por las variables *Rooms*, *Distance*, *Type*, *Regionname*. Si probamos un árbol con solo estas variables, obtenemos exactamente el mismo modelo:
+
+```{r}
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Distance", "Regionname", "Type"),"price_label_high")
+model_metrics$metrics
+```
+
+
+Al ver que el árbol se fija en la localización, se prueba a entrenar un modelo solo con el número de habitaciones y las coordenadas, que presumiblemente dan información más detallada, además del tipo de casa. Observamos que el f1 score mejora: por un lado, el recall ha aumentado (devolvemos más casas caras) pero el precision ha empeorado (más falsos positivos, el modelo dice que casas que no son caras lo son). Además, si comparamos ambas curvas ROC, vemos que este modelo tiene un AUC mejor (distingue mejor entre clases). 
+
+Por otro lado, el árbol, aunque ofrece mejores métricas, resulta ser menos interpretable, ya que la mayoría de los cortes se basa en valores numéricos de las coordenadas.
+
+```{r}
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
+model_metrics$metrics
+```
+
+```{r message=FALSE}
+prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
+```
+
+
+En ambos casos, se puede ver que hay muchos nodos con muy pocos casos (1%,2%...) que probablemente se puedan juntar en otro nodo sin perder poder predictivo. 
 
 ### Podando el árbol 
-Intentamos eliminar esas últimas hojas que hemos comentado. Prácticamente no habría diferencia entre tener 7 hojas u 8. Podemos probar a ver si con 4 hojas el error aumenta mucho.
+Intentamos eliminar esas últimas hojas que hemos comentado en el último modelo probado.
 
 ```{r}
-printcp(housesTree2)
+printcp(model_metrics$dt)
 ```
 ```{r}
-plotcp(housesTree2)
+plotcp(model_metrics$dt)
 ```
 
-Con 7 hojas, el error es prácticamente el mismo. Incluso mejora un poco el f1-score.
+Con 11 hojas, el error es prácticamente el mismo. Si bajamos al siguiente nivel de complejidad (5 hojas) las métricas del modelo empeoran mucho.
 
-```{r pruneTree2}
-pruneTREE2 = prune(housesTree2, cp = housesTree2$cptable[4,"CP"])
-rpart.plot(pruneTREE2, type=4, fallen.leaves = FALSE, tweak =1.75)
+
+```{r pruneTree2, warning=FALSE}
+pruneTREE <- rpart::prune(model_metrics$dt, cp = model_metrics$dt$cptable[5, "CP"])
+rpart.plot(pruneTREE, type=4, fallen.leaves = FALSE, tweak =1.75)
+preds <- predict(pruneTREE, type = "class")
+metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
 ```
 
-```{r metricsPruneTree2}
-preds <- predict(pruneTREE2, type = "class")
-table(pred = preds, obs = housesTrainOrigVar$price_label_high)
-metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
+
+Bajando la complejidad hasta quedarnos solo con 5 hojas, observamos que el accuracy es parecido, pero que el f1-score disminuye hasta 0.56 (con una precisión bastante aceptable). Por otro lado, el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja con las casas baratas (84% de las casas de este nodo son baratas), con el 75% de los datos. Las casas con más de 4 habitaciones en se distribuyen en función de las coordenadas.
+
+```{r warning=FALSE}
+pruneTREE <- rpart::prune(model_metrics$dt, cp = model_metrics$dt$cptable[4, "CP"])
+rpart.plot(pruneTREE, type=4, fallen.leaves = FALSE, tweak =1.75)
+preds <- predict(pruneTREE, type = "class")
+metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
 ```
+
+### Validación
+Utilizaremos las variables que mejor resultados nos han dado en una etapa de validación cruzada.
 
 ```{r}
-preds_prob <- predict(pruneTREE2, housesTrainOrigVar, type = "prob")
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
-cost_of_fp <-1
-cost_of_fn <- 1
-th <- 0.3
-roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=100)
-plot_roc(roc, th, cost_of_fp, cost_of_fn)
-```
-
-```{r}
-auc_roc <- auc(predictions$price_label_high, predictions$pred)
-auc_roc
-```
-
-
-Bajando la complejidad hasta quedarnos solo con 4 hojas, observamos que el error aumenta en un 4% (hasta el 17%) y que el f1-score disminuye hasta 0.55, pero el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja, con el 75% de los datos, y con una tasa de acierto aceptable (el 84% serían baratas). Las casas con más de 4 habitaciones en Southern Metropolitan (son solo el 9%) se clasifican como caras el 86% de las veces. La última división es en función de la distancia al centro, y ya falla más.
-
-```{r pruneTree3}
-pruneTREE3 = prune(housesTree2, cp = housesTree2$cptable[3,"CP"])
-rpart.plot(pruneTREE3, type=4, fallen.leaves = FALSE, tweak =1)
-```
-
-```{r metricsPruneTree3}
-preds <- predict(pruneTREE3, type = "class")
-table(pred = preds, obs = housesTrainOrigVar$price_label_high)
-metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
-```
-
-```{r}
-preds_prob <- predict(pruneTREE3, housesTrainOrigVar, type = "prob")
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
-auc_roc <- auc(predictions$price_label_high, predictions$pred)
-auc_roc
-```
-
-### Eliminando variables
-Hemos visto que en los árboles anteriores, las variables por las que se realizaban las divisiones eran *Rooms*, *Regionname*, *Distance*, *Type*. Previsiblemente, si solo introducimos estas variables, el resultado será el mismo, reduciendo operaciones al árbol.
-
-
-```{r}
-housesTrainImpVars <- housesTrain[c("Rooms", "Type", "Distance", "Regionname", "price_label_high")]
-n = dim(housesTrainImpVars)[1]
 # Hay que factorizar el label para que se construya bien el árbol
-housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
+housesTrainCV <- housesTrain %>% select(Rooms, Lattitude, Longtitude, Type)
+housesTrainCV$price_label_high <- as.factor(housesTrain$price_label_high)
+housesTrainCV$price_label_high <- as.factor(ifelse(housesTrainCV$price_label_high==TRUE,"caras","baratas"))
+
+fit_control <- caret::trainControl(method = "cv", number=10, summaryFunction = twoClassSummary, classProbs = TRUE)
+cv_model <- train(price_label_high ~ ., data=housesTrainCV, method='rpart', trControl=fit_control, tuneLength=10, metric='ROC')
+```
+```{r}
+cv_model
 ```
 
 ```{r}
-housesTree4 = rpart(price_label_high ~ ., data = housesTrainImpVars)
-pruneTREE4 = prune(housesTree4, cp = housesTree4$cptable[4,"CP"])
-preds <- predict(pruneTREE4, type = "class")
-table(pred = preds, obs = housesTrainImpVars$price_label_high)
-metrics_function(preds, housesTrainImpVars, 'price_label_high', bool=TRUE)
+plot(cv_model)
+plot(cv_model$results$ROCSD)
 ```
 
-
-## Test
-Observamos que no se produce sobreajuste, ya que las métricas en test son muy parecidas a train (utilizando el árbol entrenado con 4 variables)
+Fijándonos en la gráfica, quizás querramos sacrificar un poco de roc a costa de que nuestro árbol sea menos complejo. Viendo el resultado, es un árbol con muchos nodos, que quizás esté sobre ajustando.
 
 ```{r}
-housesTest <- read.csv('base_test.csv')
+final_dt <- cv_model$finalModel
+rpart.plot(final_dt)
 ```
 
 ```{r}
-preds <- predict(pruneTREE4, housesTest, type = "class")
-table(pred = preds, obs = housesTest$price_label_high)
-metrics_function(preds, housesTest, 'price_label_high', bool = TRUE)
+preds <- predict(final_dt, type = "class")
+preds<- as.factor(ifelse(preds=="caras",TRUE,FALSE))
+metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
 ```
-```{r}
-preds_prob <- predict(pruneTREE4, housesTest, type = "prob")
-predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=preds_prob[,2])
-cost_of_fp <-1
-cost_of_fn <- 1
-th <- 0.3
-roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=100)
-plot_roc(roc, th, cost_of_fp, cost_of_fn)
-```
-
 
 
 ```{r}
-auc_roc <- auc(predictions$price_label_high, predictions$pred)
-auc_roc
+prob_values <- predict(final_dt, type='prob')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
 ```
+
+```{r}
+opt_f1_obj <- opt_f1_function(prob_values, housesTrain, 'price_label_high')
+opt_f1_obj$p1
+opt_f1_obj$p2
+```
+
+
+
+
 
 ## Random Forest
 En este apartado se van a utilizar random forests para el problema de clasificación. Al no estar demasiado expuesto a los outliers, y aceptar variables categóricas como entrada, la primera prueba que se realizará será con la mayoría de variables del conjunto de datos, y con unos parámetros iniciales que después se modificarán en una etapa de selección de hiperparámetros.
