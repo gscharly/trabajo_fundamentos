@@ -75,9 +75,15 @@ dt_metrics <- function(df, features, label){
   return(list("dt"=dt,"metrics"= metrics))
 }
 
-opt_f1_function <- function(prob_values, df, label){
+opt_f1_function <- function(prob_values, df, label, x_lim=0.25){
   beta <- 1
-  pred_dt <- prediction(prob_values[,2], df[, label])
+  if (class(prob_values) == "matrix"){
+    pred_dt <- prediction(prob_values[,2], df[, label])
+  }
+  else {
+    pred_dt <- prediction(prob_values, df[, label])
+  }
+  
   perf_dt <- performance(pred_dt, "prec", "rec")
   
   f1_grid <- (1+beta^2)*perf_dt@y.values[[1]]*perf_dt@x.values[[1]]/(beta^2*perf_dt@y.values[[1]]+perf_dt@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
@@ -85,7 +91,7 @@ opt_f1_function <- function(prob_values, df, label){
   df_f1 <- data.frame(perf_dt@alpha.values, f1_grid, perf_dt@x.values, perf_dt@y.values)
   colnames(df_f1) <- c("th", "f1", "recall", "precision")
   df_f1 <- df_f1 %>% drop_na()
-  p1 <- df_f1 %>% ggplot(aes(x=precision, y=recall)) + geom_line() + xlim(0.25, 1) + labs(title='Precision vs recall') + xlab("Precision") + ylab("Recall")
+  p1 <- df_f1 %>% ggplot(aes(x=precision, y=recall)) + geom_line() + xlim(x_lim, 1) + labs(title='Precision vs recall') + xlab("Precision") + ylab("Recall")
   
   optimo <- which.max(f1_grid) # Mejor f1 score para este modelo
   prec_opt=perf_dt@y.values[[1]][optimo]

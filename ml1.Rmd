@@ -882,12 +882,20 @@ opt_f1_obj$p1
 opt_f1_obj$p2
 ```
 
-
-
+```{r}
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=prob_values[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
+```
 
 
 ## Random Forest
-En este apartado se van a utilizar random forests para el problema de clasificación. Al no estar demasiado expuesto a los outliers, y aceptar variables categóricas como entrada, la primera prueba que se realizará será con la mayoría de variables del conjunto de datos, y con unos parámetros iniciales que después se modificarán en una etapa de selección de hiperparámetros.
+
+### Selección de variables
+En este apartado se van a utilizar random forests para el problema de clasificación. Al no estar demasiado expuesto a los outliers, y aceptar variables categóricas como entrada, la primera prueba que se realizará será con la mayoría de variables del conjunto de datos, y con unos parámetros iniciales que después se modificarán en una etapa de selección de hiperparámetros. Se busca en esta primera prueba un modelo con muchos árboles, de tal forma que se pueda ver la importancia de las variables, y pueda servir de etapa previa de selección de las mismas. Aquí, hay que tener varias cosas en cuenta:
+
+- Si se introducen variables muy correladas, solo una tendrá mucha importancia, y el efecto de la otra quedará "enmascarado". Esto puede afectar a la interpretación de los datos.
+- Los random forest tienden a estar sesgados hacia variables categóricas con muchas categorías.
 
 ```{r}
 housesTrain <- read.csv('base_train.csv')
@@ -899,9 +907,10 @@ housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bath
                                     "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
                                      "price_label_high")]
 housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
-rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar, ntree=100)
+rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar, ntree=500)
 ```
 
+Observamos que ya de primeras se obtienen buenas métricas.
 
 ```{r}
 preds <- predict(rf2, type = "class")
@@ -915,15 +924,9 @@ roc <- roc(housesTrain$price_label_high, rf2$votes[,2])
 ggplotROCCurve(roc)
 ```
 
-```{r}
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=rf2$votes[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34)
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34)
-```
 
-Tomando como referencia las métricas, y que las variables importantes son bastante lógicas, este modelo arroja resultados muy válidos. Además, se podría utilizar como una primera parte en una etapa de ensamblado de modelos: se podría utilizar un Random Forest muy sobre ajustado (aumentando el número máximo de nodos terminales por ejemplo) para seleccionar las variables más importantes, que después se utilizarían como variables en otro modelo.
 
-### Selección de variables
+
 
 Si observamos la importancia de las variables del anterior (medida como la caída media en el índice gini que produce cada variable), vemos que las más importantes son aquellas relacionadas con la situación geográfica de la vivienda (cómo ya se había visto anteriormente): coordenadas, distancia al centro y región están en las 6 primeras posiciones, además de variables que informan sobre el tamaño de la vivienda (número de habitaciones y tamaño de la parcela). 
 
@@ -948,14 +951,14 @@ p + theme(axis.text.x=element_blank(),
           legend.text=element_text(size=12))
 ```
 
-Podemos probar si seleccionado las variables más imporantes y volviendo a entrenar un modelo con los mismos parámetros, obtenemos resultados parecidos.
+Podemos probar si seleccionado las variables más importantes y volviendo a entrenar un modelo con los mismos parámetros, obtenemos resultados parecidos.
 
-Si nos quedamos con las 6 primeras, el accuracy desciende ligeramente hasta 0.89, pero el f1 score baja hasta 0.77. Si se incluye la variable *Type* adicionalmente, se consiguen resultados muy parecidos a los del primer modelo, reduciendo la complejidad.
+Si nos quedamos con las 6 primeras, el accuracy desciende ligeramente hasta 0.89, pero el f1 score baja hasta 0.77. Si se incluye la variable *Type* adicionalmente, se consiguen resultados muy parecidos a los del primer modelo, reduciendo la complejidad. Si además quitamos la variable *Regionname*, por tener bastantes categorías, conseguimos un f1-score de 0.8.
 
 ```{r}
 set.seed(10)
 housesTrainImpVars <- housesTrain[c("Rooms", "Distance", "LandsizeImp",
-                                    "Lattitude", "Longtitude", "Regionname", "Type",
+                                    "Lattitude", "Longtitude", "Type",
                                      "price_label_high")]
 housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
 rf3 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=100)
@@ -988,7 +991,7 @@ p + theme(axis.text.x=element_blank(),
 
 
 ## Utilizando cross validation
-Como primera prueba, y teniendo en cuenta que las variables importantes el modelo son bastante lógicas, los resultados de este modelo son bastante buenos. Ahora se va a intentar tunear el número de árboles y la profundidad máxima de los mismos con grid search y CV, para intentar obtener unos mejores resultados.
+Como primera prueba, y teniendo en cuenta que las variables importantes el modelo son bastante lógicas, los resultados de este modelo son bastante buenos. Ahora se va a intentar tunear el número de árboles y la profundidad máxima de los mismos con grid search y CV, para intentar obtener unos mejores resultados, además de evaluar el modelo con conjuntos de validación. Los parámetros a tunear son:
 
 - Número de árboles
 - Número de variables que se muestrean aleatoriamente al crear los árboles
@@ -1003,21 +1006,11 @@ Se utilizan las variables que se han comentado en el apartado anterior.
 set.seed(10)
 rf_model <- rand_forest(trees=tune(), mtry=tune(), min_n=tune()) %>% set_mode('classification') %>% set_engine('randomForest')
 houses_rec <- recipe(price_label_high ~ ., data=housesTrainImpVars)
-#rf_model %>% parameters() %>% update(trees = trees(c(25,1000)), mtry=mtry(c(1,5)), min_n=min_n(c(2,20)))
 # Create workflow
 rf_workflow <- workflow() %>% add_model(rf_model) %>% add_recipe(houses_rec)
-rf_workflow
-
 rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mtry=mtry(c(1,5)), min_n=min_n(c(2,20)))
-
 # Create grid
 rf_grid <- grid_regular(rf_param, levels=3)
-rf_grid
-#rf_fit <- fit(rf_model, price_label_high ~ ., housesTrainOrigVar)
-# Valores por defecto
-#trees()
-#mtry()
-#min_n()
 ```
 
 ```{r message=FALSE}
@@ -1055,34 +1048,30 @@ rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
 rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainOrigVar)
 ```
 
-
-## Test
-
 ```{r}
-housesTest <- read.csv('base_test.csv')
-housesTestOrigVar <- housesTest[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
-                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
-                                     "price_label_high")]
-housesTestOrigVar$price_label_high <- as.factor(housesTestOrigVar$price_label_high)
-#levels(housesTestOrigVar$price_label_high) <- c("barata", "cara")
-
-housesTestOrigVar$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesTestOrigVar)$.pred_class
-housesTestOrigVar$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesTestOrigVar, type='prob')$.pred_TRUE
-metrics(housesTestOrigVar, truth = price_label_high, .pred, .pred_TRUE)
+housesTrainOrigVar$.pred <- predict(rf_wflow_final_fit, 
+                          new_data = housesTrainOrigVar)$.pred_class
+housesTrainOrigVar$.pred_TRUE <- predict(rf_wflow_final_fit, 
+                          new_data = housesTrainOrigVar, type='prob')$.pred_TRUE
+metrics(housesTrainOrigVar, truth = price_label_high, .pred, .pred_TRUE)
 ```
 
 ```{r}
-table(pred = housesTestOrigVar$.pred, obs = housesTestOrigVar$price_label_high)
-metrics_function(housesTestOrigVar$.pred, housesTestOrigVar, 'price_label_high', bool=TRUE)
+table(pred = housesTrainOrigVar$.pred, obs = housesTrainOrigVar$price_label_high)
+metrics_function(housesTrainOrigVar$.pred, housesTrainOrigVar, 'price_label_high', bool=TRUE)
+```
+
+```{r}
+opt_f1_obj <- opt_f1_function(housesTrainOrigVar$.pred_TRUE, housesTrainOrigVar, 'price_label_high', 0.3)
+opt_f1_obj$p1
+opt_f1_obj$p2
 ```
 
 
 ```{r}
-predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=housesTestOrigVar$.pred_TRUE)
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=housesTrainOrigVar$.pred_TRUE)
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
 ```
 
 
