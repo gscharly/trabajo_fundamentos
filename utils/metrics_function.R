@@ -61,6 +61,11 @@ perform_knn <- function(train, test, label, k, cols) {
   
 }
 
+perform_knn_cv <- function(train, label, k, cols){
+  predictions = knn.cv(train[,cols], k=k, cl=train[,label])
+  train_metrics <- metrics_function(predictions, train, label, bool=TRUE)
+}
+
 
 dt_metrics <- function(df, features, label){
   df_f <- df[c(features, label)]

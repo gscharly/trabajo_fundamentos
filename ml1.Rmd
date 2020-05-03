@@ -1077,24 +1077,25 @@ predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha
 
 
 ## kNN
-El siguiente algoritmo que se va a probar es kNN. Para ello, necesitamos que los datos estén de nuevo estandarizados, ya que es un método basado en distancias, y las variables necesitan estar en el mismo rango de valores.
+El siguiente algoritmo que se va a probar es kNN. Para ello, necesitamos que los datos estén de nuevo estandarizados, ya que es un método basado en distancias, y las variables necesitan estar en el mismo rango de valores. Es importante que no se utilicen muchas variables en este método, ya que al estar basado en distancias, puede sufrir de la "maldición de la dimensionalidad".
 
-PARA HACER: intentar probar otras distancias
 
 ```{r}
 housesTrain <- read.csv('base_train.csv')
-housesTest <- read.csv('base_test.csv')
 # Para que funcione confusionMatrix de caret, el target debe ser un factor
 housesTrain$price_label_high <- as.factor(housesTrain$price_label_high)
-housesTest$price_label_high <- as.factor(housesTest$price_label_high)
 ```
 
+En primer lugar, se probarán las variables numéricas con las que se trabajó en el anterior informe: distancia al centro, coordenadas y tamaño de la parcela. Se utiliza un k=3 para esta primera prueba. Para evaluar los modelos, se utiliza la función knn.cv, que utiliza leave one out cross validation. Para cada fila del dataset de entrenamiento, se utilizan los K vecinos más cercanos para decidir la clase.
+
+Se obtiene un recall bastante bajo, lo que hace que el f1 score sea mediocre. Para intentar mejorar el modelo, se intentará elegir el valor óptimo de k.
 
 ```{r knn1}
 num_std_cols <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std')
-metrics <- perform_knn(housesTrain, housesTest, 'price_label_high', 1, num_std_cols)
-metrics
+knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 3, num_std_cols)
+knn_metrics
 ```
+
 
 ### k óptimo
 Se muestra en la gráfica los distintos valores de accuracy y F1 que se obtendrían cambiando los valores de k. Se observa que el f1 score es bastante bajo, dejando de mejorar a partir de k=5 o k=7. El accuracy no pasa de 0.8 a partir de k=3.
@@ -1103,33 +1104,40 @@ Se muestra en la gráfica los distintos valores de accuracy y F1 que se obtendr�
 plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
 ```
 
-DUDA: CURVA ROC EN KNN? PROBABILIDADES?
+Si probamos con k=7, los resultados mejoran ligeramente, pero el recall sigue siendo bastante flojo (hay muchos FP).
+
 ```{r knn7high}
-# En train
-prediccion_knn7_train = knn.cv(housesTrain[,num_std_cols], 
-                              k=7, cl=housesTrain$price_label_high)
-metrics_function(prediccion_knn7_train, housesTrain, 'price_label_high', bool=TRUE)
-
-#En test
-prediccion_knn7_test=knn(housesTrain[,num_std_cols], housesTest[,num_std_cols],
-                         k=7, cl=housesTrain$price_label_high)
-
-metrics_function(prediccion_knn7_test, housesTest, 'price_label_high', bool=TRUE)
+knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 7, num_std_cols)
+knn_metrics
 ```
 
 ### Usando otras variables
-Hasta ahora, se han utilizado las 4 variables numéricas que teníamos identificadas. El resto de variables son categóricas, pero algunas además son ordinales, por lo que tendría sentido aplicar distancias utilizando también esas variables.
-
-Además, se puede probar a crear otras variables adicionales como combinaciones de ordinales y numéricas. Por ejemplo, habitaciones por unidad de parcela.
+Hasta ahora, se han utilizado las 4 variables numéricas que teníamos identificadas. Se puede probar a crear otras variables adicionales como combinaciones de ordinales y numéricas. Por ejemplo, habitaciones por unidad de parcela.
 
 ```{r}
-housesTrain <- housesTrain %>% mutate(room_land = Rooms/LandsizeImp*1000)
-housesTrain %>% filter(room_land<1000) %>% ggplot(aes(y=room_land)) + geom_boxplot()
+housesTrain <- housesTrain %>% mutate(log_room_land = log10(Rooms/LandsizeImp*1000))
+housesTrain$log_room_land_std <- housesTrain %>% select(log_room_land) %>% scale()
+housesTrain %>% ggplot(aes(y=log_room_land_std)) + geom_boxplot()
+housesTrain %>% ggplot(aes(x=log_room_land_std)) + geom_histogram()
 ```
 
+```{r}
+num_std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land')
+plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
+```
+
+Con esta nueva variable, podemos elegir un k=3, consiguiendo un f1 de 0.75, y además eliminar una variable (**sqrt_distance_std**).
 
 ```{r}
-housesTrainKnn <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 3, num_std_cols)
+knn_metrics
+```
+
+El resto de variables son categóricas, pero algunas además son ordinales, por lo que tendría sentido aplicar distancias utilizando también esas variables.
+
+
+```{r}
+housesTrainKnn <- housesTrain %>% dplyr::select(sqrt_distance_std, log_room_land, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
 
 
 #las variables categóricas pasan a ser factores ordenados
@@ -1158,42 +1166,17 @@ housesTrainKnnNorm$price_label_high <- as.factor(housesTrain$price_label_high)
 Observamos que con estas variables conseguimos incrementar tanto el accuracy como el f1 score, y que además a partir de k=3 se mantendrian constantes.
 
 ```{r}
-std_cols <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std', 'rooms_cat', 'car_cat', 'bath_cat', 'bed_cat', 'sell_rate_cat')
-plot_acc_f1_k(housesTrainKnn, 'price_label_high', std_cols)
+std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'rooms_cat', 'car_cat', 'sell_rate_cat')
+plot_acc_f1_k(housesTrainKnnNorm, 'price_label_high', std_cols)
 ```
 
+Introduciendo todas las variables, el modelo no consigue mejorar. La combinación que ofrece mejores resultados es el uso del tamaño de la parcela, coordenadas, habitaciones, plazas de aparcamiento y popularidad del barrio.
 
 ```{r}
-housesTestKnn <- housesTest %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
-
-#las variables categóricas pasan a ser factores ordenados
-housesTestKnn['rooms_cat']<- housesTest %>% pull('rooms_cat') %>% 
-  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric()
-
-housesTestKnn['car_cat'] <- housesTest %>% pull('car_cat') %>% 
-  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric()
-
-housesTestKnn['bath_cat'] <-housesTest %>% pull('bath_cat') %>% 
-  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric()
-
-housesTestKnn['bed_cat'] <-housesTest %>% pull('bed_cat') %>% 
-  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() 
-
-housesTestKnn['sell_rate_cat'] <-housesTest %>% pull('sell_rate_cat') %>% 
-  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() 
-
-# Se utiliza el std de train
-housesTestKnnNorm <- predict(normParam, housesTestKnn)
-housesTestKnnNorm$price_label_high <- as.factor(housesTest$price_label_high)
+knn_metrics <- perform_knn_cv(housesTrainKnnNorm, 'price_label_high', 3, std_cols)
+knn_metrics
 ```
 
-```{r}
-#En test
-knn_test=knn(housesTrainKnnNorm[,std_cols], housesTestKnnNorm[,std_cols],
-                         k=3, cl=housesTrain$price_label_high)
-
-metrics_function(knn_test, housesTestKnnNorm, 'price_label_high', bool=TRUE)
-```
 
 ##SVM
 
@@ -1481,115 +1464,80 @@ Como primera aproximación, utilizaremos las mismas variables utilizadas en el m
 
 ```{r}
 mod <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data=housesTrain)
-mod
 ```
 
-Métricas en train. El f1 es flojillo, ya que ni el recall ni el precision son demasiado buenos. 
+Métricas en train. El f1 es flojillo, ya que ni el recall ni el precision son demasiado buenos. Sin embargo, el AUC ROC es bastante bueno (0.9)
 
 ```{r}
 preds <- predict(mod, housesTrain, type = "class")
 table(pred = preds, obs = housesTrain$price_label_high)
 metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
 ```
-Cambiando el th:
+
 ```{r}
-preds_prob <- predict(mod, housesTrain, type = "raw")
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
-th = 0.5
-predictions <- predictions %>% mutate(predict_class = ifelse(pred >=th, TRUE, FALSE))
-table(pred = predictions$predict_class, obs = predictions$price_label_high)
-metrics_function(predictions$predict_class, housesTrain, 'price_label_high', bool=TRUE)
+prob_values <- predict(mod, housesTrain, type='raw')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
 ```
 
+Probamos a reducir el número de variables, utilizando por ejemplo las variables más importantes seleccionadas por el random forest. El modelo mejora ligeramente.
 
 ```{r}
-cost_of_fp <-1
-cost_of_fn <- 1
-th <- 0.3
-roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
-plot_roc(roc, th, cost_of_fp, cost_of_fn)
-```
-
-
-```{r}
-auc_roc <- auc(predictions$price_label_high, predictions$pred)
-auc_roc
+mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat, data=housesTrain)
 ```
 
 ```{r}
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) 
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) 
+preds <- predict(mod, housesTrain, type = "class")
+table(pred = preds, obs = housesTrain$price_label_high)
+metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
 ```
 
-## Otros modelos probados
+```{r}
+prob_values <- predict(mod, housesTrain, type='raw')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
+```
 
 Probando algún modelo con menos variables. A modo de resumen:
 
 - Utilizando solo las categóricas, los resultados empeoran, con un accuracy de 0.8079153, un f1 de 0.6207523 y una auc roc de 0.8552.
-- Utilizando únicamente las numéricas, el resultado lógicamente empeora, ya que Naive Bayes asume una distribución normal de las entradas numérocas, y trabaja mejor con categóricas al calcular las probabilidades de una forma más precisa conociendo las distribuciones. En este caso, tenemos un accuracy de 0.7727566, un f1 de 0.4759075 y una auc roc de 0.7913
+- Utilizando únicamente las numéricas, el resultado lógicamente empeora, ya que Naive Bayes asume una distribución normal de las entradas numéricas, y trabaja mejor con categóricas al calcular las probabilidades de una forma más precisa conociendo las distribuciones. En este caso, tenemos un accuracy de 0.7727566, un f1 de 0.4759075 y una auc roc de 0.7913
 
+### Validación
+Utilizaremos ahora cross validation para comprobar si el modelo sobre ajusta. Observamos que con 10 fold cross validation repetido 3 veces, obtenemos una ROC de 0.85 con una desviación de 0.01. Usando todas las variables se obtiene una AUC ROC de 0.867 con una desviación de 0.012, pero elegimos el primer modelo por ser más sencillo.
 
 ```{r}
-mod <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std, data=housesTrain)
-mod
+housesTrainCV <- housesTrain %>% select(Distance, Regionname, Type, rooms_cat, price_label_high)
+housesTrainCV$price_label_high <- as.factor(ifelse(housesTrainCV$price_label_high==TRUE,"caras","baratas"))
+fit_control <- caret::trainControl(method = "repeatedcv", number=10, repeats=3, summaryFunction = twoClassSummary, classProbs = TRUE)
+grid <- expand.grid(usekernel=c(FALSE), laplace=c(0), adjust=c(0))
+cv_model <- train(price_label_high ~ ., data=housesTrainCV, method='naive_bayes', trControl=fit_control, metric='ROC', tuneGrid=grid)
+cv_model$results
 ```
 
+
 ```{r}
-preds <- predict(mod, housesTrain, type = "class")
-table(pred = preds, obs = housesTrain$price_label_high)
-metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
+housesTrainCV <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, price_label_high)
+housesTrainCV$price_label_high <- as.factor(ifelse(housesTrainCV$price_label_high==TRUE,"caras","baratas"))
+fit_control <- caret::trainControl(method = "repeatedcv", number=10, repeats=3, summaryFunction = twoClassSummary, classProbs = TRUE)
+grid <- expand.grid(usekernel=c(FALSE), laplace=c(0), adjust=c(0))
+cv_model <- train(price_label_high ~ ., data=housesTrainCV, method='naive_bayes', trControl=fit_control, metric='ROC', tuneGrid=grid)
+cv_model$results
 ```
 
+Finalmente, buscamos el corte óptimo con el mejor modelo.
+
 
 ```{r}
-preds_prob <- predict(mod, housesTrain, type = "raw")
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
-th = 0.5
-predictions <- predictions %>% mutate(predict_class = ifelse(pred >=th, TRUE, FALSE))
-table(pred = predictions$predict_class, obs = predictions$price_label_high)
-metrics_function(predictions$predict_class, housesTrain, 'price_label_high', bool=TRUE)
-auc_roc <- auc(predictions$price_label_high, predictions$pred)
-auc_roc
-```
+mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat, data=housesTrain)
+prob_values <- predict(mod, housesTrain, type='raw')
+opt_f1_obj <- opt_f1_function(prob_values, housesTrain, 'price_label_high')
+opt_f1_obj$p1
+opt_f1_obj$p2
 
-## Test: mejor modelo
-
-En test:
-
-```{r}
-housesTest <- read.csv('base_test.csv')
-```
-
-```{r}
-mod <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data=housesTrain)
-mod
-```
-
-```{r}
-preds <- predict(mod, housesTest, type = "class")
-table(pred = preds, obs = housesTest$price_label_high)
-metrics_function(preds, housesTest, 'price_label_high', bool = TRUE)
-```
-
-```{r}
-preds_prob <- predict(mod, housesTrain, type = "raw")
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=preds_prob[,2])
-th = 0.5
-predictions <- predictions %>% mutate(predict_class = ifelse(pred >=th, TRUE, FALSE))
-```
-
-```{r}
-cost_of_fp <-1
-cost_of_fn <- 1
-th <- 0.5
-roc <- calculate_roc(predictions, 'price_label_high', cost_of_fp, cost_of_fn, n=500)
-plot_roc(roc, th, cost_of_fp, cost_of_fn)
-```
-
-```{r}
-auc_roc <- auc(predictions$price_label_high, predictions$pred)
-auc_roc
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=prob_values[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
 ```
 
 
