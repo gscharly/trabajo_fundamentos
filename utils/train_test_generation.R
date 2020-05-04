@@ -3,7 +3,7 @@
 
 # Lectura de datos --------------------------------------------------------
 
-houses <- read.csv('./datasets/melb_data.csv')
+houses <- read.csv('datasets/melb_data.csv')
 
 
 # Targets para regresión y clasificación ----------------------------------
@@ -20,10 +20,31 @@ houses %>% ggplot(aes(x=Price, color=price_label_high)) + geom_density()
 
 # División de los datos ---------------------------------------------------
 
-set.seed(10)
-trainIndex <- createDataPartition(houses$Price, p = .8, list = FALSE, times = 1)
-housesTrain <- houses[ trainIndex,]
-housesTest <- houses[-trainIndex,]
+#set.seed(10)
+#trainIndex <- createDataPartition(houses$Price, p = .7, list = FALSE, times = 3)
+#housesTrain <- houses[ trainIndex,]
+#housesTest <- houses[-trainIndex,]
+
+numero_total = nrow(houses)
+
+# Porcentajes de train, test y validation
+w_train = .7
+w_test = .15
+w_validation = 1 - (w_train + w_test)
+
+# Todos los índices
+indices = seq(1:numero_total) 
+
+# Muestreo
+indices_train = sample(1:numero_total, numero_total * w_train)
+indices_test = sample(indices[-indices_train], numero_total * w_test)
+indices_validation = indices[-c(indices_train,indices_test)]
+
+# Agrupamos
+
+housesTrain = houses[indices_train,]
+housesTest = houses[indices_test,]
+housesVal = houses[indices_validation,]
 
 
 # Transformaciones sobre train --------------------------------------------
@@ -177,13 +198,15 @@ final_dataset_construction_year <- function(dataset, standarizer, imputationsCar
 }
 
 test <- final_dataset_construction_year(housesTest,normParam, imputationsCarforTest, imputationsLandsizeforTest, imputationsYearforTest)
+val <- final_dataset_construction_year(housesVal, normParam, imputationsCarforTest, imputationsLandsizeforTest, imputationsYearforTest)
 
 
 # Guardamos ---------------------------------------------------------------
 
 train_path <- 'base_train.csv'
 test_path <- 'base_test.csv'
+val_path <- 'base_val.csv'
 
 write.csv(housesTrainFinal, train_path, row.names = FALSE)
 write.csv(test, test_path, row.names = FALSE)
-
+write.csv(val, val_path, row.names = FALSE)

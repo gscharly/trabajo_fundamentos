@@ -847,6 +847,7 @@ housesTrainCV$price_label_high <- as.factor(ifelse(housesTrainCV$price_label_hig
 fit_control <- caret::trainControl(method = "cv", number=10, summaryFunction = twoClassSummary, classProbs = TRUE)
 cv_model <- train(price_label_high ~ ., data=housesTrainCV, method='rpart', trControl=fit_control, tuneLength=10, metric='ROC')
 ```
+
 ```{r}
 cv_model
 ```
@@ -1119,7 +1120,27 @@ housesTrain <- housesTrain %>% mutate(log_room_land = log10(Rooms/LandsizeImp*10
 housesTrain$log_room_land_std <- housesTrain %>% select(log_room_land) %>% scale()
 housesTrain %>% ggplot(aes(y=log_room_land_std)) + geom_boxplot()
 housesTrain %>% ggplot(aes(x=log_room_land_std)) + geom_histogram()
+
+p<-housesTrain %>%
+  select(log_room_land, price_label_high) %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
 ```
+
+```{r}
+summary(aov(price_label_high~log_room_land, data=housesTrain))
+```
+
+
 
 ```{r}
 num_std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land')
@@ -1572,5 +1593,6 @@ dfMetricas <- data.frame(
 
 dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center')
 ```
+
 
 
