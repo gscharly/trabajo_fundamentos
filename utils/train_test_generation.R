@@ -90,11 +90,17 @@ suburbs_count <- housesTrain %>% group_by(Suburb) %>% tally() %>% arrange(desc(n
 housesTrain <- housesTrain %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
 # Hasta 1.47% de tasa de venta por barrio
 housesTrain$sell_rate_cat <- factor(cut2(housesTrain$sell_rate_suburb, g=2), labels=c("Menos_populares", "Más_populares"))
+# Vistas al mar
+water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
+housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
+# Habitaciones por unidad de parcela
+housesTrain <- housesTrain %>% mutate(log_room_land = log10(Rooms/LandsizeImp*1000))
+
 
 # Estandarización de variables
-num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude')
-num_std_vars <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std')
-cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method', 'bath_cat', 'bed_cat', 'sell_rate_cat')
+num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude', 'log_room_land')
+num_std_vars <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
+cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method', 'bath_cat', 'bed_cat', 'sell_rate_cat', 'may_have_water')
 other_vars <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG', 'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'Car', 'YearBuilt', 'CouncilArea')
 housesTrainNum <- housesTrain %>% select(num_vars)
 normParam <- preProcess(housesTrainNum)
@@ -157,6 +163,12 @@ final_dataset_construction_year <- function(dataset, standarizer, imputationsCar
   dataset <- dataset %>% inner_join(suburbs_count, by='Suburb') %>% mutate(sell_rate_suburb = round(n/Propertycount*100,2))
   # Hasta 1.47% de tasa de venta por barrio
   dataset$sell_rate_cat <- factor(cut2(dataset$sell_rate_suburb, g=2), labels=c("Menos_populares", "Más_populares"))
+  # Vistas al mar
+  water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
+  dataset$may_have_water <- factor(ifelse(dataset$CouncilArea %in% water_councils, TRUE, FALSE))
+  # Habitaciones por unidad de parcela
+  dataset <- dataset %>% mutate(log_room_land = log10(Rooms/Landsize*1000))
+  
   
   # Discretización de variables cuantitativas
   dataset$rooms_cat <- cut(dataset$Rooms,  breaks = c(1,3,4,10), labels = c("Pequeñas", "Medianas", "Grandes"), include.lowest = TRUE, right = FALSE)
@@ -171,10 +183,10 @@ final_dataset_construction_year <- function(dataset, standarizer, imputationsCar
   dataset$bed_cat <- factor(cut2(dataset$Bedroom2, g=2), labels=c("Pocos_dormitorios", "Muchos_dormitorios"))
   
   #Estandarización de variables
-  num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude', 'YearBuilt')
-  num_std_vars <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std')
+  num_vars <- c('sqrt_distance', 'log_landsize', 'Lattitude', 'Longtitude', 'log_room_land')
+  num_std_vars <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
   other_vars <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG', 'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea')
-  cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method', 'bath_cat', 'bed_cat', 'sell_rate_cat')
+  cat_vars <- c('rooms_cat', 'year_built_cat', 'car_cat', 'Regionname', 'Type', 'Method', 'bath_cat', 'bed_cat', 'sell_rate_cat', 'may_have_water')
   datasetNum <- dataset %>% select(num_vars)
   datasetNumNorm <- predict(standarizer, datasetNum)
   colnames(datasetNumNorm) <- num_std_vars
