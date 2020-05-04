@@ -113,3 +113,42 @@ opt_f1_function <- function(prob_values, df, label, x_lim=0.25){
   return(list(f1_opt= f1_measure_opt, precision = prec_opt, recall = rec_opt, threshold = threshold_optimo, p1=p1, p2=p2))
 }
 
+opt_f1_function_v2 <- function(prob_values, df, label, x_lim=0.25){
+  beta <- 1
+  if (class(prob_values) == "matrix"){
+    prob_values = prob_values[,2]
+    pred_dt <- prediction(prob_values, df[, label])
+  }
+  else {
+    pred_dt <- prediction(prob_values, df[, label])
+  }
+  
+  perf_dt <- performance(pred_dt, "prec", "rec")
+  
+  f1_grid <- (1+beta^2)*perf_dt@y.values[[1]]*perf_dt@x.values[[1]]/(beta^2*perf_dt@y.values[[1]]+perf_dt@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+  
+  pr <- PRROC::pr.curve(scores.class0 = prob_values[df$price_label_high == 1], scores.class1 = prob_values[df$price_label_high == 0], curve = T)
+  p1 <- data.frame(pr$curve) %>% ggplot(aes(x = X1, y = X2)) +
+           geom_line() + labs(x="Recall",y="Precision", title=paste("AUC=", format(pr$auc.integral,digits=3))) +
+             theme_bw() + scale_color_manual(values=palette34) +
+               annotate("text",label = paste("AUC =",sprintf("%.3f",pr$auc.integral)), hjust= 10, vjust = -5)
+  
+  df_f1 <- data.frame(perf_dt@alpha.values, f1_grid, perf_dt@x.values, perf_dt@y.values)
+  colnames(df_f1) <- c("th", "f1", "recall", "precision")
+  df_f1 <- df_f1 %>% drop_na()
+  
+  optimo <- which.max(f1_grid) # Mejor f1 score para este modelo
+  prec_opt=perf_dt@y.values[[1]][optimo]
+  rec_opt=perf_dt@x.values[[1]][optimo]
+  f1_measure_opt <- (1+beta^2)*prec_opt*rec_opt/(beta^2*prec_opt+rec_opt)
+  threshold_optimo <- perf_dt@alpha.values[[1]][optimo+1]
+  #print(c(f1_opt= f1_measure_opt, precision = prec_opt, recall = rec_opt, threshold = threshold_optimo))
+  
+  # Plot f1, recall, precision
+  df_f1_long <- gather(df_f1, key="metric", value = "value", f1, precision, recall)
+  p2 <- df_f1_long %>% ggplot(aes(x=th, y=value, colour=metric)) + geom_line() + geom_vline(xintercept=threshold_optimo, linetype='dashed', color=palette34[4]) + labs(title='F1 score, recall y precision (clase 1) en función del umbral') + theme(legend.position = "right") + scale_color_manual(values=palette34)
+  
+  
+  return(list(f1_opt= f1_measure_opt, precision = prec_opt, recall = rec_opt, threshold = threshold_optimo, p1=p1, p2=p2))
+}
+
