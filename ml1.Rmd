@@ -46,6 +46,10 @@ library(tidymodels)
 library(workflows)
 library(knitr)
 library(kableExtra)
+library(gridExtra)
+library(Information)
+library(dendextend)
+library(ape)
 
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
@@ -353,14 +357,9 @@ summary(aov(price_label_high~log_landsize_std, data=housesTrain))
 Aplicamos WOE y Information Value
 
 ```{r}
-housesTrain <- read.csv('base_train.csv')
-housesTest <- read.csv('base_test.csv')
-```
-
-```{r}
 #Seleccionar las variables ya transformadas e imputadas
 #También he quitado Date, Postcode, Adress y SellerG (Estas no las usabamos no????)
-a <- housesTrain %>% select("CouncilArea", "sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std", "rooms_cat", "year_built_cat", "car_cat",   "Regionname", "Type", "Method", "bath_cat", "bed_cat", "sell_rate_cat", "price_label_high")
+a <- housesTrain %>% select("CouncilArea", "sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std", "rooms_cat", "year_built_cat", "car_cat",   "Regionname", "Type", "Method", "bath_cat", "bed_cat", "sell_rate_cat", "price_label_high", "Rooms")
 
 # – Information value: all variables
 a$price_exp <- a %>% pull(price_label_high) %>% as.numeric()
@@ -373,7 +372,7 @@ infoTables <- create_infotables(data = a, y = "price_exp",
 
 # – WOE table:
 #Se puede mirar para cada variable
-infoTables$Tables$rooms_cat
+infoTables$Tables$Rooms
 
 #Information Value
 print(infoTables$Summary, row.names=T)
@@ -399,7 +398,7 @@ Las variables cuantitativas las cogemos estandarizadas para eliminar el efecto d
 Estas son todas las variables que pueden emplearse para los métodos de clustring. Sin embargo, no se empezará probando con todas ellas sino que se tomarán de menos a más con la intención de encontrar el mejor clustering con el menor número de variables posible. 
 
 ```{r}
-housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high)
+housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high, rooms_cat_woe)
 
 #las variables categóricas pasan a ser factores ordenados
 housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
@@ -416,6 +415,12 @@ housesTrainCluster['bed_cat'] <-housesTrain %>% pull('bed_cat') %>%
 
 housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
   ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
+
+
+housesTrain$rooms_cat_woe <- cut(housesTrain$Rooms,  breaks = c(1,2,3,4,10), labels = c("Pequeñas", "Medianas-Pequeñas", "Medianas-Grandes", "Grandes"), include.lowest = TRUE, right = FALSE)
+
+housesTrainCluster['rooms_cat_woe'] <-housesTrain %>% pull('rooms_cat_woe') %>% 
+  ordered(levels = c("Pequeñas", "Medianas-Pequeñas", "Medianas-Grandes", "Grandes")) %>% as.numeric() %>% scale()
 ```
 
 
