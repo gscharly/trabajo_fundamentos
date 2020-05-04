@@ -348,19 +348,58 @@ summary(aov(price_label_high~log_landsize_std, data=housesTrain))
 ```
 
 
+# Selección de variables
 
-# Aprendizaje no supervisado: clustering
+Aplicamos WOE y Information Value
 
 ```{r}
 housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
 ```
 
+```{r}
+#Seleccionar las variables ya transformadas e imputadas
+#También he quitado Date, Postcode, Adress y SellerG (Estas no las usabamos no????)
+a <- housesTrain %>% select("CouncilArea", "sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std", "rooms_cat", "year_built_cat", "car_cat",   "Regionname", "Type", "Method", "bath_cat", "bed_cat", "sell_rate_cat", "price_label_high")
+
+# – Information value: all variables
+a$price_exp <- a %>% pull(price_label_high) %>% as.numeric()
+a <- a[-15]
+table(a$price_exp)
+
+infoTables <- create_infotables(data = a, y = "price_exp",
+                              bins = 10,
+                              parallel = F)
+
+# – WOE table:
+#Se puede mirar para cada variable
+infoTables$Tables$rooms_cat
+
+#Information Value
+print(infoTables$Summary, row.names=T)
+plotFrame <- infoTables$Summary[order(-infoTables$Summary$IV),]
+plotFrame$Variable <- factor(plotFrame$Variable, levels = plotFrame$Variable[order(-plotFrame$IV)])
+
+ggplot(plotFrame, aes(x = Variable, y = IV)) +
+geom_bar(width = .35, stat = "identity", color = palette34[1], fill = "white") +
+ggtitle("Information Value") +
+theme_minimal() +
+theme(plot.title = element_text(size = 12, hjust = 0.5)) +
+theme(axis.text.x = element_text(angle = 90))
+
+
+```
+
+
+# Aprendizaje no supervisado: clustering
+
 En primer lugar, vamos a definir la base de datos con las variables cuantitativas y cualitativas ordinales a partir del dataset *housesTrain*.
 Las variables cuantitativas las cogemos estandarizadas para eliminar el efecto de las distintas escalas de medida y las ordinales las estandarizamos al crearlas.
 
+Estas son todas las variables que pueden emplearse para los métodos de clustring. Sin embargo, no se empezará probando con todas ellas sino que se tomarán de menos a más con la intención de encontrar el mejor clustering con el menor número de variables posible. 
+
 ```{r}
-housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high)
 
 #las variables categóricas pasan a ser factores ordenados
 housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
@@ -386,27 +425,31 @@ Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número
 
 En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 2 hasta 15. Se observa en ambas, que el punto donde se produce el cambio de tendencia es aproximadamente en el 3. Por esto se va a probar a realizar una clasificación en base a 3 grupos. 
 
+La forma que tome esta gráfica nos ayuda a seleccionar las variables. Si la combinación de variables empleada genera una gráfica sin un codo claro y sin que haya una cierta estabilización, significaría que empleando esas variables no va a ser posible hacer clusters bien definidos.
+
+
 ```{r kmeansKoptimo1}
 set.seed(123)
-bss <- kmeans(housesTrainCluster,centers=1)$betweenss
- for (i in 2:15) bss[i] <- kmeans(housesTrainCluster,centers=i)$betweenss
+selec_var_kmeans <- housesTrainCluster %>% select(sqrt_distance_std)
+bss <- kmeans(selec_var_kmeans,centers=1)$betweenss
+for (i in 2:15) bss[i] <- kmeans(selec_var_kmeans,centers=i)$betweenss
 plot(1:15, bss, type="b", xlab="Number of Clusters",ylab="Sum of squares between groups",pch=19, col=palette34[2])
 ```
 
 ```{r kmeansKoptimo2}
 n = nrow(housesTrain)
 SSW <- vector(mode = "numeric", length = 15)
-SSW[1] <- (n - 1) * sum(apply(X = housesTrainCluster, MARGIN = 2, FUN = 'var'))
-for (i in 1:15) SSW[i] <- sum(kmeans(housesTrainCluster,centers=i,nstart=25)$withinss)
+SSW[1] <- (n - 1) * sum(apply(X = selec_var_kmeans, MARGIN = 2, FUN = 'var'))
+for (i in 1:15) SSW[i] <- sum(kmeans(selec_var_kmeans,centers=i,nstart=25)$withinss)
 plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
 ```
 
 ```{r}
-clusters3=kmeans(housesTrainCluster,centers=3,nstart=25)
-clusters3
+clust_kmeans=kmeans(selec_var_kmeans,centers=5,nstart=25)
+clust_kmeans
 ```
 
-Observando el ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es inferior al 50%. 
+Observando el ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es muy elevado(91,5%). Sin embargo, este indicador hay que tomarlo con cuidado puesto que se ve influído por el número de clusters empleado, de manera que aumenta conforme tomamos más grupos.
 
 
 ### PCA + visualización
@@ -415,23 +458,26 @@ Observando el ratio de la suma de cuadrados entre-clusters y la suma de cuadrado
 pca_var <- housesTrainCluster %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
 housesPCA <- prcomp(pca_var, center = TRUE)
 summary(housesPCA)
-cluster_group <- clusters3$cluster %>%  as.factor()
+cluster_group <- clust_kmeans$cluster %>%  as.factor()
 df_houses_pca <- data.frame(housesPCA$x[,1:2])
 df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
 ```
+
+Según los resultados anteriores, el mejor modelo K-means se obtiene utilizando una única variable (distancia al centro) y 5 grupos.
+
 
 ## Hierarchical
 
 Se aplicará un cluster aglomerativo y se emplearán diferentes métodos de medida de la distancia entre clusters. 
 
 ```{r hierarchical}
-mat_dist <- dist(housesTrainCluster, method = "euclidean")
+mat_dist <- dist(housesTrainCluster[-10], method = "euclidean")
 hc1 <- hclust(mat_dist, method = "single" )
-den = as.dendrogram(hc1)
+den = as.dendrogram(hc1, leaflab = "none")
 plot(den)
 ```
 
-A pesar de que el dendograma no ofrece una visualización clara debido al alto número de observaciones, sí se puede percibir como dos grandes clusteres siendo uno de ellos (el de la izquierda), aproximadamente, tres veces mayor que el otro.
+A pesar de que el dendograma no ofrece una visualización clara debido al alto número de observaciones, sí se puede percibir como dos grandes clustes, siendo uno de ellos (el de la izquierda), aproximadamente, tres veces mayor que el otro y unas observaciones a la derecha del todo que se aglomeran en los últimos niveles.
 
 Una vez creado el dendrograma, vamos a evaluar hasta qué punto su estructura refleja las distancias originales entre observaciones empleando el coeficiente de correlación entre la altura de los nodos del dendrograma (distancia cophenetic) y la matriz de distancias original. Cuanto más cercano es el valor a 1, mejor refleja el dendrograma la verdadera similitud entre las observaciones. Valores superiores a 0.75 suelen considerarse como buenos. Esta medida puede emplearse como criterio de ayuda para escoger entre los distintos métodos de linkage.
 
@@ -448,6 +494,18 @@ cor(x = mat_dist, cophenetic(hc_euclidea_centroid))
 ```
 
 A la vista de los resultados, el método que mejor refleja las distancias reales es el *average*. Este método supone un compromiso entre las dos características de los métodos en los que se emplea la distancia mínima (*single*) y en los que se emplea la máxima (*complete*). Un compromiso entre ser sensible a datos atípicos y manejar formas de clusters no elípticas.
+
+Se prueba a graficar el dendograma empleando el método *average* y probando con cortes del árbol a diferentes alturas. Sin embargo, el alto número de observaciones impide tomar una decisión más o menos clara de por dónde plantear el corte. 
+
+```{r, message=FALSE}
+hc2 <- hclust(mat_dist, method = "average" )
+den = as.dendrogram(hc2)
+
+avg_col_dend <- color_branches(den, h = 6, col = palette34)
+plot(avg_col_dend, leaflab = "none", ylab = "Height")
+abline(h = 6, col = 'black')
+```
+
 
 ## DBSCAN
 
