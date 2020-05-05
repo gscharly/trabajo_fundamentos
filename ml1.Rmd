@@ -53,6 +53,7 @@ library(ape)
 library(PRROC)
 library(Hmisc)
 library(plyr)
+library(reshape2)
 
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
@@ -279,12 +280,60 @@ chisq.test(housesTrain$year_built_cat, housesTrain$price_label_high)
 
 ## Variables cuantitativas
 
+
+__Correlaciones__
+
+
+```{r}
+housesNum <- housesTrain %>% mutate(log_landsize = log10(LandsizeImp), sqrt_distance = sqrt(Distance), log_room_land = log10(Rooms/LandsizeImp*1000))
+numeric_cols <- c("sqrt_distance", "Lattitude", "Longtitude", "log_landsize", "log_room_land")
+cormat <- round(cor(na.omit(housesNum[,numeric_cols])), 2)
+
+# Get lower triangle of the correlation matrix
+get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+  # Get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+}
+
+upper_tri <- get_upper_tri(cormat)
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+ggheatmap <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "#1EA6A2", high = "#A61E22", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+
+ggheatmap + geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+```
+
+
 __Distance__
 Se observa en los boxplots que las casas caras están ligeramente más cercanas al centro de la ciudad.
 
 ```{r}
-p<-housesTrain %>%
-  select(Distance, price_label_high) %>%
+p<-housesTrain %>% mutate(sqrt_distance = sqrt(Distance)) %>%
+  select(sqrt_distance, price_label_high) %>%
   ggpairs(ggplot2::aes(colour=price_label_high))
 
 for(i in 1:p$nrow) {
@@ -806,44 +855,54 @@ Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer
 Se utilizarán directamente las variables estudiadas en el análisis exploratorio, dejando de lado transformaciones y estandarizaciones, además de variables categóricas con muchas categorías. Además, si recordamos, para la regresión lineal tuvimos que convertir varias features numéricas en categóricas (número de habitaciones, año de construcción...). Podemos probar a introducir las variables originales para ver qué cortes propone el árbol.
 
 
-En los cortes se tiene en cuenta el número de habitaciones como corte principal (diferenciando entre casas pequeñas y grandes). El siguiente corte se realiza en base a la región (localización). Parece que la región por la que se discrimina es Southern Metropolitan (como se ha visto en el análisis, es la que más porcentaje de casas caras posee). Si la casa es pequeña y está en cualquier región que no sea esa, se clasifica como barata la mayoría de las veces. 
+En los cortes, se mira primero la región en la que está la casa, viendo si está o no en Southern Metropolitan (la zona con casas más caras). Después, utiliza variables como el número de habitaciones, el tipo de vivienda y la distancia para discriminar. Se ve que hay un grupo que contiene a cerca de la mitad de las muestras con un 9% de probabilidades de ser cara, solo teniendo en cuenta que no está en Southern Metropolitan y que tiene menos de 4 habitaciones.
 
 Algo que también se puede ver es que hay varios nodos con pocas muestras (los que vienen de la distinción de tipo de casa es Southern Metropolitan). Vemos además que hay un bastantes falsos negativos (casas caras que se etiquetan como baratas).
 
-```{r}
-model_metrics <- dt_metrics(housesTrain, c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat"),
-           "price_label_high")
+```{r message=FALSE}
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat"), "price_label_high")
 model_metrics$metrics
-```
-
-```{r, message=FALSE}
 prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
+opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
 ```
 
 
-Observamos que el árbol solo discrimina por las variables *Rooms*, *Distance*, *Type*, *Regionname*. Si probamos un árbol con solo estas variables, obtenemos exactamente el mismo modelo:
+En validación:
+
+```{r message=FALSE}
+validation_metrics <- val_metrics(model_metrics$dt, housesVal, c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat"), "price_label_high")
+validation_metrics$metrics
+validation_metrics$roc_plot
+validation_metrics$opt_f1
+```
+
+
+
+Observamos que el árbol solo discrimina por las variables *Rooms*, *Distance*, *Type*, *Regionname*. Si probamos un árbol con solo estas variables, obtenemos un modelo muy parecido:
 
 ```{r}
 model_metrics <- dt_metrics(housesTrain, c("Rooms", "Distance", "Regionname", "Type"),"price_label_high")
 model_metrics$metrics
-```
-
-
-Al ver que el árbol se fija en la localización, se prueba a entrenar un modelo solo con el número de habitaciones y las coordenadas, que presumiblemente dan información más detallada, además del tipo de casa. Observamos que el f1 score mejora: por un lado, el recall ha aumentado (devolvemos más casas caras) pero el precision ha empeorado (más falsos positivos, el modelo dice que casas que no son caras lo son). Además, si comparamos ambas curvas ROC, vemos que este modelo tiene un AUC mejor (distingue mejor entre clases). 
-
-Por otro lado, el árbol, aunque ofrece mejores métricas, resulta ser menos interpretable, ya que la mayoría de los cortes se basa en valores numéricos de las coordenadas.
-
-```{r}
-model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
-model_metrics$metrics
-```
-
-```{r message=FALSE}
 prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
+opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
+```
+
+
+Al ver que el árbol se fija en la localización, se prueba a entrenar un modelo solo con el número de habitaciones y las coordenadas, que presumiblemente dan información más detallada, además del tipo de casa. Se intenta evitar meter variables que pueden estar relaciones entre sí, ya que el árbol solo elegiría una de ellas para discriminar. Observamos que el f1 score mejora: por un lado, el recall ha aumentado (devolvemos más casas caras) pero el precision ha empeorado (más falsos positivos, el modelo dice que casas que no son caras lo son). Además, si comparamos ambas curvas ROC, vemos que este modelo tiene un AUC mejor (distingue mejor entre clases). 
+
+Por otro lado, el árbol, aunque ofrece mejores métricas, resulta ser menos interpretable, ya que la mayoría de los cortes se basa en valores numéricos de las coordenadas.
+
+```{r message=FALSE}
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
+model_metrics$metrics
+prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
+opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
 ```
 
 
@@ -867,10 +926,14 @@ pruneTREE <- rpart::prune(model_metrics$dt, cp = model_metrics$dt$cptable[5, "CP
 rpart.plot(pruneTREE, type=4, fallen.leaves = FALSE, tweak =1.75)
 preds <- predict(pruneTREE, type = "class")
 metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
+prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
+opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
 ```
 
 
-Bajando la complejidad hasta quedarnos solo con 5 hojas, observamos que el accuracy es parecido, pero que el f1-score disminuye hasta 0.56 (con una precisión bastante aceptable). Por otro lado, el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja con las casas baratas (84% de las casas de este nodo son baratas), con el 75% de los datos. Las casas con más de 4 habitaciones en se distribuyen en función de las coordenadas.
+Bajando la complejidad hasta quedarnos solo con 5 hojas, observamos que el accuracy es parecido, pero que el f1-score disminuye hasta 0.56 (con una precisión bastante aceptable). Por otro lado, el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja con las casas baratas (83% de las casas de este nodo son baratas), con el 75% de los datos. Las casas con más de 4 habitaciones en se distribuyen en función de las coordenadas.
 
 ```{r warning=FALSE}
 pruneTREE <- rpart::prune(model_metrics$dt, cp = model_metrics$dt$cptable[4, "CP"])
@@ -879,8 +942,8 @@ preds <- predict(pruneTREE, type = "class")
 metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
 ```
 
-### Validación
-Utilizaremos las variables que mejor resultados nos han dado en una etapa de validación cruzada.
+### Cross validation
+Utilizaremos las variables que mejor resultados nos han dado en una etapa de validación cruzada para obtener el mejor parámetro de complejidad.
 
 ```{r}
 # Hay que factorizar el label para que se construya bien el árbol

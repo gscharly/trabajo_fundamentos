@@ -102,7 +102,7 @@ opt_f1_function <- function(prob_values, df, label, x_lim=0.25){
   prec_opt=perf_dt@y.values[[1]][optimo]
   rec_opt=perf_dt@x.values[[1]][optimo]
   f1_measure_opt <- (1+beta^2)*prec_opt*rec_opt/(beta^2*prec_opt+rec_opt)
-  threshold_optimo <- perf_dt@alpha.values[[1]][optimo+1]
+  threshold_optimo <- perf_dt@alpha.values[[1]][optimo]
   #print(c(f1_opt= f1_measure_opt, precision = prec_opt, recall = rec_opt, threshold = threshold_optimo))
   
   # Plot f1, recall, precision
@@ -141,7 +141,7 @@ opt_f1_function_v2 <- function(prob_values, df, label, x_lim=0.25){
   prec_opt=perf_dt@y.values[[1]][optimo]
   rec_opt=perf_dt@x.values[[1]][optimo]
   f1_measure_opt <- (1+beta^2)*prec_opt*rec_opt/(beta^2*prec_opt+rec_opt)
-  threshold_optimo <- perf_dt@alpha.values[[1]][optimo+1]
+  threshold_optimo <- perf_dt@alpha.values[[1]][optimo]
   #print(c(f1_opt= f1_measure_opt, precision = prec_opt, recall = rec_opt, threshold = threshold_optimo))
   
   # Plot f1, recall, precision
@@ -151,4 +151,17 @@ opt_f1_function_v2 <- function(prob_values, df, label, x_lim=0.25){
   
   return(list(f1_opt= f1_measure_opt, precision = prec_opt, recall = rec_opt, threshold = threshold_optimo, p1=p1, p2=p2))
 }
+
+val_metrics <- function(model, df, features, label, type='prob'){
+  df_f <- df[c(features, label)]
+  preds <- predict(model, df_f, type = "class")
+  table(pred = preds, obs = df[,label])
+  metrics <- metrics_function(preds, df_f, label, bool=TRUE)
+  prob_values <- predict(model, df_f, type=type)
+  roc_dt <- roc(df$price_label_high, prob_values[,2])
+  roc_plot <- ggplotROCCurve(roc_dt)
+  opt_f1 <- opt_f1_function_v2(prob_values, df, 'price_label_high')
+  return(list(metrics=metrics, roc_plot=roc_plot, opt_f1=opt_f1))
+}
+
 
