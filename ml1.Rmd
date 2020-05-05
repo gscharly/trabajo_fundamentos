@@ -51,6 +51,8 @@ library(Information)
 library(dendextend)
 library(ape)
 library(PRROC)
+library(Hmisc)
+library(plyr)
 
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
@@ -469,13 +471,36 @@ bar_plot_target(housesTrain, "kmeans_cluster", "price_label_high")
 chisq.test(housesTrain$kmeans_cluster, housesTrain$price_label_high)
 ```
 
+```{r}
+predict.kmeans <- function(object, newdata){
+    centers <- object$centers
+    n_centers <- nrow(centers)
+    dist_mat <- as.matrix(dist(rbind(centers, newdata)))
+    dist_mat <- dist_mat[-seq(n_centers), seq(n_centers)]
+    max.col(-dist_mat)
+}
+
+#predict kmeans for validation and test datasets
+housesTestKmeans <- housesTest %>% select(lattitude_std, bath_cat)
+housesTestKmeans['bath_cat'] <-housesTest %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+test_clust <- predict.kmeans(clust_kmeans, housesTestKmeans)
+housesTest <- housesTest %>% mutate(kmeans_cluster = test_clust)
+
+housesValKmeans <- housesVal %>% select(lattitude_std, bath_cat)
+housesValKmeans['bath_cat'] <-housesVal %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+val_clust <-predict.kmeans(clust_kmeans, housesValKmeans)
+housesVal <- housesVal %>% mutate(kmeans_cluster = test_clust)
+```
+
 
 ## Hierarchical
 
 Se aplicará un cluster aglomerativo y se emplearán diferentes métodos de medida de la distancia entre clusters. 
 
 ```{r hierarchical}
-mat_dist <- dist(housesTrainCluster[-10], method = "euclidean")
+mat_dist <- dist(housesTrainCluster, method = "euclidean")
 hc1 <- hclust(mat_dist, method = "single" )
 den = as.dendrogram(hc1, leaflab = "none")
 plot(den)
@@ -1235,7 +1260,7 @@ En nuestro conjunto de datos no contamos con esa posibilidad, debido a la alta d
 
 ```{r, echo=F}
 train <- read.csv('base_train.csv', encoding = 'UTF-8')
-filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat")
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat","year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "rooms_cat", "log_landsize_std")
 train <- train %>%  select(-filter_cols)
 
 # Estandarización de variables categóricas ordinales, quitando sell_rate_cat, bed_cat y car_cat que en principio no aporta nada al modelo (las dos últimas por ser redundantes)
@@ -1254,7 +1279,7 @@ for(cat in cat_with_order){
   train[cat] <- ordinal_variables_norm[cat]
 }
 
-train <- train %>% select(-c("year_built_cat", "Regionname", "Type", "Method"))
+
 train$price_label_high<-as.factor(ifelse(train$price_label_high==TRUE,1,0))
     
 ```

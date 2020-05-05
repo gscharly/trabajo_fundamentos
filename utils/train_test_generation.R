@@ -3,8 +3,8 @@
 
 # Lectura de datos --------------------------------------------------------
 
-houses <- read.csv('datasets/melb_data.csv')
-
+#houses <- read.csv('datasets/melb_data.csv')
+houses <- read.csv('/media/paula/HDD/12_MÁSTER DATA SCIENCE/MachineLearningI/trabajo_fundamentos/melb_data.csv')
 
 # Targets para regresión y clasificación ----------------------------------
 # Regresión
@@ -117,8 +117,21 @@ housesTrainFinal$Method = factor(housesTrainFinal$Method, levels=c('S', 'SP', 'P
 housesTrainFinal$Type = factor(housesTrainFinal$Type, levels=c('h', 'u', 't'))
 # Se elimina la variable Car
 housesTrainFinal <- housesTrainFinal %>% select(-Car)
-
-
+# Clusters Kmeans
+housesTrainCluster <- housesTrainFinal %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+housesTrainCluster['rooms_cat']<- housesTrainFinal %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() %>% scale()
+housesTrainCluster['car_cat'] <- housesTrainFinal %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric() %>% scale()
+housesTrainCluster['bath_cat'] <-housesTrainFinal %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+housesTrainCluster['bed_cat'] <-housesTrainFinal %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() %>% scale()
+housesTrainCluster['sell_rate_cat'] <-housesTrainFinal %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
+selec_var_kmeans <- housesTrainCluster %>% select(lattitude_std, bath_cat)
+clust_kmeans=kmeans(selec_var_kmeans,centers=5,nstart=25)
+housesTrainFinal <- housesTrainFinal %>% mutate(kmeans_cluster = clust_kmeans$cluster)
 
 # Transformaciones sobre test -------------------------------------------------------
 
@@ -204,6 +217,22 @@ final_dataset_construction_year <- function(dataset, standarizer, imputationsCar
   # Se cambia el nombre de las columnas car y landsize para que cuadren con las de train
   colnames(datasetFinal)[14] <- 'CarImp'
   colnames(datasetFinal)[15] <- 'LandsizeImp'
+  
+  # Se predicen los clusters de kmeans
+  predict.kmeans <- function(object, newdata){
+    centers <- object$centers
+    n_centers <- nrow(centers)
+    dist_mat <- as.matrix(dist(rbind(centers, newdata)))
+    dist_mat <- dist_mat[-seq(n_centers), seq(n_centers)]
+    max.col(-dist_mat)
+  }
+  
+  housesDataKmeans <- datasetFinal %>% select(lattitude_std, bath_cat)
+  housesDataKmeans['bath_cat'] <-datasetFinal %>% pull('bath_cat') %>% 
+    ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+  data_clust <- predict.kmeans(clust_kmeans, housesDataKmeans)
+  datasetFinal <- datasetFinal %>% mutate(kmeans_cluster = data_clust)
+
   
   return(datasetFinal)
   
