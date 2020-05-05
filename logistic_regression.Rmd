@@ -50,7 +50,9 @@ set.seed(10)
 palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
 ```
 
-Como primera aproximación, probamos el modelo de regresión logística con todas las variables disponibles en el dataset. El resultado obtenido es el siguiente:
+# Regresión logística
+
+Como primera aproximación, se ha probado el modelo de regresión logística con todas las variables disponibles en el dataset. El resultado obtenido es el siguiente:
 
 ```{r}
 train <- read.csv('base_train.csv', encoding = 'UTF-8')
@@ -469,4 +471,139 @@ c(accuracy = accuracy2, recall = recall2, specificity = specificity2, precision 
 ```
 
 
+## Regresión logística
 
+En este apartado, se va imlementar un modelo regresión logística sobre los datos de entrenamiento. 
+
+```{r}
+# Se creea la variable objetivo (75-25) y se eliminan los antiguos targets
+train <- read.csv('base_train.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+train <- train %>%  select(-filter_cols)
+train$price_label_high <- as.factor(ifelse(train$price_label_high==TRUE,1,0))
+
+
+lr_model <- glm(price_label_high ~ ., family = binomial(link = 'logit'), data = train)
+summary(lr_model)
+```
+
+El resultado óptimo para este modelo, en cuanto a optimización de la f1_score se refiere es la siguiente:
+
+```{r}
+beta <- 1
+prob_values <- lr_model %>% predict(train[,1:13], type = "response")
+pred_lr <- prediction(prob_values, train$price_label_high)
+perf_lr <- performance(pred_lr, "prec", "rec")
+
+f1_best_lr <- (1+beta^2)*perf_lr@y.values[[1]]*perf_lr@x.values[[1]]/(beta^2*perf_lr@y.values[[1]]+perf_lr@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_lr) # Mejor f1 score para este modelo
+prec_lr_opt=perf_lr@y.values[[1]][optimo]
+rec_lr_opt=perf_lr@x.values[[1]][optimo]
+f1_measure_lr_opt <- (1+beta^2)*prec_lr_opt*rec_lr_opt/(beta^2*prec_lr_opt+rec_lr_opt)
+threshold_optimo_lr <- perf_lr@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_lr_opt, precision = prec_lr_opt, recall = rec_lr_opt, threshold = threshold_optimo_lr))
+```
+
+
+```{r,message=F}
+preds_train <- as.factor(ifelse(prob_values > threshold_optimo_lr ,1,0))
+cm <- caret::confusionMatrix(preds_train, train$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm) + scale_fill_gradient2(low = "#132B43", high = "#56B1F7")
+
+roc_gaussian <- roc(train$price_label_high,prob_values)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+```
+
+Como se puede observar, el valor no es muy alto, por lo que este resultado claramente puede mejorarse.
+
+Si echamos un ojo a la columna de los p-valores obtenidos durante el entrenamiento del modelo, podemos ver que algunos de ellos nos indican que no se puede asegurar que los coeficientes asociados a ciertas variables sean diferentes de 0. Sin embargo, estos p-valores tan bajos van asociados a ciertos niveles de variables categóricas, por lo que si eliminásemos la variable estaríamos perdiendo información del resto de niveles, la cual sí que es relevante. 
+
+Sin embargo, se podría aplicar alguna medida de regularización a través de la cual obtener más información sobre las posibles variables que no aportan demasiado al modelo y podrían ser eliminadas. A continuación, se va a utilizar una regresión logística Lasso y observar los coeficientes obtenidos para cada una de las variables:
+
+```{r}
+set.seed(123)
+cv.lasso <- cv.glmnet(price_label_high~., data = train, alpha = 1, type.measure = "deviance", family = "binomial") # Con 10-fold cross-validation
+#plot(cv.lasso)
+coef(cv.lasso, cv.lasso$lambda.1se)
+```
+
+```{r}
+lr_regularized <- glm(price_label_high ~. -sell_rate_cat - Method - bed_cat, family = binomial(link = 'logit'), data = train)
+summary(lr_regularized)
+```
+
+```{r}
+beta <- 1
+prob_values <- lr_regularized %>% predict(train[,1:13], type = "response")
+pred_lr <- prediction(prob_values, train$price_label_high)
+perf_lr <- performance(pred_lr, "prec", "rec")
+
+f1_best_lr <- (1+beta^2)*perf_lr@y.values[[1]]*perf_lr@x.values[[1]]/(beta^2*perf_lr@y.values[[1]]+perf_lr@x.values[[1]]) # Se calcula la f1 score para todos los posibles thresholds
+
+optimo <- which.max(f1_best_lr) # Mejor f1 score para este modelo
+prec_lr_opt=perf_lr@y.values[[1]][optimo]
+rec_lr_opt=perf_lr@x.values[[1]][optimo]
+f1_measure_lr_opt <- (1+beta^2)*prec_lr_opt*rec_lr_opt/(beta^2*prec_lr_opt+rec_lr_opt)
+threshold_optimo_lr <- perf_lr@alpha.values[[1]][optimo+1]
+print(c(f1_opt= f1_measure_lr_opt, precision = prec_lr_opt, recall = rec_lr_opt, threshold = threshold_optimo_lr))
+```
+
+```{r, message=F}
+preds_train <- as.factor(ifelse(prob_values > threshold_optimo_lr ,1,0))
+cm <- caret::confusionMatrix(preds_train, train$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_gaussian <- roc(train$price_label_high,prob_values)
+roc_plot <- ggplotROCCurve(roc_gaussian)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+```
+
+Vemos que, al eliminar ciertas variables que simplemente estaban introduciendo información redundante al modelo, el rendimiento obtenido es prácticamente el mismo (incluso mejora muy mínimamente).
+  
+```{r}
+
+probs_labels <- data.frame("probs" = prob_values, "labels" = train$price_label_high)
+
+probs_labels %>% ggplot(aes(x=probs, fill= labels)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34)
+
+probs_labels %>% ggplot(aes(x=probs, color=labels)) + geom_density() + geom_vline(aes(xintercept=threshold_optimo_lr),
+            color=palette34[8], linetype="dashed") + scale_color_manual(values = palette34)
+
+```
+
+A continuación, se procede a comprobar el funcionamiento de este modelo de regresión logística sobre los datos de test:
+
+```{r}
+test<- read.csv('base_test.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label')
+test <- test %>%  select(-filter_cols)
+test$price_label_high <- as.factor(ifelse(test$price_label_high==TRUE,1,0))
+
+
+x_test <- test[,13]
+prob_values_test <- lr_regularized %>% predict(test[,1:13], type = "response")
+preds_test_rl <- as.factor(ifelse(prob_values_test > threshold_optimo_lr ,1,0))
+
+metrics_function_num(preds_test_rl, test, 'price_label_high')
+```
+
+
+```{r, message=F}
+
+cm <- caret::confusionMatrix(preds_test, test$price_label_high, positive = '1')
+cm_plot <- ggplotConfusionMatrix(cm)
+
+roc_lr_test <- roc(test$price_label_high,prob_values_test)
+roc_plot <- ggplotROCCurve(roc_lr_test)
+
+
+grid.arrange(roc_plot, cm_plot, ncol=2)
+```
+
+
+Se puede comprobar que el AUC se mantiene intacto. Si bien es cierto que la accuracy y la f1_score disminyen ligeramente, se puede afirmar que la regresión no sobreajusta para nada los datos.
