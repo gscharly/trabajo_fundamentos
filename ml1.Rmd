@@ -68,6 +68,7 @@ palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A676
 ```{r}
 housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
+housesVal <- read.csv('base_val.csv')
 ```
 
 # Análisis exploratorio en base al nuevo objetivo
@@ -355,28 +356,22 @@ summary(aov(price_label_high~log_landsize_std, data=housesTrain))
 
 # Selección de variables
 
-Aplicamos WOE y Information Value
+El aálisis exploratorio realizado nos permite saber para qué variables la distribución de casas baratas y caras es diferente, es decir, nos indica qué variables pueden ayudar más a la clasificación. 
+Para seguir con la selección de variables vamos a untilizar el Information Value (IV). Esta medida nos indica cómo de buena es una variable a la hora de distinguir entre las categorías binarias de la variable respuesta o dependiente.
 
 ```{r}
-#Seleccionar las variables ya transformadas e imputadas
-#También he quitado Date, Postcode, Adress y SellerG (Estas no las usabamos no????)
-a <- housesTrain %>% select("CouncilArea", "sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std", "rooms_cat", "year_built_cat", "car_cat",   "Regionname", "Type", "Method", "bath_cat", "bed_cat", "sell_rate_cat", "price_label_high", "Rooms")
+a <- housesTrain %>% select("CouncilArea", "sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std", "rooms_cat", "year_built_cat", "car_cat", "Regionname", "Type", "Method", "bath_cat", "bed_cat", "sell_rate_cat", "price_label_high")
 
-# – Information value: all variables
-a$price_exp <- a %>% pull(price_label_high) %>% as.numeric()
+
+a$price_dep <- a %>% pull(price_label_high) %>% as.numeric()
 a <- a[-15]
-table(a$price_exp)
+table(a$price_dep) %>% kable() %>% kable_styling(position = 'center', row_label_position = 'c')
 
-infoTables <- create_infotables(data = a, y = "price_exp",
+infoTables <- create_infotables(data = a, y = "price_dep",
                               bins = 10,
                               parallel = F)
 
-# – WOE table:
-#Se puede mirar para cada variable
-infoTables$Tables$Rooms
-
-#Information Value
-print(infoTables$Summary, row.names=T)
+infoTables$Summary %>% kable() %>% kable_styling(position = 'center', row_label_position = 'c')
 plotFrame <- infoTables$Summary[order(-infoTables$Summary$IV),]
 plotFrame$Variable <- factor(plotFrame$Variable, levels = plotFrame$Variable[order(-plotFrame$IV)])
 
@@ -386,20 +381,21 @@ ggtitle("Information Value") +
 theme_minimal() +
 theme(plot.title = element_text(size = 12, hjust = 0.5)) +
 theme(axis.text.x = element_text(angle = 90))
-
-
 ```
+
+A la vista de los resultados, se puede ver que aquellas variables relacionadas con el tamaño de la vivienda (Type, rooms_cat) y con su ubicación (CouncilArea, lattitude, longtitude, Regionname) tienen mucho peso a la hora de clasificar la variable target.
 
 
 # Aprendizaje no supervisado: clustering
 
 En primer lugar, vamos a definir la base de datos con las variables cuantitativas y cualitativas ordinales a partir del dataset *housesTrain*.
+
 Las variables cuantitativas las cogemos estandarizadas para eliminar el efecto de las distintas escalas de medida y las ordinales las estandarizamos al crearlas.
 
-Estas son todas las variables que pueden emplearse para los métodos de clustring. Sin embargo, no se empezará probando con todas ellas sino que se tomarán de menos a más con la intención de encontrar el mejor clustering con el menor número de variables posible. 
+Estas son todas las variables que pueden emplearse para los métodos de clustring. Sin embargo, no se empezará probando con todas ellas sino que se tomarán de menos a más utilizando diferentes combinaciones. 
 
 ```{r}
-housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat, price_label_high, rooms_cat_woe)
+housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
 
 #las variables categóricas pasan a ser factores ordenados
 housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
@@ -416,12 +412,6 @@ housesTrainCluster['bed_cat'] <-housesTrain %>% pull('bed_cat') %>%
 
 housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
   ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
-
-
-housesTrain$rooms_cat_woe <- cut(housesTrain$Rooms,  breaks = c(1,2,3,4,10), labels = c("Pequeñas", "Medianas-Pequeñas", "Medianas-Grandes", "Grandes"), include.lowest = TRUE, right = FALSE)
-
-housesTrainCluster['rooms_cat_woe'] <-housesTrain %>% pull('rooms_cat_woe') %>% 
-  ordered(levels = c("Pequeñas", "Medianas-Pequeñas", "Medianas-Grandes", "Grandes")) %>% as.numeric() %>% scale()
 ```
 
 
@@ -429,16 +419,18 @@ housesTrainCluster['rooms_cat_woe'] <-housesTrain %>% pull('rooms_cat_woe') %>%
 
 Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible. Esto es lo mismo a buscar una división donde una suma de cuadrados entre (betweens) sea suficientemente grande y, por tanto, una suma de cuadrados dentro lo suficientemente pequeña (withins).
 
-En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 2 hasta 15. Se observa en ambas, que el punto donde se produce el cambio de tendencia es aproximadamente en el 3. Por esto se va a probar a realizar una clasificación en base a 3 grupos. 
+En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 1 hasta 15. Aquel punto en el que se produce el codo y le sigue una cierta estabilización es el número de clusters que se toma como óptimo.
 
-La forma que tome esta gráfica nos ayuda a seleccionar las variables. Si la combinación de variables empleada genera una gráfica sin un codo claro y sin que haya una cierta estabilización, significaría que empleando esas variables no va a ser posible hacer clusters bien definidos.
+Se observa en ambas, que el punto donde se produce el cambio de tendencia es aproximadamente en el 3. Por esto se va a probar a realizar una clasificación en base a 3 grupos. 
+
+De todas las combinaciones probadas, atendiendo a la forma del gráfico y a la información de selección de variables, se van a utilizar La forma que tome esta gráfica nos ayuda a seleccionar las variables. Si la combinación de variables empleada genera una gráfica sin un codo claro y sin que haya una cierta estabilización, significaría que empleando esas variables no va a ser posible hacer clusters bien definidos.
 
 
 ```{r kmeansKoptimo1}
 set.seed(123)
-selec_var_kmeans <- housesTrainCluster %>% select(sqrt_distance_std)
+selec_var_kmeans <- housesTrainCluster %>% select(lattitude_std, bath_cat)
 bss <- kmeans(selec_var_kmeans,centers=1)$betweenss
-for (i in 2:15) bss[i] <- kmeans(selec_var_kmeans,centers=i)$betweenss
+for (i in 1:15) bss[i] <- kmeans(selec_var_kmeans,centers=i)$betweenss
 plot(1:15, bss, type="b", xlab="Number of Clusters",ylab="Sum of squares between groups",pch=19, col=palette34[2])
 ```
 
@@ -455,7 +447,7 @@ clust_kmeans=kmeans(selec_var_kmeans,centers=5,nstart=25)
 clust_kmeans
 ```
 
-Observando el ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es muy elevado(91,5%). Sin embargo, este indicador hay que tomarlo con cuidado puesto que se ve influído por el número de clusters empleado, de manera que aumenta conforme tomamos más grupos.
+Observando el ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es muy elevado(85.1%). Sin embargo, este indicador hay que tomarlo con cuidado puesto que se ve influído por el número de clusters empleado, de manera que aumenta conforme tomamos más grupos.
 
 
 ### PCA + visualización
@@ -469,7 +461,13 @@ df_houses_pca <- data.frame(housesPCA$x[,1:2])
 df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
 ```
 
-Según los resultados anteriores, el mejor modelo K-means se obtiene utilizando una única variable (distancia al centro) y 5 grupos.
+Vamos a comprobar si los grupos generados a partir de la combinación de una variable del tamaño de la vivienda (bath_cat) y de su localización (lattitud_std) muestran diferencias respecto a la variable target (price_label_hight). En este caso, estos grupos podrían emplearse como variable en otros modelos.
+
+```{r}
+housesTrain <- housesTrain %>% mutate(kmeans_cluster = clust_kmeans$cluster)
+bar_plot_target(housesTrain, "kmeans_cluster", "price_label_high")
+chisq.test(housesTrain$kmeans_cluster, housesTrain$price_label_high)
+```
 
 
 ## Hierarchical
@@ -503,7 +501,7 @@ A la vista de los resultados, el método que mejor refleja las distancias reales
 
 Se prueba a graficar el dendograma empleando el método *average* y probando con cortes del árbol a diferentes alturas. Sin embargo, el alto número de observaciones impide tomar una decisión más o menos clara de por dónde plantear el corte. 
 
-```{r, message=FALSE}
+```{r, warning=FALSE}
 hc2 <- hclust(mat_dist, method = "average" )
 den = as.dendrogram(hc2)
 
@@ -1613,6 +1611,8 @@ dfMetricas <- data.frame(
   F1 = c('0.7401130', '0.7005650', 'x', '0.7330383'))
 
 dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center')
+
+#stripe_index utilizar dentro de kable_styling para marcar el modelo con mejor f1
 ```
 
 
