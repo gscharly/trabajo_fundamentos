@@ -143,6 +143,7 @@ A pesar de que el barrio parece indicativo y distintivo de precios más baratos 
 ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$sd_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Desviación típica del precio en función del barrio')
 ```
 
+
 Con estos mapas, se pretende introducir el hecho de que el precio de venta varía con la zona en la que está situada la vivienda y que puede ayudar a distinguir entre viviendas caras y baratas, aunque serán necesarias otras variables que expliquen el precio en aquellas zonas en las que la variabilidad del mismo sea elevada.
 
 
@@ -154,6 +155,16 @@ El dataset original estaba enfocado a la predicción del precio de viviendas en 
 - Establecer el corte en un valor de *Price* mayor, donde tendremos un problema de desbalanceo de datos.
 
 Se ha optado por la segunda opción, para introducir una mayor complejidad al problema de clasificación.
+
+Se presenta de nuevo el mapa de Melbourne teniendo en cuenta esta nueva separación. Vemos que la zona de casas caras sigue siendo parecida, pero se concentran en puntos más específicos. 
+
+```{r warning=FALSE}
+housesPriceSuburb <- housesTrain %>% dplyr::group_by(Suburb) %>% dplyr::summarise(sum_price_label = sum(price_label_high))
+
+housesPriceLabel <- housesTrain %>% inner_join(housesPriceSuburb, by='Suburb')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPriceLabel$Longtitude, y = housesPriceLabel$Lattitude,  colour=housesPriceLabel$sum_price_label), data = housesPriceLabel, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Número de 1s (casas caras) en función de la región')
+```
 
 Con esta nueva variable objetivo, se procede a repetir parte del análisis multivariante realizado en el anterior informe, de cara a estudiar la relación con la nueva variable objetivo, y empezar a preseleccionar variables útiles para los modelos.
 
