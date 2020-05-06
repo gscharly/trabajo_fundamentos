@@ -17,6 +17,14 @@ output:
     code_folding: "hide"
 ---
 
+```{r setup, echo=FALSE, eval=TRUE}
+knitr::opts_chunk$set(error = TRUE)
+```
+
+```{r imagenMelbourne, echo=FALSE}
+knitr::include_graphics("melbourneModif.png")
+```
+
 ```{r, message=FALSE}
 library(dplyr)
 library(ggplot2)
@@ -54,6 +62,7 @@ library(PRROC)
 library(Hmisc)
 library(plyr)
 library(reshape2)
+library(ggmap)
 
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
@@ -69,10 +78,73 @@ palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A676
 ```
 
 ```{r}
+houses <- read.csv('./datasets/melb_data.csv')
 housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
 housesVal <- read.csv('base_val.csv')
 ```
+
+# Definición de objetivos
+
+<br>
+
+*Objetivo general*
+
+- Clasificar las viviendas de la ciudad de Melbourne
+
+*Objetivos específicos*
+
+- Realizar un análisis explotratorio multivariante de todas las variables con respecto a la nueva variable target (*price_label*)
+- Seleccionar las variables adecuadas al modelo.
+- Ajustar los distintos modelos de clasificación vistos en la asignatura.
+- Comparación de modelos en base a una métrica
+- Elección del mejor punto de corte para nuestro problema
+- Evaluación del modelo final
+
+Enlace a Github: https://github.com/gscharly/trabajo_fundamentos
+
+
+# Precio de la vivienda en Melbourne
+
+A modo de introducción, se muestran una serie de mapas de Melbourne.
+
+En el primero, podemos ver, de un solo vistazo, cómo se distribuyen las viviendas vendidas según su región. Vemos que hay zonas de Melbourne, como la zona oeste de la bahía donde no hay viviendas registradas en nuestro data set. Se puede observar que la mayoría de casas vendidas se concentran en el centro de la ciudad de Melbourne, pero hay casas en regiones que se encuentran bastante alejadas (Victoria). Se ve que estas regiones son amplias, y que posiblemente el precio no solo varíe de unas a otras, si no también dentro de la misma región. Además, la ciudad destaca por la bahía de Port Phillip, habiendo casas vendidas que rodean esta bahía sin estar cerca del centro. Esto puede hacer pensar que el precio no tiene por qué estar directamente relacionado con la distancia al centro (variable disponible en el dataset), si no que también podría estar influido por la posición respecto a la bahía.
+
+
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
+melbourne_map <- get_map(location = "melbourne", zoom = 10)
+houses_map <- houses[,c("Regionname", "Lattitude", "Longtitude")]
+houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#E6AB02", "Western Metropolitan" = "#A6761D", "Northern Metropolitan" = "#7570B3",
+                                                      "Eastern Metropolitan" = "#1B9E77", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#D95F02",
+                                                      "Northern Victoria" = "#E7298A", "Western Victoria" = "#666666"))
+  
+ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75) + labs(title='Casas vendidas por región')
+```
+
+
+Si pintamos el precio medio por cada región, se puede observar que hay regiones más caras que otras en media. Sin embargo, dentro de una misma región puede haber bastante variabilidad de precio. Si se representa el precio medio por barrio, se observa que en la región más cara efectivamente se encuentran las casas más caras, pero también otras que son más baratas. Parece que se confirma que los barrios pegados a la bahía tienen un precio más alto, aunque hay viviendas caras en el interior también.
+
+
+```{r mapsPrice, warning=FALSE}
+housesMeanPriceRegion <- houses %>% dplyr::group_by(Regionname) %>% dplyr::summarise(mean_price_region = mean(Price), sd_price_region = sd(Price))
+housesMeanPriceSuburb <- houses %>% dplyr::group_by(Suburb) %>% dplyr::summarise(mean_price_suburb = mean(Price), sd_price_suburb = sd(Price))
+
+housesPrice <- houses %>% inner_join(housesMeanPriceSuburb, by='Suburb') %>% inner_join(housesMeanPriceRegion, by='Regionname')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$mean_price_region), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Precio medio en función de la región')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$mean_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Precio medio en función del barrio')
+```
+
+A pesar de que el barrio parece indicativo y distintivo de precios más baratos y más caros, dentro de los barrios "caros" sigue habiendo variedad de precios. Esto se puede ver si se representa la desviación típica del precio por barrio:
+
+
+```{r mapsSdPrice, warning=FALSE}
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$sd_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Desviación típica del precio en función del barrio')
+```
+
+Con estos mapas, se pretende introducir el hecho de que el precio de venta varía con la zona en la que está situada la vivienda y que puede ayudar a distinguir entre viviendas caras y baratas, aunque serán necesarias otras variables que expliquen el precio en aquellas zonas en las que la variabilidad del mismo sea elevada.
+
 
 # Análisis exploratorio en base al nuevo objetivo
 El dataset original estaba enfocado a la predicción del precio de viviendas en Melbourne. Para convertirlo en un problema de clasificación, vamos a utilizar la variable *Price* para diferenciar entre casas baratas y caras. Tenemos varias opciones:
@@ -1662,17 +1734,14 @@ Ahora probamos el modelo con menos variables sobre los datos de validación. El 
 
 Finalmente, buscamos el corte óptimo con el mejor modelo.
 
-```{r}
+```{r message=FALSE}
 mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat + kmeans_cluster, data=housesVal)
 
 prob_values <- predict(mod, housesVal, type='raw')
 roc_dt <- roc(housesVal$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 
-opt_f1_obj <- opt_f1_function(prob_values, housesVal, 'price_label_high')
-#opt_f1_obj$f1_opt
-opt_f1_obj$p1
-opt_f1_obj$p2
+opt_f1_function_v2(prob_values, housesVal, 'price_label_high')
 
 predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
@@ -1688,32 +1757,32 @@ saveRDS(mod, "./models/nb_best_model.rds")
 #Logistic regression
 data_lr = validation
 model_lr = readRDS("./models/lr_regularized.rds")
-values <- predict(model_lr, data_lr, type='response')
+values <- predict(model_lr, housesVal, type='response')
 f1_lr = round(opt_f1_function_v2(values, data_lr, 'price_label_high')$f1_opt, 3)
 
 #Árbol de decision
 data_dt = housesVal
 model_dt = readRDS("./models/dt_best_model.rds")
-values = predict(pruneTREE, data_dt, type='prob')
+values = predict(model_dt, housesVal, type='prob')
 f1_dt = round(opt_f1_function(values, data_dt, 'price_label_high')$f1_opt, 3)
 
 #Random forest
-data_dt = housesVal
-model_dt = readRDS("./models/dt_best_model.rds")
-values = predict(pruneTREE, data_dt, type='prob')
+data_rf = housesVal
+model_rf = readRDS("./models/rf_best_model.rds")
+values = predict(model_rf, housesVal, type='prob')
 f1_dt = round(opt_f1_function(values, data_dt, 'price_label_high')$f1_opt, 3)
 
 #SWM
 data_svm = validation_svm
 model_svm = readRDS("./models/svm_gaussian_kernel.rds")
-values <- predict(model_svm, data_svm, type = "prob")
+values <- predict(model_svm, housesVal, type = "prob")
 f1_svm = round(opt_f1_function(values, data_svm, "price_label_high")$f1_opt, 3)
 f1_svm
 
 #Naive Bayes
 data_nv = housesVal
 model_nv = readRDS("./models/nb_best_model.rds")
-values <- predict(model_nv, data_nv, type='raw')
+values <- predict(model_nv, housesVal, type='raw')
 f1_nv = round(opt_f1_function(values, data_nv, 'price_label_high')$f1_opt, 3)
 
 
