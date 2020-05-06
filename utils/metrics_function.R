@@ -129,9 +129,9 @@ opt_f1_function_v2 <- function(prob_values, df, label, x_lim=0.25){
   
   pr <- PRROC::pr.curve(scores.class0 = prob_values[df$price_label_high == 1], scores.class1 = prob_values[df$price_label_high == 0], curve = T)
   p1 <- data.frame(pr$curve) %>% ggplot(aes(x = X1, y = X2)) +
-           geom_line() + labs(x="Recall",y="Precision", title=paste("AUC=", format(pr$auc.integral,digits=3))) +
-             theme_bw() + scale_color_manual(values=palette34) +
-               annotate("text",label = paste("AUC =",sprintf("%.3f",pr$auc.integral)), hjust= 10, vjust = -5)
+    geom_line() + labs(x="Recall",y="Precision", title=paste("AUC=", format(pr$auc.integral,digits=3))) +
+    theme_bw() + scale_color_manual(values=palette34) +
+    annotate("text",label = paste("AUC =",sprintf("%.3f",pr$auc.integral)), hjust= 10, vjust = -5)
   
   df_f1 <- data.frame(perf_dt@alpha.values, f1_grid, perf_dt@x.values, perf_dt@y.values)
   colnames(df_f1) <- c("th", "f1", "recall", "precision")
@@ -164,4 +164,48 @@ val_metrics <- function(model, df, features, label, type='prob'){
   return(list(metrics=metrics, roc_plot=roc_plot, opt_f1=opt_f1))
 }
 
+reverse_probs <- function(predicted){
+  probs <- attr(predicted, "prob")
+  for(i in 1:length(probs)){
+    if(predicted[i] == FALSE){
+      probs[i] = 1 - probs[i]
+    }
+  }
+  return(probs) 
+}
 
+plot_acc_f1_k_v2 <- function(train, label, cols){
+  long = 15
+  f1score = rep(0,long)
+  recall = rep(0,long)
+  precision = rep(0,long)
+  optimal_thresholds = rep(0,long)
+  for (i in 1:long)
+  {
+    prediccion_knn_cv =knn.cv(train[,cols], 
+                              k=i, cl=train[,label], prob = T)
+    probs_knn_cv = reverse_probs(prediccion_knn_cv)
+    recall[i] = opt_f1_function(probs_knn_cv, housesTrain, "price_label_high")$recall
+    precision[i] = opt_f1_function(probs_knn_cv, housesTrain, "price_label_high")$precision
+    f1score[i] = opt_f1_function(probs_knn_cv, housesTrain, "price_label_high")$f1_opt
+    optimal_thresholds[i] = opt_f1_function(probs_knn_cv, housesTrain, "price_label_high")$threshold
+  }
+  resultados_knn = as.data.frame(cbind(optimal_thresholds,f1score,precision,recall))
+  resultados_knn = resultados_knn %>% mutate(index=as.factor(seq(1:long)))
+  
+  max(resultados_knn$f1score)
+  which.max(resultados_knn$f1score)
+  
+  
+  p1 <- ggplot(data=resultados_knn,aes(x=index,y=recall)) + 
+    geom_col(colour="cyan4",fill="cyan3")+
+    ggtitle("Recall")
+  
+  
+  p2 <- ggplot(data=resultados_knn,aes(x=index,y=f1score)) + 
+    geom_col(colour="orange4",fill="orange3") +
+    ggtitle("F1_score values")
+  
+  #plot_grid(p1, p2, rel_heights = c(1/2, 1/2))
+  p2
+}

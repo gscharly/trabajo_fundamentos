@@ -1350,8 +1350,6 @@ predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha
 saveRDS(rf4, "./models/rf_best_model.rds")
 ```
 
-
-
 ## kNN
 El siguiente algoritmo que se va a probar es kNN. Para ello, necesitamos que los datos estén de nuevo estandarizados, ya que es un método basado en distancias, y las variables necesitan estar en el mismo rango de valores. Es importante que no se utilicen muchas variables en este método, ya que al estar basado en distancias, puede sufrir de la "maldición de la dimensionalidad".
 
@@ -1368,23 +1366,34 @@ Se obtiene un recall bastante bajo, lo que hace que el f1 score sea mediocre. Pa
 
 ```{r knn1}
 num_std_cols <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std')
-knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 3, num_std_cols)
-knn_metrics
+#housesTrain <- hop
+#knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 3, num_std_cols)
+#knn_metrics
+pred_knn <- knn.cv(housesTrain[,num_std_cols], k=3, cl=housesTrain[,"price_label_high"], prob = T)
+probs_knn <- reverse_probs(pred_knn)
+opt_f1_knn <- opt_f1_function(probs_knn, housesTrain, "price_label_high")
+c(optimal_threshold = opt_f1_knn$threshold, precision = opt_f1_knn$precision, recall =  opt_f1_knn$recall, f1_score = opt_f1_knn$f1_opt)
 ```
-
 
 ### k óptimo
-Se muestra en la gráfica los distintos valores de accuracy y F1 que se obtendrían cambiando los valores de k. Se observa que el f1 score es bastante bajo, dejando de mejorar a partir de k=5 o k=7. El accuracy no pasa de 0.8 a partir de k=3.
+Se muestra en la gráfica los distintos valores de F1-score que se obtendrían cambiando los valores de k. Se observa que el f1 score es bastante bajo, dejando de mejorar a partir de k=5 o k=7.
 
 ```{r}
-plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
+#plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
+plot_acc_f1_k_v2(housesTrain, 'price_label_high', num_std_cols)
 ```
+
 
 Si probamos con k=7, los resultados mejoran ligeramente, pero el recall sigue siendo bastante flojo (hay muchos FP).
 
+
 ```{r knn7high}
-knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 7, num_std_cols)
-knn_metrics
+#knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 7, num_std_cols)
+#knn_metrics
+pred_knn_7 <- knn.cv(housesTrain[,num_std_cols], k=7, cl=housesTrain[,"price_label_high"], prob = T)
+probs_knn_7 <- reverse_probs(pred_knn_7)
+opt_f1_knn_7 <- opt_f1_function(probs_knn_7, housesTrain, "price_label_high")
+c(optimal_threshold = opt_f1_knn_7 $threshold, precision = opt_f1_knn_7 $precision, recall =  opt_f1_knn_7 $recall, f1_score = opt_f1_knn_7 $f1_opt)
 ```
 
 ### Usando otras variables
@@ -1415,18 +1424,21 @@ p
 summary(aov(price_label_high~log_room_land, data=housesTrain))
 ```
 
-
-
 ```{r}
-num_std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land')
-plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
+num_std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
+#plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
+plot_acc_f1_k_v2(housesTrain, 'price_label_high', num_std_cols)
 ```
 
 Con esta nueva variable, podemos elegir un k=3, consiguiendo un f1 de 0.75, y además eliminar una variable (**sqrt_distance_std**).
 
 ```{r}
-knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 3, num_std_cols)
-knn_metrics
+#knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 3, num_std_cols)
+#knn_metrics
+pred_knn_3 <- knn.cv(housesTrain[,num_std_cols], k=3, cl=housesTrain[,"price_label_high"], prob = T)
+probs_knn_3 <- reverse_probs(pred_knn_3)
+opt_f1_knn_3 <- opt_f1_function(probs_knn_3, housesTrain, "price_label_high")
+c(optimal_threshold = opt_f1_knn_3$threshold, precision = opt_f1_knn_3$precision, recall =  opt_f1_knn_3$recall, f1_score = opt_f1_knn_3$f1_opt)
 ```
 
 El resto de variables son categóricas, pero algunas además son ordinales, por lo que tendría sentido aplicar distancias utilizando también esas variables.
@@ -1459,20 +1471,51 @@ housesTrainKnnNorm <- predict(normParam, housesTrainKnn)
 housesTrainKnnNorm$price_label_high <- as.factor(housesTrain$price_label_high)
 ```
 
-Observamos que con estas variables conseguimos incrementar tanto el accuracy como el f1 score, y que además a partir de k=3 se mantendrian constantes.
+Observamos que con estas variables no conseguimos incrementar el f1 score, y que además a partir de k=3 se mantendrian constantes:
 
 ```{r}
 std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'rooms_cat', 'car_cat', 'sell_rate_cat')
-plot_acc_f1_k(housesTrainKnnNorm, 'price_label_high', std_cols)
+#plot_acc_f1_k(housesTrainKnnNorm, 'price_label_high', std_cols)
+plot_acc_f1_k_v2(housesTrainKnnNorm, 'price_label_high', std_cols)
 ```
 
-Introduciendo todas las variables, el modelo no consigue mejorar. La combinación que ofrece mejores resultados es el uso del tamaño de la parcela, coordenadas, habitaciones, plazas de aparcamiento y popularidad del barrio.
+
+Introduciendo todas las variables, el modelo no consigue mejorar nada apenas. La combinación que ofrece mejores resultados es el uso del tamaño de la parcela, coordenadas, habitaciones, plazas de aparcamiento y popularidad del barrio:
 
 ```{r}
-knn_metrics <- perform_knn_cv(housesTrainKnnNorm, 'price_label_high', 3, std_cols)
-knn_metrics
+#knn_metrics <- perform_knn_cv(housesTrainKnnNorm, 'price_label_high', 3, std_cols)
+#knn_metrics
+pred_knn_ordinals <- knn.cv(housesTrainKnnNorm[,std_cols], k=3, cl=housesTrainKnnNorm[,"price_label_high"], prob = T)
+probs_knn_ordinals <- reverse_probs(pred_knn_ordinals)
+opt_f1_knn_ordinals <- opt_f1_function(probs_knn_ordinals, housesTrain, "price_label_high")
+c(optimal_threshold = opt_f1_knn_ordinals$threshold, precision = opt_f1_knn_ordinals$precision, recall =  opt_f1_knn_ordinals$recall, f1_score = opt_f1_knn_ordinals$f1_opt)
+
 ```
 
+Por último, vamos a probar el mejor modelo que hemos obtenido sobre nuestro conjunto de validación, con el objetivo de comprobar su funcionamiento:
+
+```{r}
+housesVal <- read.csv('base_val.csv')
+# Para que funcione confusionMatrix de caret, el target debe ser un factor
+housesVal$price_label_high <- as.factor(housesVal$price_label_high)
+num_std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
+
+pred_knn_val <- knn(train = housesTrain[,num_std_cols], test = housesVal[,num_std_cols], cl=housesTrain[,"price_label_high"], k = 3,prob = T)
+final_preds_val <- rep(0, dim(housesVal)[1])
+probs_knn_val <- reverse_probs(pred_knn_val)
+# Para hacer las predcciones utilizando el threshold óptimo
+for(i in 1:length(probs_knn_val)){
+  
+  if(probs_knn_val[i] >= opt_f1_knn_3$threshold){
+    final_preds_val[i] = T
+  }else{final_preds_val[i] = F}
+}
+
+housesVal$price_label_high <- as.factor(ifelse(housesVal$price_label_high==T,1,0))
+metrics_function_num(factor(final_preds_val), housesVal, "price_label_high")
+
+
+```
 
 ##SVM
 
