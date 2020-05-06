@@ -828,8 +828,8 @@ Como se puede comprobar, sobre todo a partir del área bajo la curva PR, que los
 
 ```{r}
 predictions <- data.frame(price_label_high=train$price_label_high, pred=prob_lr_regularized)
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_svm_gaussian$threshold, linetype='dashed', color=palette34[4])
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_svm_gaussian$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_lr_regularized$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_lr_regularized$threshold, linetype='dashed', color=palette34[4])
 ```
 
 A continuación, se procede a medir la performance del modelo sobre los datos pertencientes al conjunto de validación:
@@ -843,8 +843,7 @@ validation$kmeans_cluster <- factor(validation$kmeans_cluster, levels = c(1,2,3,
 validation$price_label_high <- as.factor(ifelse(validation$price_label_high==TRUE,1,0))
 
 
-x_validation <- validation %>% select(-price_label_high)
-prob_values_test <- lr_regularized %>% predict(x_validation, type = "response")
+prob_values_test <- lr_regularized %>% predict(validation, type = "response")
 preds_validation_lr <- as.factor(ifelse(prob_values_test > opt_f1_lr_regularized$threshold ,1,0))
 
 metrics_function_num(preds_validation_lr, validation, 'price_label_high')
@@ -1540,45 +1539,42 @@ Cabe destacar que eL algoritmo de SVM, en un principio solo proporciona las etiq
 A continuación, se procede a validar el modelo utilizando el conjunto de validación:
 
 ```{r, echo=F}
-validation<- read.csv('base_val.csv', encoding = 'UTF-8')
+validation_svm<- read.csv('base_val.csv', encoding = 'UTF-8')
 filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat", "year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "log_room_land_std")
-validation <- validation %>%  select(-filter_cols)
+validation_svm <- validation_svm %>%  select(-filter_cols)
 
 # Estandarización de variables categóricas ordinales, quitando sell_rate_cat, bed_cat y car_cat que en principio no aporta nada al modelo (las dos últimas por ser redundantes)
 cat_with_order = c("rooms_cat", "bath_cat")
 
-validation['rooms_cat']<- validation %>% pull('rooms_cat') %>% 
+validation_svm['rooms_cat']<- validation_svm %>% pull('rooms_cat') %>% 
   ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
-validation['bath_cat'] <- validation %>% pull('bath_cat') %>% 
+validation_svm['bath_cat'] <- validation_svm %>% pull('bath_cat') %>% 
   ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
 
-ordinal_variables <- validation %>% select(cat_with_order) 
+ordinal_variables <- validation_svm %>% select(cat_with_order) 
 normParam <- preProcess(ordinal_variables)
 ordinal_variables_norm <- predict(normParam, ordinal_variables)
 
 for(cat in cat_with_order){
-  validation[cat] <- ordinal_variables_norm[cat]
+  validation_svm[cat] <- ordinal_variables_norm[cat]
 }
 
-validation$price_label_high<-as.factor(ifelse(validation$price_label_high==TRUE,1,0))
+validation_svm$price_label_high<-as.factor(ifelse(validation_svm$price_label_high==TRUE,1,0))
     
 ```
 
  
 
 ```{r}
-prob_svm_val <- predict(best_svm_gaussian, new_data = validation, type = "prob")$.pred_1
+prob_svm_val <- predict(best_svm_gaussian, new_data = validation_svm, type = "prob")$.pred_1
 preds_svm_val <- as.factor(ifelse(prob_svm_val > opt_svm_gaussian$threshold,1,0))
-metrics_function_num(preds_svm_val, validation, 'price_label_high')
+metrics_function_num(preds_svm_val, validation_svm, 'price_label_high')
 ```
 
 
 ## Naive Bayes
-Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando Naive Bayes.
 
-```{r}
-housesTrain <- read.csv('base_train.csv')
-```
+Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando Naive Bayes.
 
 ### Primer modelo
 
@@ -1588,7 +1584,7 @@ Como primera aproximación, utilizaremos las mismas variables utilizadas en el m
 mod <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data=housesTrain)
 ```
 
-Métricas en train. El f1 es flojillo, ya que ni el recall ni el precision son demasiado buenos. Sin embargo, el AUC ROC es bastante bueno (0.9)
+Métricas en train. El f1 es algo bajo, ya que ni el recall ni el precision son demasiado buenos. Sin embargo, el AUC ROC es bastante bueno (0.9)
 
 ```{r}
 preds <- predict(mod, housesTrain, type = "class")
@@ -1602,10 +1598,10 @@ roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 ```
 
-Probamos a reducir el número de variables, utilizando por ejemplo las variables más importantes seleccionadas por el random forest. El modelo mejora ligeramente.
+Probamos a reducir el número de variables, utilizando por ejemplo las variables más importantes seleccionadas por el random forest y la variable extrída del clustering kmeans. El modelo empeora ligeramente.
 
 ```{r}
-mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat, data=housesTrain)
+mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat + kmeans_cluster, data=housesTrain)
 ```
 
 ```{r}
@@ -1626,75 +1622,72 @@ Probando algún modelo con menos variables. A modo de resumen:
 - Utilizando únicamente las numéricas, el resultado lógicamente empeora, ya que Naive Bayes asume una distribución normal de las entradas numéricas, y trabaja mejor con categóricas al calcular las probabilidades de una forma más precisa conociendo las distribuciones. En este caso, tenemos un accuracy de 0.7727566, un f1 de 0.4759075 y una auc roc de 0.7913
 
 ### Validación
-Utilizaremos ahora cross validation para comprobar si el modelo sobre ajusta. Observamos que con 10 fold cross validation repetido 3 veces, obtenemos una ROC de 0.85 con una desviación de 0.01. Usando todas las variables se obtiene una AUC ROC de 0.867 con una desviación de 0.012, pero elegimos el primer modelo por ser más sencillo.
 
-```{r}
-housesTrainCV <- housesTrain %>% select(Distance, Regionname, Type, rooms_cat, price_label_high)
-housesTrainCV$price_label_high <- as.factor(ifelse(housesTrainCV$price_label_high==TRUE,"caras","baratas"))
-fit_control <- caret::trainControl(method = "repeatedcv", number=10, repeats=3, summaryFunction = twoClassSummary, classProbs = TRUE)
-grid <- expand.grid(usekernel=c(FALSE), laplace=c(0), adjust=c(0))
-cv_model <- train(price_label_high ~ ., data=housesTrainCV, method='naive_bayes', trControl=fit_control, metric='ROC', tuneGrid=grid)
-cv_model$results
-```
-
-
-```{r}
-housesTrainCV <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, price_label_high)
-housesTrainCV$price_label_high <- as.factor(ifelse(housesTrainCV$price_label_high==TRUE,"caras","baratas"))
-fit_control <- caret::trainControl(method = "repeatedcv", number=10, repeats=3, summaryFunction = twoClassSummary, classProbs = TRUE)
-grid <- expand.grid(usekernel=c(FALSE), laplace=c(0), adjust=c(0))
-cv_model <- train(price_label_high ~ ., data=housesTrainCV, method='naive_bayes', trControl=fit_control, metric='ROC', tuneGrid=grid)
-cv_model$results
-```
+Ahora probamos el modelo con menos variables sobre los datos de validación. El F1 obtenido es ligeramente inferior al obtenido en train (0,68) y una auc roc de 0,897.
 
 Finalmente, buscamos el corte óptimo con el mejor modelo.
 
-
 ```{r}
-mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat, data=housesTrain)
-prob_values <- predict(mod, housesTrain, type='raw')
-opt_f1_obj <- opt_f1_function(prob_values, housesTrain, 'price_label_high')
+mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat + kmeans_cluster, data=housesVal)
+
+prob_values <- predict(mod, housesVal, type='raw')
+roc_dt <- roc(housesVal$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
+
+opt_f1_obj <- opt_f1_function(prob_values, housesVal, 'price_label_high')
+#opt_f1_obj$f1_opt
 opt_f1_obj$p1
 opt_f1_obj$p2
 
-predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=prob_values[,2])
+predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
 predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
+
+saveRDS(mod, "./models/nb_best_model.rds")
 ```
 
-
-
-NOTA: ESTO MEJOR CUANDO ELIJAMOS EL MEJOR MODELO
-Mediante estos gráficos, podemos ver de una forma gráfica las muestras que quedarían clasificadas en función del umbral que se elija.
-
-```{r}
-th = 0.5
-preds_prob <- predict(rf2, type = "prob")
-predictions <- data.frame(price_label_high=housesTrainOrigVar$price_label_high, pred=preds_prob[,2])
-predictions$price_label_high <- ifelse(predictions$price_label_high==TRUE,1,0)
-df_preds <- pred_type_distribution(predictions, th, 'price_label_high')
-```
-
-
-```{r}
- ggplot(data=df_preds, aes(x=price_label_high, y=pred)) + 
-    geom_violin(fill=rgb(1,1,1,alpha=0.6), color=NA) + 
-    geom_jitter(aes(color=pred_type), alpha=0.6) +
-    geom_hline(yintercept=th, color="red", alpha=0.6) +
-    scale_color_discrete(name = "type") +
-    labs(title=sprintf("Threshold at %.2f", th))
-```
 
 # Evaluación
 
 ```{r}
+#Logistic regression
+data_lr = validation
+model_lr = readRDS("./models/lr_regularized.rds")
+values <- predict(model_lr, data_lr, type='response')
+f1_lr = round(opt_f1_function_v2(values, data_lr, 'price_label_high')$f1_opt, 3)
+
+#Árbol de decision
+data_dt = housesVal
+model_dt = readRDS("./models/dt_best_model.rds")
+values = predict(pruneTREE, data_dt, type='prob')
+f1_dt = round(opt_f1_function(values, data_dt, 'price_label_high')$f1_opt, 3)
+
+#Random forest
+data_dt = housesVal
+model_dt = readRDS("./models/dt_best_model.rds")
+values = predict(pruneTREE, data_dt, type='prob')
+f1_dt = round(opt_f1_function(values, data_dt, 'price_label_high')$f1_opt, 3)
+
+#SWM
+data_svm = validation_svm
+model_svm = readRDS("./models/svm_gaussian_kernel.rds")
+values <- predict(model_svm, data_svm, type = "prob")
+f1_svm = round(opt_f1_function(values, data_svm, "price_label_high")$f1_opt, 3)
+f1_svm
+
+#Naive Bayes
+data_nv = housesVal
+model_nv = readRDS("./models/nb_best_model.rds")
+values <- predict(model_nv, data_nv, type='raw')
+f1_nv = round(opt_f1_function(values, data_nv, 'price_label_high')$f1_opt, 3)
+
+
 dfMetricas <- data.frame(
-  Modelos = c('Regresión logística', 'Árbol de decisión', 'Random forest', 'KNN'),
-  F1 = c('0.7401130', '0.7005650', 'x', '0.7330383'))
+  Modelos = c('Regresión logística', 'Árbol de decisión', 'Random forest', 'KNN', 'Naive Bayes'),
+  F1 = c(f1_lr, f1_dt, 'x', 'x', f1_nv))
 
-dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center')
+dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center') %>%  row_spec(2, bold = T, color = "white", background = palette34[1])
 
-#stripe_index utilizar dentro de kable_styling para marcar el modelo con mejor f1
 ```
 
 
