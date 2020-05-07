@@ -49,7 +49,7 @@ metrics_function_num <- function(preds, test, label){
   specificity = sum(preds == test[,label] & test[,label] == 0) / sum(test[,label] == 0)
   metrics <- c(accuracy = accuracy, recall = recall, specificity = specificity, precision = precision, f1=f1_score)
   cm <- caret::confusionMatrix(preds, test[,label], positive = '1')
-  return(list(metrics, cm))
+  return(list("metricas" = metrics, "matrix" = cm, "f1" = f1_score))
 }
 
 
