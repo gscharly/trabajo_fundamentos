@@ -741,7 +741,7 @@ Si pintamos la región, se pueden diferenciar fácilemente, ya que se han utiliz
 
 
 ```{r}
-train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point() + labs(title='PCA: price label') + scale_color_manual(values = palette34)
+train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point(alpha=0.5) + labs(title='PCA: price label') + scale_color_manual(values = palette34)
 train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=Regionname)) + geom_point() + labs(title='PCA: Regionname') + scale_color_manual(values = palette34)
 ```
 
@@ -804,7 +804,7 @@ fit <- cmdscale(d,eig=TRUE, k=2)
 df_fit <- data.frame(fit$points)
 # No estoy seguro de hacer el join bien, se supone que es por indice
 df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high') + scale_color_manual(values = palette34)
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point(alpha=0.5) + labs(title='MDS: price_label_high') + scale_color_manual(values = palette34)
 df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname') + scale_color_manual(values = palette34)
 ```
 
