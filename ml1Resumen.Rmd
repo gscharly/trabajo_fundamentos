@@ -130,7 +130,8 @@ Si se representa el precio medio por barrio:
 * Parece que los barrios pegados a la bahía tienen un precio más alto, aunque hay viviendas caras en el interior también.
 
 
-```{r mapsPrice, warning=FALSE}
+```{r mapsPrice, warning=FALSE, message=F}
+melbourne_map <- get_map(location = "melbourne", zoom = 10)
 housesMeanPriceRegion <- houses %>% dplyr::group_by(Regionname) %>% dplyr::summarise(mean_price_region = mean(Price), sd_price_region = sd(Price))
 housesMeanPriceSuburb <- houses %>% dplyr::group_by(Suburb) %>% dplyr::summarise(mean_price_suburb = mean(Price), sd_price_suburb = sd(Price))
 
@@ -458,7 +459,6 @@ df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() 
 Vamos a comprobar si los grupos generados a partir de la combinación de una variable del tamaño de la vivienda (bath_cat) y de su localización (lattitud_std) muestran diferencias respecto a la variable target (price_label_hight). En este caso, estos grupos podrían emplearse como variable en otros modelos.
 
 ```{r}
-housesTrain <- housesTrain %>% mutate(kmeans_cluster = clust_kmeans$cluster)
 bar_plot_target(housesTrain, "kmeans_cluster", "price_label_high")
 chisq.test(housesTrain$kmeans_cluster, housesTrain$price_label_high)
 ```
@@ -496,7 +496,7 @@ train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point
 
 ```{r, message=F, comment=NA, echo=F}
 houses_num_unique <- unique(housesNum)
-tsne <- Rtsne(houses_num_unique, dims = 2, perplexity=50, verbose=TRUE, max_iter = 500)
+tsne <- Rtsne(houses_num_unique, dims = 2, perplexity=50, verbose=FALSE, max_iter = 500)
 ```
 
 
@@ -531,7 +531,7 @@ Tal y como se ha comentado en el apartado de aprendizaje supervisado, nuestro pr
 
 A continuación se muestra una tabla de comparación de todos los modelos aplicados sobre el conjunto de validación según su F1 score. Para tener una información más completa a la hora de comparar, en la tabla también podemos ver las variables empleadas en cada modelo y el valor de los parámetros en caso de tenerlos.
 
-```{r}
+```{r, message=F, warning=F}
 #data sets validación regresión logística y svm
 validation <- read.csv('base_train.csv', encoding = 'UTF-8')
 filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', "Method", "log_landsize_std", "rooms_cat")
@@ -637,7 +637,7 @@ concat %>% ggplot(aes(x=th,y=value,colour=model)) + geom_line() + scale_color_ma
 ```
 
 
-```{r}
+```{r, warning=F, message=F}
 #Naive bayes
 validation_nv <- housesVal
 validation_nv$kmeans_cluster <- factor(validation_nv$kmeans_cluster, levels = c(1,2,3,4,5))
