@@ -618,9 +618,9 @@ p2_svm$data <- p2_svm$data %>% filter(metric == 'f1') %>%  mutate(model = 'svm')
 data_nv = housesVal
 model_nv = readRDS("./models/nb_best_model.rds")
 values_nv <- predict(model_nv, data_nv, type='raw')
-f1_nv = round(opt_f1_function(values_nv, data_nv, 'price_label_high')$f1_opt, 3)
+f1_nv = round(opt_f1_function_v2(values_nv, data_nv, 'price_label_high')$f1_opt, 3)
 val_nv = 'sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster'
-p2_nv = opt_f1_function(values_nv, data_nv, 'price_label_high')$p2
+p2_nv = opt_f1_function_v2(values_nv, data_nv, 'price_label_high')$p2
 p2_nv$data <- p2_nv$data %>% filter(metric == 'f1') %>%  mutate(model = 'nv')
 
 
@@ -655,11 +655,13 @@ La performance con un mayor F1 ha sido la que emplea el modelo *Random Forest*. 
 
 A continuación, vamos a probar el mejor modelo sobre el conjunto de test.
 
-```{r}
+```{r warning=FALSE}
 #Random forest
 data_rf_test = housesTest
 model_rf = readRDS("./models/rf_best_model.rds")
 values_rf_test = predict(model_rf, data_rf, type='prob')
+
+
 
 test_metrics <- val_metrics(model_rf, data_rf_test, c("Rooms", "Distance", "LandsizeImp",
                                     "Lattitude", "Longtitude", "Type"), "price_label_high")
