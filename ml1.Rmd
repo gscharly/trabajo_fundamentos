@@ -78,12 +78,17 @@ palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A676
 ```
 
 ```{r}
-houses <- read.csv('./datasets/melb_data.csv')
+#houses <- read.csv('./datasets/melb_data.csv')
 housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
 housesVal <- read.csv('base_val.csv')
 ```
-
+```{r}
+housesTrain$kmeans_cluster <- factor(housesTrain$kmeans_cluster, levels = c(1,2,3,4,5))
+housesVal$kmeans_cluster <- factor(housesVal$kmeans_cluster, levels = c(1,2,3,4,5))
+housesTest$kmeans_cluster <- factor(housesTest$kmeans_cluster, levels = c(1,2,3,4,5))
+```
+ 
 # Definición de objetivos
 
 <br>
@@ -1101,9 +1106,6 @@ En este apartado se van a utilizar random forests para el problema de clasificac
 - Si se introducen variables muy correladas, solo una tendrá mucha importancia, y el efecto de la otra quedará "enmascarado". Esto puede afectar a la interpretación de los datos.
 - Los random forest tienden a estar sesgados hacia variables categóricas con muchas categorías.
 
-```{r}
-housesTrain <- read.csv('base_train.csv')
-```
 
 ```{r}
 set.seed(10)
@@ -1283,7 +1285,6 @@ opt_f1_obj$p1
 opt_f1_obj$p2
 ```
 
-
 En validación, observamos que el modelo sobreajusta bastante, sobretodo en términos de f1. Pasamos de una f1 de 0.92 en train a 0.81 en validación, solo un poco mejor de lo obtenido anteriormente con parámetros por defecto. Esto puede deberse a que en la etapa de validación cruzada se está optimizando el AUC ROC (que vemos que cae de 0.99 a 0.96) mientras que el AUC PR sí que es sensiblemente peor. Habría que intentar optimizar esta métrica.
 
 ```{r message=FALSE}
@@ -1347,7 +1348,7 @@ predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha
 ```
 
 ```{r}
-saveRDS(rf4, "./models/rf_best_model.rds")
+#saveRDS(rf4, "./models/rf_best_model.rds")
 ```
 
 ## kNN
@@ -1762,7 +1763,7 @@ ggplotROCCurve(roc_dt)
 Probamos a reducir el número de variables, utilizando por ejemplo las variables más importantes seleccionadas por el random forest y la variable extrída del clustering kmeans. El modelo empeora ligeramente.
 
 ```{r}
-mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat + kmeans_cluster, data=housesTrain)
+mod <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster, data=housesTrain)
 ```
 
 ```{r}
@@ -1784,18 +1785,19 @@ Probando algún modelo con menos variables. A modo de resumen:
 
 ### Validación
 
-Ahora probamos el modelo con menos variables sobre los datos de validación. El F1 obtenido es ligeramente inferior al obtenido en train (0,68) y una auc roc de 0,897.
+Ahora probamos el modelo con menos variables sobre los datos de validación. El F1 obtenido es ligeramente inferior al obtenido en train (0,68) y una auc roc de 0,89.
 
 Finalmente, buscamos el corte óptimo con el mejor modelo.
 
 ```{r message=FALSE}
-mod <- naiveBayes(price_label_high ~ Distance + Regionname + Type + rooms_cat + kmeans_cluster, data=housesVal)
+
+mod <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster, data=housesVal)
 
 prob_values <- predict(mod, housesVal, type='raw')
 roc_dt <- roc(housesVal$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 
-opt_f1_function_v2(prob_values, housesVal, 'price_label_high')
+opt_f1_obj <- opt_f1_function_v2(prob_values, housesVal, 'price_label_high')
 
 predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
@@ -1807,46 +1809,113 @@ saveRDS(mod, "./models/nb_best_model.rds")
 
 # Evaluación
 
+Tal y como se ha comentado en el apartado de aprendizaje supervisado, nuestro problema de clasificación busca alcanzar un compromiso entre recall y precission respecto a las casas caras.
+
+A continuación se muestra una tabla de comparación de todos los modelos aplicados sobre el conjunto de validación según su F1 score. Para tener una información más completa a la hora de comparar, en la tabla también podemos ver las variables empleadas en cada modelo y el valor de los parámetros en caso de tenerlos.
+
 ```{r}
 #Logistic regression
 data_lr = validation
 model_lr = readRDS("./models/lr_regularized.rds")
-values <- predict(model_lr, housesVal, type='response')
-f1_lr = round(opt_f1_function_v2(values, data_lr, 'price_label_high')$f1_opt, 3)
+values_lr <- predict(model_lr, data_lr, type='response')
+f1_lr = round(opt_f1_function(values_lr, data_lr, 'price_label_high')$f1_opt, 3)
+var_lr = 'sell_rate_cat - bed_cat - car_cat - kmeans_cluster - may_have_water - lattitude_std'
+p2_lr = opt_f1_function(values_lr, data_lr, 'price_label_high')$p2
+p2_lr$data <- p2_lr$data %>% filter(metric == 'f1') %>%  mutate(model = 'lr')
+
 
 #Árbol de decision
 data_dt = housesVal
 model_dt = readRDS("./models/dt_best_model.rds")
-values = predict(model_dt, housesVal, type='prob')
-f1_dt = round(opt_f1_function(values, data_dt, 'price_label_high')$f1_opt, 3)
+values_dt = predict(model_dt, data_dt, type='prob')
+f1_dt = round(opt_f1_function(values_dt, data_dt, 'price_label_high')$f1_opt, 3)
+val_dt = 'Longtitude - Rooms - Lattitude - Type'
+parameters_dt = 'cp = 0.013981636'
+p2_dt = opt_f1_function(values_dt, data_dt, 'price_label_high')$p2
+p2_dt$data <- p2_dt$data %>% filter(metric == 'f1') %>%  mutate(model = 'dt')
+
 
 #Random forest
 data_rf = housesVal
 model_rf = readRDS("./models/rf_best_model.rds")
-values = predict(model_rf, housesVal, type='prob')
-f1_dt = round(opt_f1_function(values, data_dt, 'price_label_high')$f1_opt, 3)
+values_rf = predict(model_rf, data_rf, type='prob')
+f1_rf = round(opt_f1_function(values_rf, data_rf, 'price_label_high')$f1_opt, 3)
+val_rf = 'Rooms - Distance - LandsizeImp - Lattitude - Longtitude - Type'
+parameters_rf = 'ntree = 50 / mtry = 3 / nodesize = 11'
+p2_rf = opt_f1_function(values_rf, data_rf, 'price_label_high')$p2
+p2_rf$data <- p2_rf$data %>% filter(metric == 'f1') %>%  mutate(model = 'rf')
 
-#SWM
+
+#SVM
 data_svm = validation_svm
 model_svm = readRDS("./models/svm_gaussian_kernel.rds")
-values <- predict(model_svm, housesVal, type = "prob")
-f1_svm = round(opt_f1_function(values, data_svm, "price_label_high")$f1_opt, 3)
-f1_svm
+values_svm <- predict(model_svm, data_svm, type = "prob")$.pred_1
+f1_svm = round(opt_f1_function(values_svm, data_svm, "price_label_high")$f1_opt, 3)
+val_svm = 'sqrt_distance_std - log_landsize_std - lattitude_std - longtitude_std - rooms_cat -      bath_cat - price_label_high'
+parameters_svm = 'cost = 30.9136 / rbf_sigma = 0.1832'
+p2_svm = opt_f1_function(values_svm, data_svm, 'price_label_high')$p2
+p2_svm$data <- p2_svm$data %>% filter(metric == 'f1') %>%  mutate(model = 'svm')
+
 
 #Naive Bayes
 data_nv = housesVal
 model_nv = readRDS("./models/nb_best_model.rds")
-values <- predict(model_nv, housesVal, type='raw')
-f1_nv = round(opt_f1_function(values, data_nv, 'price_label_high')$f1_opt, 3)
+values_nv <- predict(model_nv, data_nv, type='raw')
+f1_nv = round(opt_f1_function(values_nv, data_nv, 'price_label_high')$f1_opt, 3)
+val_nv = 'sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster'
+p2_nv = opt_f1_function(values_nv, data_nv, 'price_label_high')$p2
+p2_nv$data <- p2_nv$data %>% filter(metric == 'f1') %>%  mutate(model = 'nv')
 
 
+
+#KNN
+data_knn = housesVal
+num_std_cols = c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
+pred_knn_val <- knn(train = housesTrain[,num_std_cols], test = housesVal[,num_std_cols], cl=housesTrain[,"price_label_high"], k = 3,prob = T)
+values_knn <- reverse_probs(pred_knn_val)
+f1_knn <- round(opt_f1_function(values_knn, data_knn, "price_label_high")$f1_opt, 3)
+val_knn = 'log_landsize_std - lattitude_std - longtitude_std - log_room_land_std'
+parameters_knn = 'k = 3'
+p2_knn = opt_f1_function(values_knn, data_knn, 'price_label_high')$p2
+p2_knn$data <- p2_knn$data %>% filter(metric == 'f1') %>%  mutate(model = 'knn')
+
+
+#Tabla
 dfMetricas <- data.frame(
-  Modelos = c('Regresión logística', 'Árbol de decisión', 'Random forest', 'KNN', 'Naive Bayes'),
-  F1 = c(f1_lr, f1_dt, 'x', 'x', f1_nv))
+  Modelos = c('Regresión logística', 'Árbol de decisión', 'Random forest', 'KNN', 'SVM','Naive Bayes'),
+  F1 = c(f1_lr, f1_dt, f1_rf, f1_knn,f1_svm, f1_nv),
+  Variables = c(var_lr, val_dt, val_rf, val_knn,val_svm, val_nv ),
+  Parámetros = c('/', parameters_dt, parameters_rf, parameters_knn,parameters_svm, '/'))
 
-dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center') %>%  row_spec(2, bold = T, color = "white", background = palette34[1])
+dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center') %>%  row_spec(3, bold = T, color = "white", background = palette34[1])
 
+#Gráfica F1
+concat = rbind(p2_lr$data, p2_dt$data, p2_rf$data, p2_knn$data, p2_svm$data, p2_nv$data)
+concat %>% ggplot(aes(x=th,y=value,colour=model)) + geom_line() + scale_color_manual(values=c("#1B9E77","#D95F02","#7570B3","#66A61E","#E7298A","#E6AB02")) + ggtitle("F1 Score")+ theme(plot.title = element_text(hjust = 0.5))
 ```
 
+La performance con un mayor F1 ha sido la que emplea el modelo *Random Forest*. Además, si atendemos a la explicabilidad del modelo, no es el que más variables emplea. Solamente supera en número de variables a los modelos de Naive Bayes y Árbol de decisión. Sin embargo, estos modelos tiene un F1 muy por debajo.
+
+A continuación, vamos a probar el mejor modelo sobre el conjunto de test. 
+```{r}
+#Random forest
+data_rf_test = housesTest
+model_rf = readRDS("./models/rf_best_model.rds")
+values_rf_test = predict(model_rf, data_rf, type='prob')
+metrics_rf = opt_f1_function(values_rf, data_rf, 'price_label_high')
+p2_rf_test = opt_f1_function(values_rf, data_rf, 'price_label_high')$p2
+metrics_rf$f1_opt
 
 
+test_metrics <- val_metrics(model_rf, data_rf_test, c("Rooms", "Distance", "LandsizeImp",
+                                    "Lattitude", "Longtitude", "Type"), "price_label_high")
+test_metrics$metrics
+test_metrics$roc_plot
+test_metrics$opt_f1
+
+
+predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=values_rf_test[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=test_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=test_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
+```
+ 
