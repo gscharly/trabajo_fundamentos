@@ -357,6 +357,8 @@ infoTables <- create_infotables(data = a, y = "price_dep",
                               bins = 10,
                               parallel = F)
 
+infoTables$Tables$CouncilArea
+
 infoTables$Summary %>% kable() %>% kable_styling(position = 'center', row_label_position = 'c')
 plotFrame <- infoTables$Summary[order(-infoTables$Summary$IV),]
 plotFrame$Variable <- factor(plotFrame$Variable, levels = plotFrame$Variable[order(-plotFrame$IV)])
@@ -411,7 +413,7 @@ De todas las combinaciones probadas, atendiendo a la forma del gráfico y a la i
 
 ```{r kmeansKoptimo2, warning=F}
 set.seed(123)
-selec_var_kmeans <- housesTrainCluster %>% select(lattitude_std, bath_cat)
+selec_var_kmeans <- housesTrainCluster %>% select(lattitude_std, rooms_cat)
 n = nrow(housesTrain)
 SSW <- vector(mode = "numeric", length = 15)
 SSW[1] <- (n - 1) * sum(apply(X = selec_var_kmeans, MARGIN = 2, FUN = 'var'))
@@ -500,14 +502,14 @@ A continuación se muestra una tabla de comparación de todos los modelos aplica
 
 ```{r}
 #data sets validación regresión logística y svm
-validation <- read.csv('base_val.csv', encoding = 'UTF-8')
+validation <- read.csv('base_train.csv', encoding = 'UTF-8')
 filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', "Method", "log_landsize_std", "rooms_cat")
 validation <- validation %>%  select(-filter_cols)
 validation$may_have_water <- factor(validation$may_have_water, levels=c(F,T))
 validation$kmeans_cluster <- factor(validation$kmeans_cluster, levels = c(1,2,3,4,5))
 validation$price_label_high <- as.factor(ifelse(validation$price_label_high==TRUE,1,0))
 
-validation_svm<- read.csv('base_val.csv', encoding = 'UTF-8')
+validation_svm<- read.csv('base_train.csv', encoding = 'UTF-8')
 filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat", "year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "log_room_land_std")
 validation_svm <- validation_svm %>%  select(-filter_cols)
 
@@ -540,7 +542,7 @@ p2_lr$data <- p2_lr$data %>% filter(metric == 'f1') %>%  mutate(model = 'lr')
 
 
 #Árbol de decision
-data_dt = housesVal
+data_dt = housesTrain
 model_dt = readRDS("./models/dt_best_model.rds")
 values_dt = predict(model_dt, data_dt, type='prob')
 f1_dt = round(opt_f1_function(values_dt, data_dt, 'price_label_high')$f1_opt, 3)
@@ -551,7 +553,7 @@ p2_dt$data <- p2_dt$data %>% filter(metric == 'f1') %>%  mutate(model = 'dt')
 
 
 #Random forest
-data_rf = housesVal
+data_rf = housesTrain
 model_rf = readRDS("./models/rf_best_model.rds")
 values_rf = predict(model_rf, data_rf, type='prob')
 f1_rf = round(opt_f1_function(values_rf, data_rf, 'price_label_high')$f1_opt, 3)
@@ -573,7 +575,7 @@ p2_svm$data <- p2_svm$data %>% filter(metric == 'f1') %>%  mutate(model = 'svm')
 
 
 #Naive Bayes
-data_nv = housesVal
+data_nv = housesTrain
 model_nv = readRDS("./models/nb_best_model.rds")
 values_nv <- predict(model_nv, data_nv, type='raw')
 f1_nv = round(opt_f1_function(values_nv, data_nv, 'price_label_high')$f1_opt, 3)
@@ -584,9 +586,9 @@ p2_nv$data <- p2_nv$data %>% filter(metric == 'f1') %>%  mutate(model = 'nv')
 
 
 #KNN
-data_knn = housesVal
+data_knn = housesTrain
 num_std_cols = c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
-pred_knn_val <- knn(train = housesTrain[,num_std_cols], test = housesVal[,num_std_cols], cl=housesTrain[,"price_label_high"], k = 3,prob = T)
+pred_knn_val <- knn.cv(housesTrain[,num_std_cols], k=3, cl=housesTrain[,"price_label_high"], prob = T)
 values_knn <- reverse_probs(pred_knn_val)
 f1_knn <- round(opt_f1_function(values_knn, data_knn, "price_label_high")$f1_opt, 3)
 val_knn = 'log_landsize_std - lattitude_std - longtitude_std - log_room_land_std'

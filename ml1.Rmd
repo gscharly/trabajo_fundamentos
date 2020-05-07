@@ -1508,8 +1508,6 @@ for(i in 1:length(probs_knn_val)){
 
 housesVal$price_label_high <- as.factor(ifelse(housesVal$price_label_high==T,1,0))
 metrics_function_num(factor(final_preds_val), housesVal, "price_label_high")
-
-
 ```
 
 ##SVM
@@ -1737,45 +1735,50 @@ Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando 
 Como primera aproximación, utilizaremos las mismas variables utilizadas en el modelo de regresión lineal múltiple (aunque el escalado debería ser indiferente). Para variables numéricas asume una distribución gausiana para calcular la verosimilitud (likelihood). Lo que saca el mod es la media en la primera columna y la varianza en la segunda para las distribuciones condicionadas.
 
 ```{r}
-mod <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data=housesTrain)
+mod_1 <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data=housesTrain)
 ```
 
 Métricas en train. El f1 es algo bajo, ya que ni el recall ni el precision son demasiado buenos. Sin embargo, el AUC ROC es bastante bueno (0.9)
 
-```{r}
-preds <- predict(mod, housesTrain, type = "class")
-table(pred = preds, obs = housesTrain$price_label_high)
-metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
-```
-
-```{r}
-prob_values <- predict(mod, housesTrain, type='raw')
+```{r, warning=F}
+prob_values <- predict(mod_1, housesTrain, type='raw')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
+
+opt_f1_nv1<- opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
+opt_f1_nv1$f1_opt
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=prob_values[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv1$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv1$threshold, linetype='dashed', color=palette34[4])
 ```
 
 Probamos a reducir el número de variables, utilizando por ejemplo las variables más importantes seleccionadas por el random forest y la variable extrída del clustering kmeans. El modelo empeora ligeramente.
 
 ```{r}
-mod <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster, data=housesTrain)
+mod_best <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster, data=housesTrain)
+#saveRDS(mod_best, "./models/nb_best_model.rds")
 ```
 
-```{r}
-preds <- predict(mod, housesTrain, type = "class")
-table(pred = preds, obs = housesTrain$price_label_high)
-metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
-```
 
-```{r}
-prob_values <- predict(mod, housesTrain, type='raw')
+```{r, warning=F}
+mod_best <- readRDS("./models/nb_best_model.rds")
+prob_values <- predict(mod_best, housesTrain, type='raw')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
+
+opt_f1_nv<- opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
+opt_f1_nv$f1_opt
+predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=prob_values[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv$threshold, linetype='dashed', color=palette34[4])
 ```
 
 Probando algún modelo con menos variables. A modo de resumen:
 
 - Utilizando solo las categóricas, los resultados empeoran, con un accuracy de 0.8079153, un f1 de 0.6207523 y una auc roc de 0.8552.
 - Utilizando únicamente las numéricas, el resultado lógicamente empeora, ya que Naive Bayes asume una distribución normal de las entradas numéricas, y trabaja mejor con categóricas al calcular las probabilidades de una forma más precisa conociendo las distribuciones. En este caso, tenemos un accuracy de 0.7727566, un f1 de 0.4759075 y una auc roc de 0.7913
+
+El modelo elegido como el mejor aquel que utiliza las variables sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster. No presenta el mejor f1 pero no se aleja mucho de los mejores según esta métrica y emplea menos variables.
 
 ### Validación
 
@@ -1784,20 +1787,14 @@ Ahora probamos el modelo con menos variables sobre los datos de validación. El 
 Finalmente, buscamos el corte óptimo con el mejor modelo.
 
 ```{r message=FALSE}
+validation_nv <- housesVal
+validation_nv$kmeans_cluster <- factor(validation_nv$kmeans_cluster, levels = c(1,2,3,4,5))
+validation_nv$price_label_high <- as.factor(ifelse(validation_nv$price_label_high==TRUE,1,0))
 
-mod <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster, data=housesVal)
+prob_values <- predict(mod_best, validation_nv, type='raw')[,2]
+preds_validation_nv <- as.factor(ifelse(prob_values > opt_f1_nv$threshold ,1,0))
 
-prob_values <- predict(mod, housesVal, type='raw')
-roc_dt <- roc(housesVal$price_label_high, prob_values[,2])
-ggplotROCCurve(roc_dt)
-
-opt_f1_obj <- opt_f1_function_v2(prob_values, housesVal, 'price_label_high')
-
-predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_obj$threshold, linetype='dashed', color=palette34[4])
-
-saveRDS(mod, "./models/nb_best_model.rds")
+metrics_function_num(preds_validation_nv, validation_nv, 'price_label_high')
 ```
 
 
