@@ -469,7 +469,7 @@ summary(aov(price_label_high~Longtitude, data=housesTrain))
 
 __Landsize__
 
-Las casas caras parece que tienen un tamaño de parcela ligeramente mayor.
+Las casas caras parece que tienen un tamaño de parcela ligeramente mayor. Además la variabilidad respecto al tamaño es bastante menor en las casas caras.
 
 ```{r}
 p<-housesTrain %>% mutate(log_landsize = log10(LandsizeImp)) %>% 
@@ -560,9 +560,10 @@ Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número
 
 En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 1 hasta 15. Aquel punto en el que se produce el codo y le sigue una cierta estabilización es el número de clusters que se toma como óptimo.
 
-Se observa en ambas, que el punto donde se produce el cambio de tendencia es aproximadamente en el 3. Por esto se va a probar a realizar una clasificación en base a 3 grupos. 
 
-De todas las combinaciones probadas, atendiendo a la forma del gráfico y a la información de selección de variables, se van a utilizar La forma que tome esta gráfica nos ayuda a seleccionar las variables. Si la combinación de variables empleada genera una gráfica sin un codo claro y sin que haya una cierta estabilización, significaría que empleando esas variables no va a ser posible hacer clusters bien definidos.
+La forma que tome esta gráfica nos ayuda a seleccionar las variables. Si la combinación de variables empleada genera una gráfica sin un codo claro y sin que haya una cierta estabilización, significaría que empleando esas variables no va a ser posible hacer clusters bien definidos.
+
+De todas las combinaciones probadas, atendiendo a la forma del gráfico y a la información de selección de variables, se van a utilizar la latitud y el número de baños para formar los grupos. 
 
 
 ```{r kmeansKoptimo1}
@@ -830,13 +831,6 @@ df_train_no_dup %>% ggplot(aes(x=X1, y=X2, color=Type)) + geom_point() + labs(ti
 
 ```
 
-
-Mapa de Melbourne :) (lo podemos poner el algún sitio)
-```{r}
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=price_label_high)) + geom_point() + scale_color_manual(values = palette34)
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Regionname)) + geom_point() + scale_color_manual(values = palette34)
-housesTrain %>% ggplot(aes(x=Longtitude, y=Lattitude, color=Type)) + geom_point()+ scale_color_manual(values = palette34)
-```
 
 # Aprendizaje supervisado
 
@@ -1902,9 +1896,7 @@ A continuación, vamos a probar el mejor modelo sobre el conjunto de test.
 data_rf_test = housesTest
 model_rf = readRDS("./models/rf_best_model.rds")
 values_rf_test = predict(model_rf, data_rf, type='prob')
-metrics_rf = opt_f1_function(values_rf, data_rf, 'price_label_high')
-p2_rf_test = opt_f1_function(values_rf, data_rf, 'price_label_high')$p2
-metrics_rf$f1_opt
+
 
 
 test_metrics <- val_metrics(model_rf, data_rf_test, c("Rooms", "Distance", "LandsizeImp",
