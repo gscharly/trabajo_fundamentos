@@ -502,6 +502,22 @@ housesVal <- housesVal %>% mutate(kmeans_cluster = test_clust)
   + MDS
   + tSNE
   
+```{r}
+housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(housesNum)
+summary(housesPCA)
+```
+
+```{r}
+train <- housesTrain %>% select(-Price)
+train_pca <- data.frame(housesPCA$x[,1:3])
+train_cat <- train %>% select(Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, price_label_high)
+train_pca_cat <- merge(train_pca, train_cat, by.x=0, by.y=0)
+train_pca_cat$log_price <- train$log_price
+```
+
+
+  
 
 # Aprendizaje supervisado
 
