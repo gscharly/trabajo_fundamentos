@@ -1,0 +1,633 @@
+---
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+      section_divs: true
+    theme: "sandstone"
+    highlight: "zenburn"
+    code_folding: "hide"
+---
+
+```{r setup, echo=FALSE, eval=TRUE}
+knitr::opts_chunk$set(error = TRUE)
+```
+
+<br>
+<span style="color: #1B9E77;"> <font size="12"><center>Melbourne</center></font></span>
+<center>Carlos Gómez Sánchez</center>
+<center>Manuel Jesús Pertejo Lope</center> 
+<center>Paula Santamaría Vallaverde</center>
+<br>
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(class)
+library(caret)
+library(cluster)
+library(factoextra)
+library(cowplot)
+library(scales)
+library(tidyr)
+library(InformationValue)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(pROC)
+library(gridExtra)
+library(glmnetUtils)
+library(kmed)
+library(Rtsne)
+library(doFuture)
+library(randomForest)
+library(grid)
+library(party)
+library(ROCR)
+library(tidymodels)
+library(workflows)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(Information)
+library(dendextend)
+library(ape)
+library(PRROC)
+library(Hmisc)
+library(plyr)
+library(reshape2)
+library(ggmap)
+
+source('utils/pred_type_distribution.R')
+source('utils/calculate_roc.R')
+source('utils/plot_roc.R')
+source('utils/metrics_function.R')
+source('utils/plot_utils.R')
+set.seed(10)
+```
+
+```{r paleta34}
+#Paleta creada a partir de Brewer Dark2
+palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D", "#666666","#1DA632","#9E1B84","#1B849E","#7CD902","#A61E22","#1EA6A2","#8AE729", "#AEB370","#E7E529","#70B397","#29E786","#292BE7","#E7292B","#B3708D","#AFE602", "#02E6AB","#02AFE6","#92A61D","#771B9E","#1DA676","#1D4DA6","#02D95F","#02D9CB","#D9CB02","#B37570","#B39670")
+```
+
+```{r}
+#houses <- read.csv('./datasets/melb_data.csv')
+housesTrain <- read.csv('base_train.csv')
+housesTest <- read.csv('base_test.csv')
+housesVal <- read.csv('base_val.csv')
+```
+```{r}
+housesTrain$kmeans_cluster <- factor(housesTrain$kmeans_cluster, levels = c(1,2,3,4,5))
+housesVal$kmeans_cluster <- factor(housesVal$kmeans_cluster, levels = c(1,2,3,4,5))
+housesTest$kmeans_cluster <- factor(housesTest$kmeans_cluster, levels = c(1,2,3,4,5))
+```
+ 
+# Definición de objetivos
+
+<br>
+
+*Objetivo general*
+
+- Clasificar las viviendas de la ciudad de Melbourne según su precio en caras y baratas
+
+*Objetivos específicos*
+
+- Realizar un análisis explotratorio multivariante de todas las variables con respecto a la nueva variable target (*price_label*)
+- Seleccionar las variables adecuadas al modelo.
+- Ajustar los distintos modelos de clasificación vistos en la asignatura.
+- Comparación de modelos en base a una métrica
+- Elección del mejor punto de corte para nuestro problema
+- Evaluación del modelo final
+
+Enlace a Github: https://github.com/gscharly/trabajo_fundamentos
+
+
+# Precio de la vivienda en Melbourne
+
+A modo de introducción, se muestran una serie de mapas de Melbourne.
+
+* Nuestro data set no cuenta con viviendas en la zona oeste de la bahía.
+* La mayoría de casas vendidas se concentran en el centro de la ciudad.
+* También hay casas en regiones que se encuentran bastante alejadas (Victoria).
+* Las regiones en las que se divide la ciudad son amplias: posiblemente el precio no solo varíe de unas a otras, si no también dentro de cada una.
+* La ciudad cuenta con la bahía de Port Phillip: puede que la posición de la vivienda respecto a la bahía influya en su precio.
+
+
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10, eval=F}
+melbourne_map <- get_map(location = "melbourne", zoom = 10)
+houses_map <- houses[,c("Regionname", "Lattitude", "Longtitude")]
+houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#E6AB02", "Western Metropolitan" = "#A6761D", "Northern Metropolitan" = "#7570B3",
+                                                      "Eastern Metropolitan" = "#1B9E77", "South-Eastern Metropolitan" = "#66A61E", "Eastern Victoria" = "#D95F02",
+                                                      "Northern Victoria" = "#E7298A", "Western Victoria" = "#666666"))
+  
+ggmap(melbourne_map) + geom_point(aes(x = houses_map$Longtitude, y = houses_map$Lattitude), colour=houses_map$region_colours , data = houses, alpha=0.5, size = 0.75) + labs(title='Casas vendidas por región')
+```
+
+
+Si pintamos el precio medio por cada región:
+
+* Hay regiones más caras que otras en media. 
+* Dentro de una misma región puede haber bastante variabilidad de precio. 
+
+Si se representa el precio medio por barrio: 
+
+* Se observa que en la región más cara efectivamente se encuentran las casas más caras, pero también otras que son más baratas. 
+* Parece que los barrios pegados a la bahía tienen un precio más alto, aunque hay viviendas caras en el interior también.
+
+
+```{r mapsPrice, warning=FALSE, eval=F}
+housesMeanPriceRegion <- houses %>% dplyr::group_by(Regionname) %>% dplyr::summarise(mean_price_region = mean(Price), sd_price_region = sd(Price))
+housesMeanPriceSuburb <- houses %>% dplyr::group_by(Suburb) %>% dplyr::summarise(mean_price_suburb = mean(Price), sd_price_suburb = sd(Price))
+
+housesPrice <- houses %>% inner_join(housesMeanPriceSuburb, by='Suburb') %>% inner_join(housesMeanPriceRegion, by='Regionname')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$mean_price_region), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Precio medio en función de la región')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$mean_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Precio medio en función del barrio')
+```
+
+A pesar de que el barrio parece indicativo y distintivo de precios más baratos y más caros, dentro de los barrios "caros" sigue habiendo variedad de precios. Esto se puede ver si se representa la desviación típica del precio por barrio:
+
+```{r mapsSdPrice, warning=FALSE, eval=F}
+ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$sd_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Desviación típica del precio en función del barrio')
+```
+
+
+Con estos mapas, se pretende introducir el hecho de que el precio de venta varía con la zona en la que está situada la vivienda y que puede ayudar a distinguir entre viviendas caras y baratas, aunque serán necesarias otras variables que expliquen el precio en aquellas zonas en las que la variabilidad del mismo sea elevada.
+
+
+# Análisis exploratorio en base al nuevo objetivo
+
+El dataset original estaba enfocado a la predicción del precio de viviendas en Melbourne. Para convertirlo en un problema de clasificación, vamos a utilizar la variable *Price* para diferenciar entre casas baratas y caras. Tenemos varias opciones:
+
+
+* Utilizar la mediana de *Price* para tener un conjunto de datos balanceado, pero donde habrá muchas muestras cercanas con las que tendremos problemas a la hora de clasificar.
+* Establecer el corte en un valor de *Price* mayor, donde tendremos un problema de desbalanceo de datos.
+
+Se ha optado por la segunda opción, para introducir una mayor complejidad al problema de clasificación.
+
+Se presenta de nuevo el mapa de Melbourne teniendo en cuenta esta nueva separación. Vemos que la zona de casas caras sigue siendo parecida, pero se concentran en puntos más específicos. 
+
+```{r warning=FALSE, eval=F}
+housesPriceSuburb <- housesTrain %>% dplyr::group_by(Suburb) %>% dplyr::summarise(sum_price_label = sum(price_label_high))
+
+housesPriceLabel <- housesTrain %>% inner_join(housesPriceSuburb, by='Suburb')
+
+ggmap(melbourne_map) + geom_point(aes(x = housesPriceLabel$Longtitude, y = housesPriceLabel$Lattitude,  colour=housesPriceLabel$sum_price_label), data = housesPriceLabel, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Número de 1s (casas caras) en función de la región')
+```
+
+
+
+## Variables categóricas
+
+Para cada variable categórica:
+
+* Gráfica de barras (absoluto y porcentaje)
+* Contraste chi cuadrado: para comprobar la independencia entre dos variables categóricas.
+  + H0: las variables son independientes
+  + H1: las variables no son independientes
+
+__Regionname__
+
+Se puede observar que el barrio con mayor número de casas caras es Southern Metropolitan, mientras que Eastern Metropolitan tiene mayor porcentaje de casas caras.
+
+```{r}
+bar_plot_target(housesTrain, "Regionname", "price_label_high")
+```
+
+```{r}
+chisq.test(housesTrain$Regionname, housesTrain$price_label_high)
+```
+
+
+__May have water__
+Teniendo en cuenta el ámbito de aplicación, pensamos que aquellas viviendas que estén en la bahía serán más caras. Utilizando la variable *CouncilArea*, se han seleccionado aquellas zonas que rodean la bahía. 
+
+Parece que hay mas casas caras porcentualmente en aquellas zonas con posibles vistas al mar.
+
+
+```{r}
+water_councils <- c('Wyndham', 'Hobsons Bay', 'Port Phillip', 'Bayside', 'Kingston', 'Frankston', 'Stonnington')
+housesTrain$may_have_water <- factor(ifelse(housesTrain$CouncilArea %in% water_councils, TRUE, FALSE))
+
+bar_plot_target(housesTrain, "may_have_water", "price_label_high")
+```
+
+```{r}
+chisq.test(housesTrain$may_have_water, housesTrain$price_label_high)
+```
+
+A modo resumen:
+
+* **Type:** Recordemos los distintos tipos de casas que hay:
+  + h: houses, cottage, villa, semi, terrace
+  + t: townhouse
+  + u: unit
+  
+Se puede observar que al mayoría de casas caras se engloban en el tipo h.
+
+
+* **Method:** Los métodos de venta son los siguientes:
+  + S - property sold
+  + SP - property sold prior
+  + PI - property passed in
+  + VB - vendor bid
+  + SA - sold after auction
+  
+Porcentualmente, parece que hay más casas caras vendidas con el método VB.
+
+
+* **CouncilArea:** Parece que áreas como Bayside o Boroondara tienen casas más caras. Sin embargo, al haber tantas categorías, no es una variable para incluir en los modelos.
+
+* **rooms_cat, bath_cat, bed_cat, car_cat:** Las casas con más habitaciones (del tipo que sean) y con más plazas de aparcamiento son más caras.
+
+* **Sell date:** Tomando el año de la fecha, solo hay 2 años de venta y que no tiene demasiada relación con el precio.
+
+* **sell_rate_cat:** Esta variable puntúa a los barrios según el número de casas vendidas en él. Parece que hay ligeramente más casas caras en los barrios populares.
+
+* **yearbuilt_cat:** Se puede intuir que hay más casas caras porcentualmente en la categoría de casas antiguas.El problema con esta variable es que hay muchas casas sin fecha de construcción informada.
+
+
+**Hipótesis de independencia:** Se rechaza para todas las variables menos para Sell date.
+
+
+## Variables cuantitativas
+<br>
+__Correlaciones__
+
+```{r}
+housesNum <- housesTrain %>% mutate(log_landsize = log10(LandsizeImp), sqrt_distance = sqrt(Distance), log_room_land = log10(Rooms/LandsizeImp*1000))
+numeric_cols <- c("sqrt_distance", "Lattitude", "Longtitude", "log_landsize", "log_room_land")
+cormat <- round(cor(na.omit(housesNum[,numeric_cols])), 2)
+
+# Get lower triangle of the correlation matrix
+get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+  # Get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+}
+
+upper_tri <- get_upper_tri(cormat)
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+ggheatmap <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "#1EA6A2", high = "#A61E22", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+
+ggheatmap + geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+```
+
+Para cada variable cuantitativa:
+
+* Histograma y boxplot
+* One way anova test: permite ver si hay diferencias entre la media de una variable numérica en los distintos grupos de una categórica-
+  + H0: no hay diferencia en la media de los grupos
+  + H1: al menos la media de un grupo es diferente
+
+__Latitud y longitud__
+
+Las distribuciones parecen indicar que el precio de la vivienda aumenta en la parte sur (menor latitud) y en la parte este (mayor longitud) de Melbourne. 
+
+```{r}
+p<-housesTrain %>%
+  select('Lattitude', 'Longtitude', 'price_label_high') %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+Para ambas variables se rechaza la hipótesis nula.
+```{r}
+summary(aov(price_label_high~Lattitude, data=housesTrain))
+summary(aov(price_label_high~Longtitude, data=housesTrain))
+```
+
+A modo resumen:
+
+* **Distance:** Las casas caras están ligeramente más cerca del centro de la ciudad.
+* **Landsize:** Las casas caras tienen un tamaño de parcela ligeramente mayor y su variabilidad es mucho menor.
+
+**One way anova test:** Se puede rechazar la hipótesis nula para todas las variables.
+
+
+# Selección de variables
+
+**Information Value (IV):** Esta medida nos indica cómo de buena es una variable independiente a la hora de distinguir entre las categorías binarias de la variable respuesta o dependiente.
+
+```{r}
+a <- housesTrain %>% select("CouncilArea", "sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std", "rooms_cat", "year_built_cat", "car_cat", "Regionname", "Type", "Method", "bath_cat", "bed_cat", "sell_rate_cat", "price_label_high")
+
+
+a$price_dep <- a %>% pull(price_label_high) %>% as.numeric()
+a <- a[-15]
+infoTables <- create_infotables(data = a, y = "price_dep",
+                              bins = 10,
+                              parallel = F)
+
+infoTables$Summary %>% kable() %>% kable_styling(position = 'center', row_label_position = 'c')
+plotFrame <- infoTables$Summary[order(-infoTables$Summary$IV),]
+plotFrame$Variable <- factor(plotFrame$Variable, levels = plotFrame$Variable[order(-plotFrame$IV)])
+
+ggplot(plotFrame, aes(x = Variable, y = IV)) +
+geom_bar(width = .35, stat = "identity", color = palette34[1], fill = "white") +
+ggtitle("Information Value") +
+theme_minimal() +
+theme(plot.title = element_text(size = 12, hjust = 0.5)) +
+theme(axis.text.x = element_text(angle = 90))
+```
+
+A la vista de los resultados, se puede ver que aquellas variables relacionadas con el tamaño de la vivienda (Type, rooms_cat) y con su ubicación (CouncilArea, lattitude, longtitude, Regionname) tienen mucho peso a la hora de clasificar la variable target.
+
+# Aprendizaje no supervisado: clustering
+
+Se define la base de datos con las variables cuantitativas y cualitativas ordinales a partir del dataset *housesTrain*.
+Tosas las variabes están estandarizadas para eliminar el efecto de las distintas escalas de medida.
+
+
+```{r}
+housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+
+#las variables categóricas pasan a ser factores ordenados
+housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
+  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric() %>% scale()
+
+housesTrainCluster['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
+  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() %>% scale()
+
+housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
+  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
+```
+
+* Métodos de clusting realizados:
+  + K-means
+  + Jerárquico aglomerativo
+  + DBSCAN
+  
+## k-means
+
+* Buscar el **número óptimo de clusters** -> El número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible.
+
+De todas las combinaciones probadas, atendiendo a la forma del gráfico y a la información de selección de variables, se van a utilizar la latitud y el número de baños para formar los grupos. 
+
+
+```{r kmeansKoptimo2, warning=F}
+set.seed(123)
+selec_var_kmeans <- housesTrainCluster %>% select(lattitude_std, bath_cat)
+n = nrow(housesTrain)
+SSW <- vector(mode = "numeric", length = 15)
+SSW[1] <- (n - 1) * sum(apply(X = selec_var_kmeans, MARGIN = 2, FUN = 'var'))
+for (i in 1:15) SSW[i] <- sum(kmeans(selec_var_kmeans,centers=i,nstart=25)$withinss)
+plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
+```
+
+```{r}
+clust_kmeans=kmeans(selec_var_kmeans,centers=5,nstart=25)
+```
+
+El ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales: el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es muy elevado(85.1%).
+
+
+### PCA + visualización
+
+```{r}
+pca_var <- housesTrainCluster %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(pca_var, center = TRUE)
+summary(housesPCA)
+cluster_group <- clust_kmeans$cluster %>%  as.factor()
+df_houses_pca <- data.frame(housesPCA$x[,1:2])
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
+```
+
+Vamos a comprobar si los grupos generados a partir de la combinación de una variable del tamaño de la vivienda (bath_cat) y de su localización (lattitud_std) muestran diferencias respecto a la variable target (price_label_hight). En este caso, estos grupos podrían emplearse como variable en otros modelos.
+
+```{r}
+housesTrain <- housesTrain %>% mutate(kmeans_cluster = clust_kmeans$cluster)
+bar_plot_target(housesTrain, "kmeans_cluster", "price_label_high")
+chisq.test(housesTrain$kmeans_cluster, housesTrain$price_label_high)
+```
+
+```{r}
+predict.kmeans <- function(object, newdata){
+    centers <- object$centers
+    n_centers <- nrow(centers)
+    dist_mat <- as.matrix(dist(rbind(centers, newdata)))
+    dist_mat <- dist_mat[-seq(n_centers), seq(n_centers)]
+    max.col(-dist_mat)
+}
+
+#predict kmeans for validation and test datasets
+housesTestKmeans <- housesTest %>% select(lattitude_std, bath_cat)
+housesTestKmeans['bath_cat'] <-housesTest %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+test_clust <- predict.kmeans(clust_kmeans, housesTestKmeans)
+housesTest <- housesTest %>% mutate(kmeans_cluster = test_clust)
+
+housesValKmeans <- housesVal %>% select(lattitude_std, bath_cat)
+housesValKmeans['bath_cat'] <-housesVal %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+val_clust <-predict.kmeans(clust_kmeans, housesValKmeans)
+housesVal <- housesVal %>% mutate(kmeans_cluster = test_clust)
+```
+
+
+# Métodos de reducción de dimensionalidad
+
+* Métodos de reducción de dimensionalidad:
+  + PCA
+  + MDS
+  + tSNE
+  
+
+# Aprendizaje supervisado
+
+Como ya se ha comentado anteriormente, el problema a resolver consiste en clasificar las casas de la ciudad de Melbourne en dos categorías en función de su precio. La clase positiva es la que vamos a identificar con las casas con precios altos (“caras”) y la clase negativa con las casas con precios más bajos (“baratas”).
+
+**Contexto del problema:** Somos una agencia de compra-venta de inmuebles de lujo. 
+
+**Objetivo de la agencia:** 
+  + Intentar detectar el mayor número de casas “caras”,  para poder así comprarlas por un precio asequible y posteriormente venderlas obteniendo el mayor beneficio posible.
+  + Nos interesa también que la precisión de nuestro modelo también sea alta. No queremos invertir en una casa segúnlo que nos dice nuestro modelo, y que luego al no ser una casa realmente “cara”, no podamos sacar beneficio de su venta e incluso hasta perder dinero.  
+
+**Métrica:** F1_score. -> alcanzar un compromiso entre recall y precision.
+
+
+
+
+# Evaluación
+
+Tal y como se ha comentado en el apartado de aprendizaje supervisado, nuestro problema de clasificación busca alcanzar un compromiso entre recall y precission respecto a las casas caras.
+
+A continuación se muestra una tabla de comparación de todos los modelos aplicados sobre el conjunto de validación según su F1 score. Para tener una información más completa a la hora de comparar, en la tabla también podemos ver las variables empleadas en cada modelo y el valor de los parámetros en caso de tenerlos.
+
+```{r}
+#data sets validación regresión logística y svm
+validation <- read.csv('base_val.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', "Method", "log_landsize_std", "rooms_cat")
+validation <- validation %>%  select(-filter_cols)
+validation$may_have_water <- factor(validation$may_have_water, levels=c(F,T))
+validation$kmeans_cluster <- factor(validation$kmeans_cluster, levels = c(1,2,3,4,5))
+validation$price_label_high <- as.factor(ifelse(validation$price_label_high==TRUE,1,0))
+
+validation_svm<- read.csv('base_val.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat", "year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "log_room_land_std")
+validation_svm <- validation_svm %>%  select(-filter_cols)
+
+cat_with_order = c("rooms_cat", "bath_cat")
+validation_svm['rooms_cat']<- validation_svm %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
+validation_svm['bath_cat'] <- validation_svm %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
+
+ordinal_variables <- validation_svm %>% select(cat_with_order) 
+normParam <- preProcess(ordinal_variables)
+ordinal_variables_norm <- predict(normParam, ordinal_variables)
+
+for(cat in cat_with_order){
+  validation_svm[cat] <- ordinal_variables_norm[cat]
+}
+
+validation_svm$price_label_high<-as.factor(ifelse(validation_svm$price_label_high==TRUE,1,0))
+```
+
+```{r}
+#Logistic regression
+data_lr = validation
+model_lr = readRDS("./models/lr_regularized.rds")
+values_lr <- predict(model_lr, data_lr, type='response')
+f1_lr = round(opt_f1_function(values_lr, data_lr, 'price_label_high')$f1_opt, 3)
+var_lr = 'sell_rate_cat - bed_cat - car_cat - kmeans_cluster - may_have_water - lattitude_std'
+p2_lr = opt_f1_function(values_lr, data_lr, 'price_label_high')$p2
+p2_lr$data <- p2_lr$data %>% filter(metric == 'f1') %>%  mutate(model = 'lr')
+
+
+#Árbol de decision
+data_dt = housesVal
+model_dt = readRDS("./models/dt_best_model.rds")
+values_dt = predict(model_dt, data_dt, type='prob')
+f1_dt = round(opt_f1_function(values_dt, data_dt, 'price_label_high')$f1_opt, 3)
+val_dt = 'Longtitude - Rooms - Lattitude - Type'
+parameters_dt = 'cp = 0.013981636'
+p2_dt = opt_f1_function(values_dt, data_dt, 'price_label_high')$p2
+p2_dt$data <- p2_dt$data %>% filter(metric == 'f1') %>%  mutate(model = 'dt')
+
+
+#Random forest
+data_rf = housesVal
+model_rf = readRDS("./models/rf_best_model.rds")
+values_rf = predict(model_rf, data_rf, type='prob')
+f1_rf = round(opt_f1_function(values_rf, data_rf, 'price_label_high')$f1_opt, 3)
+val_rf = 'Rooms - Distance - LandsizeImp - Lattitude - Longtitude - Type'
+parameters_rf = 'ntree = 50 / mtry = 3 / nodesize = 11'
+p2_rf = opt_f1_function(values_rf, data_rf, 'price_label_high')$p2
+p2_rf$data <- p2_rf$data %>% filter(metric == 'f1') %>%  mutate(model = 'rf')
+
+
+#SVM
+data_svm = validation_svm
+model_svm = readRDS("./models/svm_gaussian_kernel.rds")
+values_svm <- predict(model_svm, data_svm, type = "prob")$.pred_1
+f1_svm = round(opt_f1_function(values_svm, data_svm, "price_label_high")$f1_opt, 3)
+val_svm = 'sqrt_distance_std - log_landsize_std - lattitude_std - longtitude_std - rooms_cat -      bath_cat - price_label_high'
+parameters_svm = 'cost = 30.9136 / rbf_sigma = 0.1832'
+p2_svm = opt_f1_function(values_svm, data_svm, 'price_label_high')$p2
+p2_svm$data <- p2_svm$data %>% filter(metric == 'f1') %>%  mutate(model = 'svm')
+
+
+#Naive Bayes
+data_nv = housesVal
+model_nv = readRDS("./models/nb_best_model.rds")
+values_nv <- predict(model_nv, data_nv, type='raw')
+f1_nv = round(opt_f1_function(values_nv, data_nv, 'price_label_high')$f1_opt, 3)
+val_nv = 'sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster'
+p2_nv = opt_f1_function(values_nv, data_nv, 'price_label_high')$p2
+p2_nv$data <- p2_nv$data %>% filter(metric == 'f1') %>%  mutate(model = 'nv')
+
+
+
+#KNN
+data_knn = housesVal
+num_std_cols = c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
+pred_knn_val <- knn(train = housesTrain[,num_std_cols], test = housesVal[,num_std_cols], cl=housesTrain[,"price_label_high"], k = 3,prob = T)
+values_knn <- reverse_probs(pred_knn_val)
+f1_knn <- round(opt_f1_function(values_knn, data_knn, "price_label_high")$f1_opt, 3)
+val_knn = 'log_landsize_std - lattitude_std - longtitude_std - log_room_land_std'
+parameters_knn = 'k = 3'
+p2_knn = opt_f1_function(values_knn, data_knn, 'price_label_high')$p2
+p2_knn$data <- p2_knn$data %>% filter(metric == 'f1') %>%  mutate(model = 'knn')
+
+
+#Tabla
+dfMetricas <- data.frame(
+  Modelos = c('Regresión logística', 'Árbol de decisión', 'Random forest', 'KNN', 'SVM','Naive Bayes'),
+  F1 = c(f1_lr, f1_dt, f1_rf, f1_knn,f1_svm, f1_nv),
+  Variables = c(var_lr, val_dt, val_rf, val_knn,val_svm, val_nv ),
+  Parámetros = c('/', parameters_dt, parameters_rf, parameters_knn,parameters_svm, '/'))
+
+dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center') %>%  row_spec(3, bold = T, color = "white", background = palette34[1])
+
+#Gráfica F1
+concat = rbind(p2_lr$data, p2_dt$data, p2_rf$data, p2_knn$data, p2_svm$data, p2_nv$data)
+concat %>% ggplot(aes(x=th,y=value,colour=model)) + geom_line() + scale_color_manual(values=c("#1B9E77","#D95F02","#7570B3","#66A61E","#E7298A","#E6AB02")) + ggtitle("F1 Score")+ theme(plot.title = element_text(hjust = 0.5))
+```
+
+La performance con un mayor F1 ha sido la que emplea el modelo *Random Forest*. Además, si atendemos a la explicabilidad del modelo, no es el que más variables emplea. Solamente supera en número de variables a los modelos de Naive Bayes y Árbol de decisión. Sin embargo, estos modelos tiene un F1 muy por debajo.
+
+A continuación, vamos a probar el mejor modelo sobre el conjunto de test.
+
+```{r}
+#Random forest
+data_rf_test = housesTest
+model_rf = readRDS("./models/rf_best_model.rds")
+values_rf_test = predict(model_rf, data_rf, type='prob')
+
+test_metrics <- val_metrics(model_rf, data_rf_test, c("Rooms", "Distance", "LandsizeImp",
+                                    "Lattitude", "Longtitude", "Type"), "price_label_high")
+test_metrics$metrics
+test_metrics$roc_plot
+test_metrics$opt_f1
+
+
+predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=values_rf_test[,2])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=test_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=test_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
+```
+ 
