@@ -741,7 +741,7 @@ Si pintamos la región, se pueden diferenciar fácilemente, ya que se han utiliz
 
 
 ```{r}
-train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point() + labs(title='PCA: price label') + scale_color_manual(values = palette34)
+train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=price_label_high)) + geom_point(alpha=0.5) + labs(title='PCA: price label') + scale_color_manual(values = palette34)
 train_pca_cat %>% ggplot(aes(x=PC1, y=PC2, color=Regionname)) + geom_point() + labs(title='PCA: Regionname') + scale_color_manual(values = palette34)
 ```
 
@@ -804,7 +804,7 @@ fit <- cmdscale(d,eig=TRUE, k=2)
 df_fit <- data.frame(fit$points)
 # No estoy seguro de hacer el join bien, se supone que es por indice
 df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point() + labs(title='MDS: price_label_high') + scale_color_manual(values = palette34)
+df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point(alpha=0.5) + labs(title='MDS: price_label_high') + scale_color_manual(values = palette34)
 df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname') + scale_color_manual(values = palette34)
 ```
 
@@ -1057,31 +1057,38 @@ rpart.plot(final_dt)
 ```
 
 
-Como prueba final, elegimos el parámetro de complejidad cp=0.013981636, y probamos sobre train y validación para ver si se produce sobreajuste.
+Como prueba final, elegimos el parámetro de complejidad cp=0.019616027, y probamos sobre train y validación para ver si se produce sobreajuste.
 
 Sobre train, las métricas serán iguales que en la primera prueba que hicimos al podar el árbol.
 
 ```{r}
-cp=0.013981636
+cp=0.019616027
 model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
+model_metrics$metrics
 pruneTREE <- rpart::prune(model_metrics$dt, cp = cp)
+preds <- predict(pruneTREE, type = "prob")
+opt_f1 <- opt_f1_function_v2(preds[,2], housesTrain, 'price_label_high')
+opt_th_dt <- opt_f1$threshold
+opt_f1$f1_opt
+opt_f1$p2
 ```
 
 Sobre validación, observamos que las métricas empeoran un poco, aunque el mejor f1 
 
 ```{r message=FALSE}
-validation_metrics <- val_metrics(pruneTREE, housesVal, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
-validation_metrics$metrics
-validation_metrics$roc_plot
-validation_metrics$opt_f1
+val_dt <- housesVal
+preds_dt_val <- predict(pruneTREE, val_dt, type='prob')[,2]
+preds_dt_val <- as.factor(ifelse(preds_dt_val > opt_th_dt,1,0))
+val_dt$price_label_high <- factor(ifelse(val_dt$price_label_high==TRUE,1,0))
+metrics_function_num(preds_dt_val, val_dt, 'price_label_high')
 ```
 
 
 ```{r}
 prob_values <- predict(pruneTREE, housesVal, type='prob')
 predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=validation_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=validation_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_th_dt, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_th_dt, linetype='dashed', color=palette34[4])
 ```
 
 ```{r}
@@ -1293,10 +1300,10 @@ table(pred = housesValRF$.pred, obs = housesValRF$price_label_high)
 metrics_function(housesValRF$.pred, housesValRF, 'price_label_high', bool=TRUE)
 roc_dt <- roc(housesValRF$price_label_high, housesValRF$.pred_TRUE)
 ggplotROCCurve(roc_dt)
-opt_f1_obj <- opt_f1_function(housesValRF$.pred_TRUE, housesValRF, 'price_label_high', 0.3)
-opt_f1_obj$f1_opt
-opt_f1_obj$p1
-opt_f1_obj$p2
+#opt_f1_obj <- opt_f1_function(housesValRF$.pred_TRUE, housesValRF, 'price_label_high', 0.3)
+#opt_f1_obj$f1_opt
+#opt_f1_obj$p1
+#opt_f1_obj$p2
 ```
 
 
@@ -1320,17 +1327,20 @@ metrics_function(preds, housesTrainImpVars, 'price_label_high', bool=TRUE)
 prob_values <- rf4$votes
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
-opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
+opt_th_metrics <- opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
+opt_th_metrics$f1_opt
+opt_th_rf <- opt_th_metrics$threshold
 ```
 
 En validación, vemos como ya no se produce ese sobre ajuste.
 
 ```{r message=FALSE}
-validation_metrics <- val_metrics(rf4, housesVal, c("Rooms", "Distance", "LandsizeImp",
-                                    "Lattitude", "Longtitude", "Type"), "price_label_high")
-validation_metrics$metrics
-validation_metrics$roc_plot
-validation_metrics$opt_f1
+val_rf <- housesVal
+preds_rf_val <- predict(rf4, val_rf, type='prob')[,2]
+#prob_svm_val <- predict(best_svm_gaussian, new_data = validation_svm, type = "prob")$.pred_1
+preds_rf_val <- as.factor(ifelse(preds_rf_val > opt_th_rf,1,0))
+val_rf$price_label_high <- factor(ifelse(val_rf$price_label_high==TRUE,1,0))
+metrics_function_num(preds_rf_val, val_rf, 'price_label_high')
 ```
 
 
@@ -1784,8 +1794,6 @@ Ahora probamos el modelo con menos variables sobre los datos de validación. El 
 Finalmente, buscamos el corte óptimo con el mejor modelo.
 
 ```{r message=FALSE}
-
-mod <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster, data=housesVal)
 
 prob_values <- predict(mod, housesVal, type='raw')
 roc_dt <- roc(housesVal$price_label_high, prob_values[,2])

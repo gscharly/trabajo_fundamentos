@@ -75,7 +75,7 @@ palette34 = c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A676
 ```
 
 ```{r}
-#houses <- read.csv('./datasets/melb_data.csv')
+houses <- read.csv('./datasets/melb_data.csv')
 housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
 housesVal <- read.csv('base_val.csv')
@@ -117,7 +117,7 @@ A modo de introducción, se muestran una serie de mapas de Melbourne.
 * La ciudad cuenta con la bahía de Port Phillip: puede que la posición de la vivienda respecto a la bahía influya en su precio.
 
 
-```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10, eval=F}
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
 melbourne_map <- get_map(location = "melbourne", zoom = 10)
 houses_map <- houses[,c("Regionname", "Lattitude", "Longtitude")]
 houses_map$region_colours <- revalue(houses_map$Regionname, c("Southern Metropolitan" = "#E6AB02", "Western Metropolitan" = "#A6761D", "Northern Metropolitan" = "#7570B3",
@@ -139,7 +139,7 @@ Si se representa el precio medio por barrio:
 * Parece que los barrios pegados a la bahía tienen un precio más alto, aunque hay viviendas caras en el interior también.
 
 
-```{r mapsPrice, warning=FALSE, eval=F}
+```{r mapsPrice, warning=FALSE}
 housesMeanPriceRegion <- houses %>% dplyr::group_by(Regionname) %>% dplyr::summarise(mean_price_region = mean(Price), sd_price_region = sd(Price))
 housesMeanPriceSuburb <- houses %>% dplyr::group_by(Suburb) %>% dplyr::summarise(mean_price_suburb = mean(Price), sd_price_suburb = sd(Price))
 
@@ -152,7 +152,7 @@ ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPric
 
 A pesar de que el barrio parece indicativo y distintivo de precios más baratos y más caros, dentro de los barrios "caros" sigue habiendo variedad de precios. Esto se puede ver si se representa la desviación típica del precio por barrio:
 
-```{r mapsSdPrice, warning=FALSE, eval=F}
+```{r mapsSdPrice, warning=FALSE}
 ggmap(melbourne_map) + geom_point(aes(x = housesPrice$Longtitude, y = housesPrice$Lattitude,  colour=housesPrice$sd_price_suburb), data = housesPrice, alpha=0.5, size = 0.5) + scale_colour_gradient(low='Blue', high='red') + labs(title='Desviación típica del precio en función del barrio')
 ```
 
@@ -172,7 +172,7 @@ Se ha optado por la segunda opción, para introducir una mayor complejidad al pr
 
 Se presenta de nuevo el mapa de Melbourne teniendo en cuenta esta nueva separación. Vemos que la zona de casas caras sigue siendo parecida, pero se concentran en puntos más específicos. 
 
-```{r warning=FALSE, eval=F}
+```{r warning=FALSE}
 housesPriceSuburb <- housesTrain %>% dplyr::group_by(Suburb) %>% dplyr::summarise(sum_price_label = sum(price_label_high))
 
 housesPriceLabel <- housesTrain %>% inner_join(housesPriceSuburb, by='Suburb')
@@ -199,8 +199,20 @@ Se puede observar que el barrio con mayor número de casas caras es Southern Met
 bar_plot_target(housesTrain, "Regionname", "price_label_high")
 ```
 
-```{r}
+```{r warning=FALSE}
 chisq.test(housesTrain$Regionname, housesTrain$price_label_high)
+```
+
+__Type__
+
+Se puede observar que al mayoría de casas caras se engloban en el tipo h.
+
+```{r}
+bar_plot_target(housesTrain, "Type", "price_label_high")
+```
+
+```{r}
+chisq.test(housesTrain$Type, housesTrain$price_label_high)
 ```
 
 
@@ -220,6 +232,20 @@ bar_plot_target(housesTrain, "may_have_water", "price_label_high")
 ```{r}
 chisq.test(housesTrain$may_have_water, housesTrain$price_label_high)
 ```
+
+
+__rooms_cat__
+
+Como es lógico, aquellas casas con más habitaciones son más caras.
+
+```{r}
+bar_plot_target(housesTrain, "rooms_cat", "price_label_high")
+```
+
+```{r}
+chisq.test(housesTrain$rooms_cat, housesTrain$price_label_high)
+```
+
 
 A modo resumen:
 
@@ -313,7 +339,7 @@ __Latitud y longitud__
 
 Las distribuciones parecen indicar que el precio de la vivienda aumenta en la parte sur (menor latitud) y en la parte este (mayor longitud) de Melbourne. 
 
-```{r}
+```{r warning=FALSE}
 p<-housesTrain %>%
   select('Lattitude', 'Longtitude', 'price_label_high') %>%
   ggpairs(ggplot2::aes(colour=price_label_high))
@@ -476,6 +502,22 @@ housesVal <- housesVal %>% mutate(kmeans_cluster = test_clust)
   + MDS
   + tSNE
   
+```{r}
+housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(housesNum)
+summary(housesPCA)
+```
+
+```{r}
+train <- housesTrain %>% select(-Price)
+train_pca <- data.frame(housesPCA$x[,1:3])
+train_cat <- train %>% select(Type, rooms_cat, Regionname, bath_cat, year_built_cat, sell_rate_cat, Method, car_cat, price_label_high)
+train_pca_cat <- merge(train_pca, train_cat, by.x=0, by.y=0)
+train_pca_cat$log_price <- train$log_price
+```
+
+
+  
 
 # Aprendizaje supervisado
 
@@ -533,9 +575,9 @@ validation_svm$price_label_high<-as.factor(ifelse(validation_svm$price_label_hig
 data_lr = validation
 model_lr = readRDS("./models/lr_regularized.rds")
 values_lr <- predict(model_lr, data_lr, type='response')
-f1_lr = round(opt_f1_function(values_lr, data_lr, 'price_label_high')$f1_opt, 3)
+f1_lr = round(opt_f1_function_v2(values_lr, data_lr, 'price_label_high')$f1_opt, 3)
 var_lr = 'sell_rate_cat - bed_cat - car_cat - kmeans_cluster - may_have_water - lattitude_std'
-p2_lr = opt_f1_function(values_lr, data_lr, 'price_label_high')$p2
+p2_lr = opt_f1_function_v2(values_lr, data_lr, 'price_label_high')$p2
 p2_lr$data <- p2_lr$data %>% filter(metric == 'f1') %>%  mutate(model = 'lr')
 
 
@@ -543,10 +585,10 @@ p2_lr$data <- p2_lr$data %>% filter(metric == 'f1') %>%  mutate(model = 'lr')
 data_dt = housesVal
 model_dt = readRDS("./models/dt_best_model.rds")
 values_dt = predict(model_dt, data_dt, type='prob')
-f1_dt = round(opt_f1_function(values_dt, data_dt, 'price_label_high')$f1_opt, 3)
+f1_dt = round(opt_f1_function_v2(values_dt, data_dt, 'price_label_high')$f1_opt, 3)
 val_dt = 'Longtitude - Rooms - Lattitude - Type'
 parameters_dt = 'cp = 0.013981636'
-p2_dt = opt_f1_function(values_dt, data_dt, 'price_label_high')$p2
+p2_dt = opt_f1_function_v2(values_dt, data_dt, 'price_label_high')$p2
 p2_dt$data <- p2_dt$data %>% filter(metric == 'f1') %>%  mutate(model = 'dt')
 
 
@@ -554,10 +596,10 @@ p2_dt$data <- p2_dt$data %>% filter(metric == 'f1') %>%  mutate(model = 'dt')
 data_rf = housesVal
 model_rf = readRDS("./models/rf_best_model.rds")
 values_rf = predict(model_rf, data_rf, type='prob')
-f1_rf = round(opt_f1_function(values_rf, data_rf, 'price_label_high')$f1_opt, 3)
+f1_rf = round(opt_f1_function_v2(values_rf[,2], data_rf, 'price_label_high')$f1_opt, 3)
 val_rf = 'Rooms - Distance - LandsizeImp - Lattitude - Longtitude - Type'
 parameters_rf = 'ntree = 50 / mtry = 3 / nodesize = 11'
-p2_rf = opt_f1_function(values_rf, data_rf, 'price_label_high')$p2
+p2_rf = opt_f1_function_v2(values_rf[,2], data_rf, 'price_label_high')$p2
 p2_rf$data <- p2_rf$data %>% filter(metric == 'f1') %>%  mutate(model = 'rf')
 
 
@@ -565,10 +607,10 @@ p2_rf$data <- p2_rf$data %>% filter(metric == 'f1') %>%  mutate(model = 'rf')
 data_svm = validation_svm
 model_svm = readRDS("./models/svm_gaussian_kernel.rds")
 values_svm <- predict(model_svm, data_svm, type = "prob")$.pred_1
-f1_svm = round(opt_f1_function(values_svm, data_svm, "price_label_high")$f1_opt, 3)
+f1_svm = round(opt_f1_function_v2(values_svm, data_svm, "price_label_high")$f1_opt, 3)
 val_svm = 'sqrt_distance_std - log_landsize_std - lattitude_std - longtitude_std - rooms_cat -      bath_cat - price_label_high'
 parameters_svm = 'cost = 30.9136 / rbf_sigma = 0.1832'
-p2_svm = opt_f1_function(values_svm, data_svm, 'price_label_high')$p2
+p2_svm = opt_f1_function_v2(values_svm, data_svm, 'price_label_high')$p2
 p2_svm$data <- p2_svm$data %>% filter(metric == 'f1') %>%  mutate(model = 'svm')
 
 
@@ -576,9 +618,9 @@ p2_svm$data <- p2_svm$data %>% filter(metric == 'f1') %>%  mutate(model = 'svm')
 data_nv = housesVal
 model_nv = readRDS("./models/nb_best_model.rds")
 values_nv <- predict(model_nv, data_nv, type='raw')
-f1_nv = round(opt_f1_function(values_nv, data_nv, 'price_label_high')$f1_opt, 3)
+f1_nv = round(opt_f1_function_v2(values_nv, data_nv, 'price_label_high')$f1_opt, 3)
 val_nv = 'sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster'
-p2_nv = opt_f1_function(values_nv, data_nv, 'price_label_high')$p2
+p2_nv = opt_f1_function_v2(values_nv, data_nv, 'price_label_high')$p2
 p2_nv$data <- p2_nv$data %>% filter(metric == 'f1') %>%  mutate(model = 'nv')
 
 
@@ -613,11 +655,13 @@ La performance con un mayor F1 ha sido la que emplea el modelo *Random Forest*. 
 
 A continuación, vamos a probar el mejor modelo sobre el conjunto de test.
 
-```{r}
+```{r warning=FALSE}
 #Random forest
 data_rf_test = housesTest
 model_rf = readRDS("./models/rf_best_model.rds")
 values_rf_test = predict(model_rf, data_rf, type='prob')
+
+
 
 test_metrics <- val_metrics(model_rf, data_rf_test, c("Rooms", "Distance", "LandsizeImp",
                                     "Lattitude", "Longtitude", "Type"), "price_label_high")
