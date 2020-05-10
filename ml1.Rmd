@@ -371,48 +371,12 @@ chisq.test(housesTrain$year_built_cat, housesTrain$price_label_high)
 
 __Correlaciones__
 
+Como se puede observar, solo existe una fuerte correlación lineal entre las variables *log_landsize* y *log_room_land* (variable creada a partir de *Landsize* y *Rooms*).
 
 ```{r}
 housesNum <- housesTrain %>% mutate(log_landsize = log10(LandsizeImp), sqrt_distance = sqrt(Distance), log_room_land = log10(Rooms/LandsizeImp*1000))
 numeric_cols <- c("sqrt_distance", "Lattitude", "Longtitude", "log_landsize", "log_room_land")
-cormat <- round(cor(na.omit(housesNum[,numeric_cols])), 2)
-
-# Get lower triangle of the correlation matrix
-get_lower_tri<-function(cormat){
-    cormat[upper.tri(cormat)] <- NA
-    return(cormat)
-  }
-  # Get upper triangle of the correlation matrix
-get_upper_tri <- function(cormat){
-    cormat[lower.tri(cormat)]<- NA
-    return(cormat)
-}
-
-upper_tri <- get_upper_tri(cormat)
-melted_cormat <- melt(upper_tri, na.rm = TRUE)
-ggheatmap <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
- geom_tile(color = "white")+
- scale_fill_gradient2(low = "#1EA6A2", high = "#A61E22", mid = "white", 
-   midpoint = 0, limit = c(-1,1), space = "Lab", 
-   name="Pearson\nCorrelation") +
-  theme_minimal()+ 
- theme(axis.text.x = element_text(angle = 45, vjust = 1, 
-    size = 12, hjust = 1))+
- coord_fixed()
-
-ggheatmap + geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
-theme(
-  axis.title.x = element_blank(),
-  axis.title.y = element_blank(),
-  panel.grid.major = element_blank(),
-  panel.border = element_blank(),
-  panel.background = element_blank(),
-  axis.ticks = element_blank(),
-  legend.justification = c(1, 0),
-  legend.position = c(0.6, 0.7),
-  legend.direction = "horizontal")+
-  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
-                title.position = "top", title.hjust = 0.5))
+heatmap_corr(housesNum, numeric_cols)
 ```
 
 
@@ -469,7 +433,7 @@ summary(aov(price_label_high~Longtitude, data=housesTrain))
 
 __Landsize__
 
-Las casas caras parece que tienen un tamaño de parcela ligeramente mayor. Además la variabilidad respecto al tamaño es bastante menor en las casas caras.
+Las casas caras parece que tienen un tamaño de parcela ligeramente mayor. Además la variabilidad respecto al tamaño es menor en las casas caras.
 
 ```{r}
 p<-housesTrain %>% mutate(log_landsize = log10(LandsizeImp)) %>% 
@@ -491,6 +455,28 @@ Se puede rechazar la hipótesis nula de que la media es igual en ambas categorí
 ```{r}
 summary(aov(price_label_high~log_landsize_std, data=housesTrain))
 ```
+
+
+__log_room_land__
+Se ha creado una nueva variable como combinación del número de habitaciones y el tamaño de la parcela. Esta variable representa el número de habitaciones por unidad de medida de parcela. Las distribuciones en función del precio son bastante parecidas, si bien es cierto que la varianza en las casas baratas es mayor.
+
+```{r}
+p<-housesTrain %>% mutate(log_room_land = log10(Rooms/LandsizeImp*1000)) %>%
+  select(log_room_land, price_label_high) %>%
+  ggpairs(ggplot2::aes(colour=price_label_high))
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values= palette34) +
+        scale_color_manual(values= palette34)  
+  }
+}
+
+p
+```
+
+
 
 
 # Selección de variables
