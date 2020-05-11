@@ -69,6 +69,7 @@ source('utils/calculate_roc.R')
 source('utils/plot_roc.R')
 source('utils/metrics_function.R')
 source('utils/plot_utils.R')
+source('utils/try_functions.R')
 set.seed(10)
 ```
 
@@ -1017,6 +1018,7 @@ metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
 Utilizaremos las variables que mejor resultados nos han dado en una etapa de validación cruzada para obtener el mejor parámetro de complejidad.
 
 ```{r}
+set.seed(10)
 # Hay que factorizar el label para que se construya bien el árbol
 housesTrainCV <- housesTrain %>% select(Rooms, Lattitude, Longtitude, Type)
 housesTrainCV$price_label_high <- as.factor(housesTrain$price_label_high)
@@ -1050,8 +1052,10 @@ Sobre train, las métricas serán iguales que en la primera prueba que hicimos a
 ```{r}
 cp=0.019616027
 model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
-model_metrics$metrics
+#model_metrics$metrics
 pruneTREE <- rpart::prune(model_metrics$dt, cp = cp)
+preds_class <- predict(pruneTREE, type = "class")
+metrics_function(preds_class, housesTrain, 'price_label_high', bool=TRUE)
 preds <- predict(pruneTREE, type = "prob")
 opt_f1 <- opt_f1_function_v2(preds[,2], housesTrain, 'price_label_high')
 opt_th_dt <- opt_f1$threshold
@@ -1188,8 +1192,6 @@ p + theme(axis.text.x=element_blank(),
 ```
 
 
-Además, se puede probar a utilizar las variables transformadas
-
 
 ## Utilizando cross validation
 Como primera prueba, y teniendo en cuenta que las variables importantes el modelo son bastante lógicas, los resultados de este modelo son bastante buenos. Ahora se va a intentar tunear el número de árboles y la profundidad máxima de los mismos con grid search y CV, para intentar obtener unos mejores resultados, además de evaluar el modelo con conjuntos de validación. Los parámetros a tunear son:
@@ -1198,7 +1200,7 @@ Como primera prueba, y teniendo en cuenta que las variables importantes el model
 - Número de variables que se muestrean aleatoriamente al crear los árboles
 - Mínimo número de puntos para que un nodo se divida.
 
-Realizamos 10 Fold cross validation con 5 iteraciones.
+Realizamos 10 Fold cross validation con 3 iteraciones.
 
 Se utilizan las variables que se han comentado en el apartado anterior.
 
@@ -1223,15 +1225,18 @@ plan(future::cluster, workers = cl)
 ```
 
 ```{r}
-houses_folds <- vfold_cv(housesTrainOrigVar, v = 10, repeats = 3)
-houses_folds
-rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
+# Este chunk solo hace el cv cuando el fichero no se encuentra
+path = "./models/rf_grid_search.rds"
+houses_folds <- vfold_cv(housesTrainImpVars, v = 10, repeats = 3)
+#rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
+rf_search <- try_cv_train(path, houses_folds, rf_grid, rf_param)
 ```
 
 ```{r}
 #Execute after finishing training
 stopCluster(cl)
 ```
+
 
 ```{r}
 autoplot(rf_search) +
@@ -1248,25 +1253,25 @@ Para el mejor modelo, se obtienen los siguientes resultados en train y validaci�
 # Prepare for final prediction
 rf_param_final <- select_best(rf_search, "roc_auc")
 rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
-rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainOrigVar)
+rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainImpVars)
 ```
 
 ```{r}
-housesTrainOrigVar$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesTrainOrigVar)$.pred_class
-housesTrainOrigVar$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesTrainOrigVar, type='prob')$.pred_TRUE
-metrics(housesTrainOrigVar, truth = price_label_high, .pred, .pred_TRUE)
+housesTrainImpVars$.pred <- predict(rf_wflow_final_fit, 
+                          new_data = housesTrainImpVars)$.pred_class
+housesTrainImpVars$.pred_TRUE <- predict(rf_wflow_final_fit, 
+                          new_data = housesTrainImpVars, type='prob')$.pred_TRUE
+metrics(housesTrainImpVars, truth = price_label_high, .pred, .pred_TRUE)
 ```
 
 Train:
 
 ```{r}
-table(pred = housesTrainOrigVar$.pred, obs = housesTrainOrigVar$price_label_high)
-metrics_function(housesTrainOrigVar$.pred, housesTrainOrigVar, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesTrain$price_label_high, housesTrainOrigVar$.pred_TRUE)
+table(pred = housesTrainImpVars$.pred, obs = housesTrainImpVars$price_label_high)
+metrics_function(housesTrainImpVars$.pred, housesTrainImpVars, 'price_label_high', bool=TRUE)
+roc_dt <- roc(housesTrain$price_label_high, housesTrainImpVars$.pred_TRUE)
 ggplotROCCurve(roc_dt)
-opt_f1_obj <- opt_f1_function(housesTrainOrigVar$.pred_TRUE, housesTrainOrigVar, 'price_label_high', 0.3)
+opt_f1_obj <- opt_f1_function(housesTrainImpVars$.pred_TRUE, housesTrainImpVars, 'price_label_high', 0.3)
 opt_f1_obj$f1_opt
 opt_f1_obj$p1
 opt_f1_obj$p2
@@ -1293,6 +1298,106 @@ ggplotROCCurve(roc_dt)
 ```
 
 
+### Optimización bayesiana de hiperparámetros
+
+
+```{r}
+set.seed(10)
+housesTrainImpVars <- housesTrain[c("Rooms", "Distance", "LandsizeImp",
+                                    "Lattitude", "Longtitude", "Type",
+                                     "price_label_high")]
+housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
+rf_model <- rand_forest(trees=tune(), mtry=tune(), min_n=tune()) %>% set_mode('classification') %>% set_engine('randomForest')
+houses_rec <- recipe(price_label_high ~ ., data=housesTrainImpVars)
+# Create workflow
+rf_workflow <- workflow() %>% add_model(rf_model) %>% add_recipe(houses_rec)
+# mtry en función del número de features
+rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mtry=mtry(c(1,6)), min_n=min_n(c(2,30)))
+```
+
+
+```{r message=FALSE, echo=F}
+# Parallelize
+all_cores <- parallel::detectCores(logical = FALSE) - 2
+registerDoFuture()
+cl <- makeCluster(all_cores)
+plan(future::cluster, workers = cl)
+```
+
+```{r, echo=F}
+set.seed(10)
+path = "./models/rf_bayes_search.rds"
+rf_bayes_folds <- vfold_cv(housesTrainImpVars, v = 10, repeats = 1)
+rf_bayes_search <- try_bayes_cv_train(path, rf_workflow, rf_bayes_folds, rf_param)
+```
+
+```{r}
+show_best(rf_bayes_search, metric = "roc_auc", 10)
+```
+
+```{r, echo=F}
+#Execute after finishing training
+stopCluster(cl)
+```
+
+```{r}
+autoplot(rf_bayes_search, type='performance')
+autoplot(rf_bayes_search, type='parameters')
+```
+
+Para el mejor modelo, se obtienen los siguientes resultados en train y validación:
+
+```{r}
+# Prepare for final prediction
+rf_param_final <- select_best(rf_bayes_search, "roc_auc")
+rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
+rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainImpVars)
+```
+
+```{r}
+housesTrainImpVars$.pred <- predict(rf_wflow_final_fit, 
+                          new_data = housesTrainImpVars)$.pred_class
+housesTrainImpVars$.pred_TRUE <- predict(rf_wflow_final_fit, 
+                          new_data = housesTrainImpVars, type='prob')$.pred_TRUE
+metrics(housesTrainImpVars, truth = price_label_high, .pred, .pred_TRUE)
+```
+
+Train:
+
+```{r}
+table(pred = housesTrainImpVars$.pred, obs = housesTrainImpVars$price_label_high)
+metrics_function(housesTrainImpVars$.pred, housesTrainImpVars, 'price_label_high', bool=TRUE)
+roc_dt <- roc(housesTrainImpVars$price_label_high, housesTrainImpVars$.pred_TRUE)
+ggplotROCCurve(roc_dt)
+opt_f1_obj <- opt_f1_function(housesTrainImpVars$.pred_TRUE, housesTrainImpVars, 'price_label_high', 0.3)
+opt_f1_obj$f1_opt
+opt_f1_obj$p1
+opt_f1_obj$p2
+```
+
+De nuevo, vemos que el modelo sobreajusta en términos de f1 (de 0.87 a 0.8 en validación).
+
+```{r message=FALSE}
+housesValRF <- housesVal
+housesValRF$price_label_high <- as.factor(housesValRF$price_label_high)
+housesValRF$.pred <- predict(rf_wflow_final_fit, 
+                          new_data = housesValRF)$.pred_class
+housesValRF$.pred_TRUE <- predict(rf_wflow_final_fit, 
+                          new_data = housesValRF, type='prob')$.pred_TRUE
+metrics(housesValRF, truth = price_label_high, .pred, .pred_TRUE)
+table(pred = housesValRF$.pred, obs = housesValRF$price_label_high)
+metrics_function(housesValRF$.pred, housesValRF, 'price_label_high', bool=TRUE)
+roc_dt <- roc(housesValRF$price_label_high, housesValRF$.pred_TRUE)
+ggplotROCCurve(roc_dt)
+#opt_f1_obj <- opt_f1_function(housesValRF$.pred_TRUE, housesValRF, 'price_label_high', 0.3)
+#opt_f1_obj$f1_opt
+#opt_f1_obj$p1
+#opt_f1_obj$p2
+```
+
+
+### Modelo final
+
 Probamos un modelo con unos parámetros más simples (de los que aparecen en el top10 del cv):
 
 ```{r}
@@ -1301,7 +1406,8 @@ housesTrainImpVars <- housesTrain[c("Rooms", "Distance", "LandsizeImp",
                                     "Lattitude", "Longtitude", "Type",
                                      "price_label_high")]
 housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
-rf4 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=50, mtry=3, nodesize=11)
+#rf4 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=50, mtry=3, nodesize=11)
+rf4 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=80, mtry=4, nodesize=15)
 ```
 
 En train:
@@ -1333,8 +1439,8 @@ metrics_function_num(preds_rf_val, val_rf, 'price_label_high')
 ```{r}
 prob_values <- predict(rf4, housesVal, type='prob')
 predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=validation_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=validation_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_th_rf, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_th_rf, linetype='dashed', color=palette34[4])
 ```
 
 ```{r}
