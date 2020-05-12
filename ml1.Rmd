@@ -931,6 +931,8 @@ En los cortes, se mira primero la región en la que está la casa, viendo si est
 
 Algo que también se puede ver es que hay varios nodos con pocas muestras (los que vienen de la distinción de tipo de casa es Southern Metropolitan). Vemos además que hay un bastantes falsos negativos (casas caras que se etiquetan como baratas).
 
+
+
 ```{r message=FALSE}
 model_metrics <- dt_metrics(housesTrain, c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat", "may_have_water"), "price_label_high")
 model_metrics$metrics
@@ -967,7 +969,7 @@ opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
 ```
 
 
-Se puede realizar la misma prueba con las variables transformadas: tomando rooms_cat en vez de Rooms. Se obtienen las mismas métricas, lo que nos lleva a pensar que se realizó una buena separación a la hora de categorizar el número de habitaciones.
+Se puede realizar la misma prueba con las variables transformadas: tomando **rooms_cat** en vez de **Rooms**. Se obtienen las mismas métricas, lo que nos lleva a pensar que se realizó una buena separación a la hora de categorizar el número de habitaciones.
 ```{r message=FALSE}
 model_metrics <- dt_metrics(housesTrain, c("rooms_cat", "Lattitude", "Longtitude", "Type"), "price_label_high")
 model_metrics$metrics
@@ -984,73 +986,130 @@ En ambos casos, se puede ver que hay muchos nodos con muy pocos casos (1%,2%...)
 Intentamos eliminar esas últimas hojas que hemos comentado en el último modelo probado.
 
 ```{r}
-printcp(model_metrics$dt)
-```
-```{r}
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
 plotcp(model_metrics$dt)
 ```
 
-Con 11 hojas, el error es prácticamente el mismo. Si bajamos al siguiente nivel de complejidad (5 hojas) las métricas del modelo empeoran mucho.
+Con 11 hojas, lel f1 baja hasta 0.726.
 
-
-```{r pruneTree2, warning=FALSE}
+```{r pruneTree2, message=FALSE}
 pruneTREE <- rpart::prune(model_metrics$dt, cp = model_metrics$dt$cptable[5, "CP"])
-rpart.plot(pruneTREE, type=4, fallen.leaves = FALSE, tweak =1.75)
+rpart.plot(pruneTREE, type=3, fallen.leaves = FALSE, roundint = FALSE)
 preds <- predict(pruneTREE, type = "class")
 metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
-prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
+prob_values <- predict(pruneTREE, housesTrain, type='prob')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
 ```
 
 
-Bajando la complejidad hasta quedarnos solo con 5 hojas, observamos que el accuracy es parecido, pero que el f1-score disminuye hasta 0.56 (con una precisión bastante aceptable). Por otro lado, el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja con las casas baratas (83% de las casas de este nodo son baratas), con el 75% de los datos. Las casas con más de 4 habitaciones en se distribuyen en función de las coordenadas.
+Bajando la complejidad hasta quedarnos solo con 5 hojas, observamos que el accuracy es parecido, pero que el f1-score disminuye hasta 0.56. Por otro lado, el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja con las casas baratas (83% de las casas de este nodo son baratas), con el 75% de los datos. Las casas con más de 4 habitaciones en se distribuyen en función de las coordenadas.
 
-```{r warning=FALSE}
+```{r message=FALSE}
 pruneTREE <- rpart::prune(model_metrics$dt, cp = model_metrics$dt$cptable[4, "CP"])
-rpart.plot(pruneTREE, type=4, fallen.leaves = FALSE, tweak =1.75)
+rpart.plot(pruneTREE, type=3, fallen.leaves = FALSE, roundint = FALSE)
 preds <- predict(pruneTREE, type = "class")
 metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
+prob_values <- predict(pruneTREE, housesTrain, type='prob')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
+opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
 ```
 
 ### Cross validation
 Utilizaremos las variables que mejor resultados nos han dado en una etapa de validación cruzada para obtener el mejor parámetro de complejidad.
 
+
 ```{r}
 set.seed(10)
-# Hay que factorizar el label para que se construya bien el árbol
-housesTrainCV <- housesTrain %>% select(Rooms, Lattitude, Longtitude, Type)
-housesTrainCV$price_label_high <- as.factor(housesTrain$price_label_high)
-housesTrainCV$price_label_high <- as.factor(ifelse(housesTrainCV$price_label_high==TRUE,"caras","baratas"))
-housesTrainCV$price_label_high <- factor(housesTrainCV$price_label_high, levels=rev(levels(housesTrainCV$price_label_high)))
-fit_control <- caret::trainControl(method = "cv", number=10, summaryFunction = twoClassSummary, classProbs = TRUE)
-cv_model <- train(price_label_high ~ ., data=housesTrainCV, method='rpart', trControl=fit_control, tuneLength=10, metric='ROC')
+housesTrainCV <- housesTrain %>% select("Rooms", "Lattitude", "Longtitude", "Type", "price_label_high")
+housesTrainCV$price_label_high <- as.factor(housesTrainCV$price_label_high)
+dt_model <- decision_tree(cost_complexity = tune()) %>% set_mode('classification') %>% set_engine("rpart")
+houses_rec <- recipe(price_label_high ~ ., data=housesTrainCV)
+# Create workflow
+dt_workflow <- workflow() %>% add_model(dt_model) %>% add_recipe(houses_rec)
+dt_param <- dt_workflow %>% parameters()
+# Create grid
+dt_grid <- grid_regular(dt_param, levels=10)
+```
+
+```{r message=FALSE}
+# Parallelize
+all_cores <- parallel::detectCores(logical = FALSE) - 2
+registerDoFuture()
+cl <- makeCluster(all_cores)
+plan(future::cluster, workers = cl)
 ```
 
 ```{r}
-cv_model
+# Este chunk solo hace el cv cuando el fichero no se encuentra
+path = "./models/dt_bayes_search.rds"
+houses_folds <- vfold_cv(housesTrainCV, v = 10, repeats = 3)
+dt_bayes_search <- try_bayes_cv_train(path, dt_workflow, houses_folds, dt_param)
 ```
 
 ```{r}
-plot(cv_model)
-plot(cv_model$results$ROCSD)
+#Execute after finishing training
+stopCluster(cl)
 ```
 
 Fijándonos en la gráfica, quizás querramos sacrificar un poco de roc a costa de que nuestro árbol sea menos complejo. Viendo el resultado del mejor modelo, es un árbol con muchos nodos, que quizás esté sobre ajustando.
 
 ```{r}
-final_dt <- cv_model$finalModel
-rpart.plot(final_dt)
+autoplot(dt_bayes_search, type='marginals')
+autoplot(dt_bayes_search, type='performance')
+autoplot(dt_bayes_search, type='parameters')
+```
+
+```{r}
+show_best(dt_bayes_search, metric='roc_auc', 20)
+```
+
+```{r}
+# Prepare for final prediction
+dt_param_final <- select_best(dt_bayes_search, "roc_auc")
+dt_wflow_final <- finalize_workflow(dt_workflow, dt_param_final)
+dt_wflow_final_fit <- fit(dt_wflow_final, data = housesTrainCV)
+```
+
+```{r}
+housesTrainCV$.pred <- predict(dt_wflow_final_fit, 
+                          new_data = housesTrainCV)$.pred_class
+housesTrainCV$.pred_TRUE <- predict(dt_wflow_final_fit, 
+                          new_data = housesTrainCV, type='prob')$.pred_TRUE
+metrics(housesTrainCV, truth = price_label_high, .pred, .pred_TRUE)
+```
+
+```{r message=FALSE}
+table(pred = housesTrainCV$.pred, obs = housesTrainCV$price_label_high)
+metrics_function(housesTrainCV$.pred, housesTrainCV, 'price_label_high', bool=TRUE)
+roc_dt <- roc(housesTrain$price_label_high, housesTrainCV$.pred_TRUE)
+ggplotROCCurve(roc_dt)
+opt_f1_obj <- opt_f1_function(housesTrainCV$.pred_TRUE, housesTrainCV, 'price_label_high', 0.1)
+opt_th <- opt_f1_obj$threshold
+opt_f1_obj$f1_opt
+opt_f1_obj$p1
+opt_f1_obj$p2
+```
+
+En validación, observamos que el modelo sobreajusta en términos de f1. Pasamos de una f1 de 0.835 en train a 0.786 en validación. Esto puede deberse a que en la etapa de validación cruzada se está optimizando el AUC ROC (que vemos que cae de 0.95 a 0.93) mientras que el AUC PR sí que es sensiblemente peor. Habría que intentar optimizar esta métrica.
+
+Además, quizás se esté permitiendo al árbol tener demasiados nodos. Podemos probar a quedarnos con un parámetro de complejidad un poco mayor (reduciendo el número de nodos).
+
+
+
+```{r message=FALSE}
+eval_val <- evaluate_validation(housesVal, dt_wflow_final_fit, opt_th)
+eval_val
 ```
 
 
-Como prueba final, elegimos el parámetro de complejidad cp=0.019616027, y probamos sobre train y validación para ver si se produce sobreajuste.
 
-Sobre train, las métricas serán iguales que en la primera prueba que hicimos al podar el árbol.
+Como prueba final, elegimos el parámetro de complejidad cp=0.001033845, y probamos sobre train y validación para ver si se produce sobreajuste.
 
 ```{r}
-cp=0.019616027
+cp=0.001033845
 model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
 #model_metrics$metrics
 pruneTREE <- rpart::prune(model_metrics$dt, cp = cp)
@@ -1063,7 +1122,7 @@ opt_f1$f1_opt
 opt_f1$p2
 ```
 
-Sobre validación, observamos que las métricas empeoran un poco, aunque el mejor f1 
+Sobre validación, observamos que las métricas empeoran un poco, aunque en este caso no se produce sobre ajuste. Se opta por sacrificar un poco de f1 para que el modelo no sobre ajuste y además sea más sencillo
 
 ```{r message=FALSE}
 val_dt <- housesVal
@@ -1073,13 +1132,6 @@ val_dt$price_label_high <- factor(ifelse(val_dt$price_label_high==TRUE,1,0))
 metrics_function_num(preds_dt_val, val_dt, 'price_label_high')
 ```
 
-
-```{r}
-prob_values <- predict(pruneTREE, housesVal, type='prob')
-predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_th_dt, linetype='dashed', color=palette34[4])
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_th_dt, linetype='dashed', color=palette34[4])
-```
 
 ```{r}
 saveRDS(pruneTREE, "./models/dt_best_model.rds")
@@ -1109,7 +1161,7 @@ rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar, ntree=500)
 
 Observamos que ya de primeras se obtienen buenas métricas.
 
-```{r}
+```{r message=FALSE}
 preds <- predict(rf2, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label_high)
 metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
@@ -1145,7 +1197,7 @@ p + theme(axis.text.x=element_blank(),
 
 Podemos probar si seleccionado las variables más importantes y volviendo a entrenar un modelo con los mismos parámetros, obtenemos resultados parecidos.
 
-Si nos quedamos con las 6 primeras, el accuracy desciende ligeramente hasta 0.89, pero el f1 score baja hasta 0.77. Si se incluye la variable *Type* adicionalmente, se consiguen resultados muy parecidos a los del primer modelo, reduciendo la complejidad. Si además quitamos la variable *Regionname*, por tener bastantes categorías, conseguimos un f1-score de 0.79.
+Si nos quedamos con las 6 primeras, el accuracy desciende ligeramente hasta 0.89, pero el f1 score baja hasta 0.77. Si se incluye la variable *Type* adicionalmente, se consiguen resultados muy parecidos a los del primer modelo, reduciendo la complejidad. Si además quitamos la variable *Regionname*, por tener bastantes categorías, conseguimos un f1-score de 0.8.
 
 
 Otras pruebas:
@@ -1229,7 +1281,7 @@ plan(future::cluster, workers = cl)
 path = "./models/rf_grid_search.rds"
 houses_folds <- vfold_cv(housesTrainImpVars, v = 10, repeats = 3)
 #rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
-rf_search <- try_cv_train(path, houses_folds, rf_grid, rf_param)
+rf_search <- try_cv_train(path,rf_workflow, houses_folds, rf_grid, rf_param)
 ```
 
 ```{r}
@@ -1249,6 +1301,8 @@ show_best(rf_search, metric='roc_auc', 10)
 Observamos que se consiguen buenos resultados con muchas combinaciones de los parámetros. Podemos reducir la complejidad a costa de bajar un poco la métrica de clasificación.
 Para el mejor modelo, se obtienen los siguientes resultados en train y validación:
 
+Train:
+
 ```{r}
 # Prepare for final prediction
 rf_param_final <- select_best(rf_search, "roc_auc")
@@ -1264,14 +1318,15 @@ housesTrainImpVars$.pred_TRUE <- predict(rf_wflow_final_fit,
 metrics(housesTrainImpVars, truth = price_label_high, .pred, .pred_TRUE)
 ```
 
-Train:
 
-```{r}
+
+```{r message=FALSE}
 table(pred = housesTrainImpVars$.pred, obs = housesTrainImpVars$price_label_high)
 metrics_function(housesTrainImpVars$.pred, housesTrainImpVars, 'price_label_high', bool=TRUE)
 roc_dt <- roc(housesTrain$price_label_high, housesTrainImpVars$.pred_TRUE)
 ggplotROCCurve(roc_dt)
-opt_f1_obj <- opt_f1_function(housesTrainImpVars$.pred_TRUE, housesTrainImpVars, 'price_label_high', 0.3)
+opt_f1_obj <- opt_f1_function(housesTrainImpVars$.pred_TRUE, housesTrainImpVars, 'price_label_high', 0.1)
+opt_th <- opt_f1_obj$threshold
 opt_f1_obj$f1_opt
 opt_f1_obj$p1
 opt_f1_obj$p2
@@ -1279,23 +1334,12 @@ opt_f1_obj$p2
 
 En validación, observamos que el modelo sobreajusta bastante, sobretodo en términos de f1. Pasamos de una f1 de 0.92 en train a 0.81 en validación, solo un poco mejor de lo obtenido anteriormente con parámetros por defecto. Esto puede deberse a que en la etapa de validación cruzada se está optimizando el AUC ROC (que vemos que cae de 0.99 a 0.96) mientras que el AUC PR sí que es sensiblemente peor. Habría que intentar optimizar esta métrica.
 
+
 ```{r message=FALSE}
-housesValRF <- housesVal
-housesValRF$price_label_high <- as.factor(housesValRF$price_label_high)
-housesValRF$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesValRF)$.pred_class
-housesValRF$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesValRF, type='prob')$.pred_TRUE
-metrics(housesValRF, truth = price_label_high, .pred, .pred_TRUE)
-table(pred = housesValRF$.pred, obs = housesValRF$price_label_high)
-metrics_function(housesValRF$.pred, housesValRF, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesValRF$price_label_high, housesValRF$.pred_TRUE)
-ggplotROCCurve(roc_dt)
-#opt_f1_obj <- opt_f1_function(housesValRF$.pred_TRUE, housesValRF, 'price_label_high', 0.3)
-#opt_f1_obj$f1_opt
-#opt_f1_obj$p1
-#opt_f1_obj$p2
+eval_val <- evaluate_validation(housesVal, rf_wflow_final_fit, opt_th)
+eval_val
 ```
+
 
 
 ### Optimización bayesiana de hiperparámetros
@@ -1347,6 +1391,8 @@ autoplot(rf_bayes_search, type='parameters')
 
 Para el mejor modelo, se obtienen los siguientes resultados en train y validación:
 
+TODO 12/05 METER ESTO EN UNA FUNCION PARA EVITAR POSIBLES ERRORES
+
 ```{r}
 # Prepare for final prediction
 rf_param_final <- select_best(rf_bayes_search, "roc_auc")
@@ -1362,43 +1408,31 @@ housesTrainImpVars$.pred_TRUE <- predict(rf_wflow_final_fit,
 metrics(housesTrainImpVars, truth = price_label_high, .pred, .pred_TRUE)
 ```
 
-Train:
+Train: observamos que se consiguen mejores resultados que con el grid search (con un f1 de casi 0.94)
 
-```{r}
+```{r message=FALSE}
 table(pred = housesTrainImpVars$.pred, obs = housesTrainImpVars$price_label_high)
 metrics_function(housesTrainImpVars$.pred, housesTrainImpVars, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesTrainImpVars$price_label_high, housesTrainImpVars$.pred_TRUE)
+roc_dt <- roc(housesTrain$price_label_high, housesTrainImpVars$.pred_TRUE)
 ggplotROCCurve(roc_dt)
-opt_f1_obj <- opt_f1_function(housesTrainImpVars$.pred_TRUE, housesTrainImpVars, 'price_label_high', 0.3)
+opt_f1_obj <- opt_f1_function(housesTrainImpVars$.pred_TRUE, housesTrainImpVars, 'price_label_high', 0.1)
+opt_th <- opt_f1_obj$threshold
 opt_f1_obj$f1_opt
 opt_f1_obj$p1
 opt_f1_obj$p2
 ```
 
-De nuevo, vemos que el modelo sobreajusta en términos de f1 (de 0.87 a 0.8 en validación).
+De nuevo, vemos que el modelo sobreajusta en términos de f1 (de 0.93 a 0.81 en validación).
 
-```{r message=FALSE}
-housesValRF <- housesVal
-housesValRF$price_label_high <- as.factor(housesValRF$price_label_high)
-housesValRF$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesValRF)$.pred_class
-housesValRF$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesValRF, type='prob')$.pred_TRUE
-metrics(housesValRF, truth = price_label_high, .pred, .pred_TRUE)
-table(pred = housesValRF$.pred, obs = housesValRF$price_label_high)
-metrics_function(housesValRF$.pred, housesValRF, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesValRF$price_label_high, housesValRF$.pred_TRUE)
-ggplotROCCurve(roc_dt)
-#opt_f1_obj <- opt_f1_function(housesValRF$.pred_TRUE, housesValRF, 'price_label_high', 0.3)
-#opt_f1_obj$f1_opt
-#opt_f1_obj$p1
-#opt_f1_obj$p2
+```{r message=False}
+eval_val <- evaluate_validation(housesVal, rf_wflow_final_fit, opt_th)
+eval_val
 ```
 
 
 ### Modelo final
 
-Probamos un modelo con unos parámetros más simples (de los que aparecen en el top10 del cv):
+Probamos un modelo con unos parámetros más simples (de los que aparecen en el top10 del cv de la búsqueda bayesiana):
 
 ```{r}
 set.seed(10)
@@ -1420,6 +1454,7 @@ prob_values <- rf4$votes
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 opt_th_metrics <- opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
+opt_th_metrics$p1
 opt_th_metrics$f1_opt
 opt_th_rf <- opt_th_metrics$threshold
 ```

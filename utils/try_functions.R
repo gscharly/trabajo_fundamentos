@@ -1,11 +1,11 @@
 # Función que intenta leer un objeto CV de tidymodels. Si no existe, entrena.
-try_cv_train <- function(path, folds, grid, params){
+try_cv_train <- function(path, wkflow, folds, grid, params){
   out <- tryCatch({
     model_search = readRDS(path)
   },
   error=function(cond){
     message(cond)
-    model_search <- tune_grid(rf_workflow, grid = grid, resamples=folds, param_info = params)
+    model_search <- tune_grid(wkflow, grid = grid, resamples=folds, param_info = params)
     saveRDS(model_search, path)
     return(model_search)
   }

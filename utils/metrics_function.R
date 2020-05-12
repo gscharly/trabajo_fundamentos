@@ -73,7 +73,7 @@ dt_metrics <- function(df, features, label){
   df_f[,label] <- as.factor(df[,label])
   dt_form <- as.formula(paste(paste(label), " ~ ", paste(features, collapse = " + "), sep = ""))
   dt <- rpart(dt_form, data = df_f)
-  rpart.plot(dt, type=4, fallen.leaves = FALSE, tweak =1.75)
+  rpart.plot(dt, type=3, fallen.leaves = FALSE)
   preds <- predict(dt, type = "class")
   table(pred = preds, obs = df[,label])
   metrics <- metrics_function(preds, df_f, label, bool=TRUE)
@@ -208,4 +208,22 @@ plot_acc_f1_k_v2 <- function(train, label, cols){
   
   #plot_grid(p1, p2, rel_heights = c(1/2, 1/2))
   p2
+}
+
+# Función para evaluar validación con tidymodels
+evaluate_validation <- function(housesVal, wflow, opt_th){
+  houses <- housesVal
+  houses$price_label_high <- as.factor(houses$price_label_high)
+  houses$.pred <- predict(wflow,  new_data = houses)$.pred_class
+  houses$.pred_TRUE <- predict(wflow,  new_data = houses, type='prob')$.pred_TRUE
+  metrics(houses, truth = price_label_high, .pred, .pred_TRUE)
+  table(pred = houses$.pred, obs = houses$price_label_high)
+  preds_val <- as.factor(ifelse(houses$.pred_TRUE > opt_th,1,0))
+  houses$price_label_high <- factor(ifelse(houses$price_label_high==TRUE,1,0))
+  metrics_val <- metrics_function_num(preds_val, houses, 'price_label_high')
+  f1 <- round(metrics_val$f1,3)
+  roc_dt <- roc(houses$price_label_high, houses$.pred_TRUE)
+  plot_roc <- ggplotROCCurve(roc_dt)
+  opt_f1_obj <- opt_f1_function_v2(houses$.pred_TRUE, houses, 'price_label_high', 0.3)
+  return(list(f1=f1, plot_roc=plot_roc, plot_pr_roc=opt_f1_obj$p1))
 }
