@@ -855,17 +855,16 @@ Como primera aproximación, se ha probado el modelo de regresión logística con
 
 
 ```{r}
-train <- read.csv('base_train.csv', encoding = 'UTF-8')
 filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', "Method", "log_landsize_std", "rooms_cat")
-train <- train %>%  select(-filter_cols)
+housesTrain_lr <- housesTrain %>% select(-filter_cols)
 
 #train$may_have_water <- as.factor(train$may_have_water)
-train$may_have_water <- factor(train$may_have_water, levels=c(F,T))
-train$kmeans_cluster <- factor(train$kmeans_cluster, levels = c(1,2,3,4,5))
-train$price_label_high <- as.factor(ifelse(train$price_label_high==TRUE,1,0))
+housesTrain_lr$may_have_water <- factor(housesTrain_lr$may_have_water, levels=c(F,T))
+#train$kmeans_cluster <- factor(train$kmeans_cluster, levels = c(1,2,3,4,5))
+#train$price_label_high <- as.factor(ifelse(train$price_label_high==TRUE,1,0))
 
-lr_model <- readRDS("./models/lr_all_variables.rds")
-#r_model <- glm(price_label_high ~ ., family = binomial(link = 'logit'), data = train)
+#lr_model <- readRDS("./models/lr_all_variables.rds")
+lr_model <- glm(price_label_high ~ ., family = binomial(link = 'logit'), data = housesTrain_lr)
 summary(lr_model)
 ```
 
@@ -874,9 +873,8 @@ Se puede ver a partir de los coeficientes obtenidos, que las existen unas cuanta
 De todas maneras, vamos a obtener las métricas de performance más relevantes de este modelo de cara a compararlo con uno más sencillo que construiremos a posteriori con menos variables:
 
 ```{r}
-x_train <- train %>%  select(-price_label_high) 
-prob_lr <- lr_model %>% predict(x_train, type = "response")
-opt_f1_lr <- opt_f1_function_v2(prob_lr, train, "price_label_high")
+prob_lr <- lr_model %>% predict(housesTrain_lr, type = "response")
+opt_f1_lr <- opt_f1_function_v2(prob_lr, housesTrain_lr, "price_label_high")
 c(optimal_threshold = opt_f1_lr$threshold, precision = opt_f1_lr$precision, recall =  opt_f1_lr$recall, f1_score = opt_f1_lr$f1_opt)
 ```
 
@@ -902,8 +900,8 @@ summary(lr_regularized)
 
 
 ```{r}
-prob_lr_regularized <- lr_regularized %>% predict(x_train, type = "response")
-opt_f1_lr_regularized <- opt_f1_function_v2(prob_lr_regularized, train, "price_label_high")
+prob_lr_regularized <- lr_regularized %>% predict(housesTrain_lr, type = "response")
+opt_f1_lr_regularized <- opt_f1_function_v2(prob_lr_regularized, housesTrain_lr, "price_label_high")
 c(optimal_thrshold = opt_f1_lr_regularized$threshold, precision = opt_f1_lr_regularized$precision, recall =  opt_f1_lr_regularized$recall, f1_score = opt_f1_lr_regularized$f1_opt)
 ```
 
