@@ -65,6 +65,7 @@ library(reshape2)
 library(ggmap)
 library(stringr)
 library(fuzzyjoin)
+library(woeBinning)
 
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
@@ -780,22 +781,6 @@ df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
 df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point(alpha=0.5) + labs(title='MDS: price_label_high') + scale_color_manual(values = palette34)
 df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname') + scale_color_manual(values = palette34)
 ```
-Se prueba también la distancia de manhattan
-
-```{r}
-# Distancia euclídea
-d <- dist(train_num_sample, method = 'manhattan') 
-# MDS
-fit <- cmdscale(d,eig=TRUE, k=2)
-```
-
-```{r}
-df_fit <- data.frame(fit$points)
-# No estoy seguro de hacer el join bien, se supone que es por indice
-df_mds_cat <- merge(df_fit, train_sample, by.x=0, by.y=0)
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=price_label_high)) + geom_point(alpha=0.5) + labs(title='MDS: price_label_high') + scale_color_manual(values = palette34)
-df_mds_cat %>% ggplot(aes(x=X1, y=X2, color=Regionname)) + geom_point() + labs(title='MDS: Regionname') + scale_color_manual(values = palette34)
-```
 
 ## tSNE
 Probamos tsne sobre nuestras variables numéricas escaladas, para que valores extremos no nos den problemas. El parámetro que se suele tocar es el perplexity, que es algo parecido al número de vecinos más cercanos cuando se comparan las distribuciones que utiliza tSNE.
@@ -926,7 +911,7 @@ Como podemos ver, al simpolificar el modelo se ha conseguido que no sobreajuste 
 Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer lugar, se utilizarán las variables que se consideraron importantes en el análisis exploratorio, para después probar distintas formas de tuning e intentar evitar el sobreaprendizaje del árbol.
 
 ### Utilizando las variables estudiadas
-Se utilizarán directamente las variables estudiadas en el análisis exploratorio, dejando de lado transformaciones y estandarizaciones, además de variables categóricas con muchas categorías. Además, si recordamos, para la regresión lineal tuvimos que convertir varias features numéricas en categóricas (número de habitaciones, año de construcción...). Podemos probar a introducir las variables originales para ver qué cortes propone el árbol.
+Se utilizarán directamente las variables estudiadas en el análisis exploratorio, dejando de lado transformaciones y estandarizaciones, además de variables categóricas con muchas categorías. Además, si recordamos, para la regresión lineal tuvimos que convertir varias features numéricas en categóricas (número de habitaciones, año de construcción...). Podemos probar a introducir las variables originales para ver qué cortes propone el árbol, y ahorrarnos problemas con variables dummy.
 
 
 En los cortes, se mira primero la región en la que está la casa, viendo si está o no en Southern Metropolitan (la zona con casas más caras). Después, utiliza variables como el número de habitaciones, el tipo de vivienda y la distancia para discriminar. Se ve que hay un grupo que contiene a cerca de la mitad de las muestras con un 9% de probabilidades de ser cara, solo teniendo en cuenta que no está en Southern Metropolitan y que tiene menos de 4 habitaciones.
@@ -936,7 +921,20 @@ Algo que también se puede ver es que hay varios nodos con pocas muestras (los q
 
 
 ```{r message=FALSE}
-model_metrics <- dt_metrics(housesTrain, c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat", "may_have_water"), "price_label_high")
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat", "may_have_water", "kmeans_cluster_woe"), "price_label_high")
+model_metrics$metrics
+model_metrics$dt
+prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
+opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
+```
+
+
+Observamos que el árbol solo discrimina por las variables *Rooms*, *Distance*, *kmeans_cluster_woe*, *Regionname*. Si probamos un árbol con solo estas variables, obtenemos un modelo muy parecido:
+
+```{r, message=FALSE}
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Distance", "Regionname", "kmeans_cluster_woe"),"price_label_high")
 model_metrics$metrics
 prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
@@ -945,9 +943,8 @@ opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
 ```
 
 
-Observamos que el árbol solo discrimina por las variables *Rooms*, *Distance*, *Type*, *Regionname*. Si probamos un árbol con solo estas variables, obtenemos un modelo muy parecido:
-
-```{r}
+Sin embargo, se ha visto que utilizando la variable *Type* en vez de la variable generada por el cluster, se obtiene un modelo con una f1 ligeramente menor, pero que parece un poco más interpretable.
+```{r, message=FALSE}
 model_metrics <- dt_metrics(housesTrain, c("Rooms", "Distance", "Regionname", "Type"),"price_label_high")
 model_metrics$metrics
 prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
@@ -982,7 +979,7 @@ opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
 ```
 
 
-En ambos casos, se puede ver que hay muchos nodos con muy pocos casos (1%,2%...) que probablemente se puedan juntar en otro nodo sin perder poder predictivo. 
+En ambos casos, se puede ver que hay nodos con muy pocos casos (1%,2%...) que probablemente se puedan juntar en otro nodo sin perder poder predictivo. 
 
 ### Podando el árbol 
 Intentamos eliminar esas últimas hojas que hemos comentado en el último modelo probado.
@@ -1025,7 +1022,7 @@ Utilizaremos las variables que mejor resultados nos han dado en una etapa de val
 
 ```{r}
 set.seed(10)
-housesTrainCV <- housesTrain %>% select("Rooms", "Lattitude", "Longtitude", "Type", "price_label_high")
+housesTrainCV <- housesTrain %>% select("Rooms", "Lattitude", "Longtitude", "kmeans_cluster_woe", "price_label_high")
 housesTrainCV$price_label_high <- as.factor(housesTrainCV$price_label_high)
 dt_model <- decision_tree(cost_complexity = tune()) %>% set_mode('classification') %>% set_engine("rpart")
 houses_rec <- recipe(price_label_high ~ ., data=housesTrainCV)
@@ -1039,7 +1036,7 @@ dt_grid <- grid_regular(dt_param, levels=10)
 
 ```{r}
 # Este chunk solo hace el cv cuando el fichero no se encuentra
-path = "./models/dt_bayes_search.rds"
+path = "./models/dt_bayes_search_woe.rds"
 houses_folds <- vfold_cv(housesTrainCV, v = 10, repeats = 3)
 dt_bayes_search <- try_bayes_cv_train(path, dt_workflow, houses_folds, dt_param)
 ```
@@ -1119,13 +1116,13 @@ A modo de nota final, se han probado las variables generadas (kmeans, agua y hab
 En este apartado se van a utilizar random forests para el problema de clasificación. Al no estar demasiado expuesto a los outliers, y aceptar variables categóricas como entrada, la primera prueba que se realizará será con la mayoría de variables del conjunto de datos, y con unos parámetros iniciales que después se modificarán en una etapa de selección de hiperparámetros. Se busca en esta primera prueba un modelo con muchos árboles, de tal forma que se pueda ver la importancia de las variables, y pueda servir de etapa previa de selección de las mismas. Aquí, hay que tener varias cosas en cuenta:
 
 - Si se introducen variables muy correladas, solo una tendrá mucha importancia, y el efecto de la otra quedará "enmascarado". Esto puede afectar a la interpretación de los datos.
-- Los random forest tienden a estar sesgados hacia variables categóricas con muchas categorías.
+- Los random forest tienden a estar sesgados hacia variables categóricas con muchas categorías. Se introducirán por tanto la mayoría de variables que se convirtieron a categorías como numéricas.
 
 
 ```{r}
 set.seed(10)
 housesTrainOrigVar <- housesTrain[c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", 
-                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat",
+                                    "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat", "kmeans_cluster_woe",
                                      "price_label_high")]
 housesTrainOrigVar$price_label_high <- as.factor(housesTrainOrigVar$price_label_high)
 rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar, ntree=500)
@@ -1179,8 +1176,8 @@ Otras pruebas:
 
 ```{r}
 set.seed(10)
-housesTrainImpVars <- housesTrain[c("Rooms", "Distance", "LandsizeImp",
-                                    "Lattitude", "Longtitude", "Type",
+housesTrainImpVars <- housesTrain[c("Rooms", "Distance", "LandsizeImp", "Type",
+                                    "Lattitude", "Longtitude",
                                      "price_label_high")]
 housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
 rf3 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=500)
