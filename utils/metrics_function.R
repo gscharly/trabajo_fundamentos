@@ -227,3 +227,19 @@ evaluate_validation <- function(housesVal, wflow, opt_th){
   opt_f1_obj <- opt_f1_function_v2(houses$.pred_TRUE, houses, 'price_label_high', 0.3)
   return(list(f1=f1, plot_roc=plot_roc, plot_pr_roc=opt_f1_obj$p1))
 }
+# Función para evaluar train con tidymodels
+finish_workflow_train <- function(df_train, search, wflow){
+  df <- df_train
+  param_final <- select_best(search, "roc_auc")
+  wflow_final <- finalize_workflow(wflow, param_final)
+  wflow_final_fit <- fit(wflow_final, data = df)
+  df$.pred <- predict(wflow_final_fit, new_data = df)$.pred_class
+  df$.pred_TRUE <- predict(wflow_final_fit, new_data = df, type='prob')$.pred_TRUE
+  #metrics(df, truth = price_label_high, .pred, .pred_TRUE)
+  table(pred = df$.pred, obs = df$price_label_high)
+  metrics <- metrics_function(df$.pred, df, 'price_label_high', bool=TRUE)
+  roc_dt <- roc(df$price_label_high, df$.pred_TRUE)
+  roc_plot <- ggplotROCCurve(roc_dt)
+  opt_f1_obj <- opt_f1_function(df$.pred_TRUE, df, 'price_label_high', 0.1)
+  return(list(wflow_final=wflow_final_fit, metrics=metrics, roc_plot=roc_plot, opt_f1_obj=opt_f1_obj))
+}

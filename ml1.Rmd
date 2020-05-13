@@ -86,11 +86,6 @@ housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
 housesVal <- read.csv('base_val.csv')
 ```
-```{r}
-housesTrain$kmeans_cluster <- factor(housesTrain$kmeans_cluster, levels = c(1,2,3,4,5))
-housesVal$kmeans_cluster <- factor(housesVal$kmeans_cluster, levels = c(1,2,3,4,5))
-housesTest$kmeans_cluster <- factor(housesTest$kmeans_cluster, levels = c(1,2,3,4,5))
-```
  
 # Definición de objetivos
 
@@ -1041,13 +1036,6 @@ dt_param <- dt_workflow %>% parameters()
 dt_grid <- grid_regular(dt_param, levels=10)
 ```
 
-```{r message=FALSE}
-# Parallelize
-all_cores <- parallel::detectCores(logical = FALSE) - 2
-registerDoFuture()
-cl <- makeCluster(all_cores)
-plan(future::cluster, workers = cl)
-```
 
 ```{r}
 # Este chunk solo hace el cv cuando el fichero no se encuentra
@@ -1056,10 +1044,6 @@ houses_folds <- vfold_cv(housesTrainCV, v = 10, repeats = 3)
 dt_bayes_search <- try_bayes_cv_train(path, dt_workflow, houses_folds, dt_param)
 ```
 
-```{r}
-#Execute after finishing training
-stopCluster(cl)
-```
 
 Fijándonos en la gráfica, quizás querramos sacrificar un poco de roc a costa de que nuestro árbol sea menos complejo. Viendo el resultado del mejor modelo, es un árbol con muchos nodos, que quizás esté sobre ajustando.
 
@@ -1073,41 +1057,22 @@ autoplot(dt_bayes_search, type='parameters')
 show_best(dt_bayes_search, metric='roc_auc', 20)
 ```
 
-```{r}
-# Prepare for final prediction
-dt_param_final <- select_best(dt_bayes_search, "roc_auc")
-dt_wflow_final <- finalize_workflow(dt_workflow, dt_param_final)
-dt_wflow_final_fit <- fit(dt_wflow_final, data = housesTrainCV)
+
+```{r, message=FALSE}
+train_summary <- finish_workflow_train(housesTrainCV, dt_bayes_search, dt_workflow)
+train_summary$metrics
+train_summary$roc_plot
+train_summary$opt_f1_obj
 ```
 
-```{r}
-housesTrainCV$.pred <- predict(dt_wflow_final_fit, 
-                          new_data = housesTrainCV)$.pred_class
-housesTrainCV$.pred_TRUE <- predict(dt_wflow_final_fit, 
-                          new_data = housesTrainCV, type='prob')$.pred_TRUE
-metrics(housesTrainCV, truth = price_label_high, .pred, .pred_TRUE)
-```
-
-```{r message=FALSE}
-table(pred = housesTrainCV$.pred, obs = housesTrainCV$price_label_high)
-metrics_function(housesTrainCV$.pred, housesTrainCV, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesTrain$price_label_high, housesTrainCV$.pred_TRUE)
-ggplotROCCurve(roc_dt)
-opt_f1_obj <- opt_f1_function(housesTrainCV$.pred_TRUE, housesTrainCV, 'price_label_high', 0.1)
-opt_th <- opt_f1_obj$threshold
-opt_f1_obj$f1_opt
-opt_f1_obj$p1
-opt_f1_obj$p2
-```
 
 En validación, observamos que el modelo sobreajusta en términos de f1. Pasamos de una f1 de 0.835 en train a 0.786 en validación. Esto puede deberse a que en la etapa de validación cruzada se está optimizando el AUC ROC (que vemos que cae de 0.95 a 0.93) mientras que el AUC PR sí que es sensiblemente peor. Habría que intentar optimizar esta métrica.
 
 Además, quizás se esté permitiendo al árbol tener demasiados nodos. Podemos probar a quedarnos con un parámetro de complejidad un poco mayor (reduciendo el número de nodos).
 
 
-
 ```{r message=FALSE}
-eval_val <- evaluate_validation(housesVal, dt_wflow_final_fit, opt_th)
+eval_val <- evaluate_validation(housesVal, train_summary$wflow_final, train_summary$opt_f1_obj$threshold)
 eval_val
 ```
 
@@ -1141,7 +1106,7 @@ metrics_function_num(preds_dt_val, val_dt, 'price_label_high')
 
 
 ```{r}
-saveRDS(pruneTREE, "./models/dt_best_model.rds")
+#saveRDS(pruneTREE, "./models/dt_best_model.rds")
 ```
 
 
@@ -1275,25 +1240,13 @@ rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mt
 rf_grid <- grid_regular(rf_param, levels=3)
 ```
 
-```{r message=FALSE}
-# Parallelize
-all_cores <- parallel::detectCores(logical = FALSE) - 2
-registerDoFuture()
-cl <- makeCluster(all_cores)
-plan(future::cluster, workers = cl)
-```
 
 ```{r}
 # Este chunk solo hace el cv cuando el fichero no se encuentra
 path = "./models/rf_grid_search.rds"
 houses_folds <- vfold_cv(housesTrainImpVars, v = 10, repeats = 3)
 #rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
-rf_search <- try_cv_train(path,rf_workflow, houses_folds, rf_grid, rf_param)
-```
-
-```{r}
-#Execute after finishing training
-stopCluster(cl)
+rf_search <- try_cv_train(path, rf_workflow, houses_folds, rf_grid, rf_param)
 ```
 
 
@@ -1310,43 +1263,22 @@ Para el mejor modelo, se obtienen los siguientes resultados en train y validaci�
 
 Train:
 
-```{r}
-# Prepare for final prediction
-rf_param_final <- select_best(rf_search, "roc_auc")
-rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
-rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainImpVars)
-```
-
-```{r}
-housesTrainImpVars$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesTrainImpVars)$.pred_class
-housesTrainImpVars$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesTrainImpVars, type='prob')$.pred_TRUE
-metrics(housesTrainImpVars, truth = price_label_high, .pred, .pred_TRUE)
+```{r, message=FALSE}
+train_summary <- finish_workflow_train(housesTrainImpVars, rf_search, rf_workflow)
+train_summary$metrics
+train_summary$roc_plot
+train_summary$opt_f1_obj
 ```
 
 
-
-```{r message=FALSE}
-table(pred = housesTrainImpVars$.pred, obs = housesTrainImpVars$price_label_high)
-metrics_function(housesTrainImpVars$.pred, housesTrainImpVars, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesTrain$price_label_high, housesTrainImpVars$.pred_TRUE)
-ggplotROCCurve(roc_dt)
-opt_f1_obj <- opt_f1_function(housesTrainImpVars$.pred_TRUE, housesTrainImpVars, 'price_label_high', 0.1)
-opt_th <- opt_f1_obj$threshold
-opt_f1_obj$f1_opt
-opt_f1_obj$p1
-opt_f1_obj$p2
-```
 
 En validación, observamos que el modelo sobreajusta bastante, sobretodo en términos de f1. Pasamos de una f1 de 0.92 en train a 0.81 en validación, solo un poco mejor de lo obtenido anteriormente con parámetros por defecto. Esto puede deberse a que en la etapa de validación cruzada se está optimizando el AUC ROC (que vemos que cae de 0.99 a 0.96) mientras que el AUC PR sí que es sensiblemente peor. Habría que intentar optimizar esta métrica.
 
 
 ```{r message=FALSE}
-eval_val <- evaluate_validation(housesVal, rf_wflow_final_fit, opt_th)
+eval_val <- evaluate_validation(housesVal, train_summary$wflow_final, train_summary$opt_f1_obj$threshold)
 eval_val
 ```
-
 
 
 ### Optimización bayesiana de hiperparámetros
@@ -1367,14 +1299,6 @@ rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mt
 ```
 
 
-```{r message=FALSE, echo=F}
-# Parallelize
-all_cores <- parallel::detectCores(logical = FALSE) - 2
-registerDoFuture()
-cl <- makeCluster(all_cores)
-plan(future::cluster, workers = cl)
-```
-
 ```{r, echo=F}
 set.seed(10)
 path = "./models/rf_bayes_search.rds"
@@ -1386,10 +1310,6 @@ rf_bayes_search <- try_bayes_cv_train(path, rf_workflow, rf_bayes_folds, rf_para
 show_best(rf_bayes_search, metric = "roc_auc", 10)
 ```
 
-```{r, echo=F}
-#Execute after finishing training
-stopCluster(cl)
-```
 
 ```{r}
 autoplot(rf_bayes_search, type='performance')
@@ -1400,39 +1320,21 @@ Para el mejor modelo, se obtienen los siguientes resultados en train y validaci�
 
 TODO 12/05 METER ESTO EN UNA FUNCION PARA EVITAR POSIBLES ERRORES
 
-```{r}
-# Prepare for final prediction
-rf_param_final <- select_best(rf_bayes_search, "roc_auc")
-rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
-rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainImpVars)
-```
-
-```{r}
-housesTrainImpVars$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesTrainImpVars)$.pred_class
-housesTrainImpVars$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesTrainImpVars, type='prob')$.pred_TRUE
-metrics(housesTrainImpVars, truth = price_label_high, .pred, .pred_TRUE)
-```
 
 Train: observamos que se consiguen mejores resultados que con el grid search (con un f1 de casi 0.94)
 
 ```{r message=FALSE}
-table(pred = housesTrainImpVars$.pred, obs = housesTrainImpVars$price_label_high)
-metrics_function(housesTrainImpVars$.pred, housesTrainImpVars, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesTrain$price_label_high, housesTrainImpVars$.pred_TRUE)
-ggplotROCCurve(roc_dt)
-opt_f1_obj <- opt_f1_function(housesTrainImpVars$.pred_TRUE, housesTrainImpVars, 'price_label_high', 0.1)
-opt_th <- opt_f1_obj$threshold
-opt_f1_obj$f1_opt
-opt_f1_obj$p1
-opt_f1_obj$p2
+train_summary <- finish_workflow_train(housesTrainImpVars, rf_bayes_search, rf_workflow)
+train_summary$metrics
+train_summary$roc_plot
+train_summary$opt_f1_obj
 ```
 
-De nuevo, vemos que el modelo sobreajusta en términos de f1 (de 0.93 a 0.81 en validación).
 
-```{r message=False}
-eval_val <- evaluate_validation(housesVal, rf_wflow_final_fit, opt_th)
+De nuevo, vemos que el modelo sobreajusta en términos de f1 (de 0.93 a 0.809 en validación).
+
+```{r message=FALSE}
+eval_val <- evaluate_validation(housesVal, train_summary$wflow_final, train_summary$opt_f1_obj$threshold)
 eval_val
 ```
 
