@@ -71,6 +71,7 @@ source('utils/calculate_roc.R')
 source('utils/plot_roc.R')
 source('utils/metrics_function.R')
 source('utils/plot_utils.R')
+source('utils/try_functions.R')
 set.seed(10)
 ```
 
@@ -951,6 +952,8 @@ En los cortes, se mira primero la región en la que está la casa, viendo si est
 
 Algo que también se puede ver es que hay varios nodos con pocas muestras (los que vienen de la distinción de tipo de casa es Southern Metropolitan). Vemos además que hay un bastantes falsos negativos (casas caras que se etiquetan como baratas).
 
+
+
 ```{r message=FALSE}
 model_metrics <- dt_metrics(housesTrain, c("Rooms", "Type", "Method", "Distance", "Bathroom", "CarImp", "LandsizeImp", "Lattitude", "Longtitude", "Regionname", "year_built_cat", "sell_rate_cat", "may_have_water"), "price_label_high")
 model_metrics$metrics
@@ -987,7 +990,7 @@ opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
 ```
 
 
-Se puede realizar la misma prueba con las variables transformadas: tomando rooms_cat en vez de Rooms. Se obtienen las mismas métricas, lo que nos lleva a pensar que se realizó una buena separación a la hora de categorizar el número de habitaciones.
+Se puede realizar la misma prueba con las variables transformadas: tomando **rooms_cat** en vez de **Rooms**. Se obtienen las mismas métricas, lo que nos lleva a pensar que se realizó una buena separación a la hora de categorizar el número de habitaciones.
 ```{r message=FALSE}
 model_metrics <- dt_metrics(housesTrain, c("rooms_cat", "Lattitude", "Longtitude", "Type"), "price_label_high")
 model_metrics$metrics
@@ -1004,75 +1007,105 @@ En ambos casos, se puede ver que hay muchos nodos con muy pocos casos (1%,2%...)
 Intentamos eliminar esas últimas hojas que hemos comentado en el último modelo probado.
 
 ```{r}
-printcp(model_metrics$dt)
-```
-```{r}
+model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
 plotcp(model_metrics$dt)
 ```
 
-Con 11 hojas, el error es prácticamente el mismo. Si bajamos al siguiente nivel de complejidad (5 hojas) las métricas del modelo empeoran mucho.
+Con 11 hojas, lel f1 baja hasta 0.726.
 
-
-```{r pruneTree2, warning=FALSE}
+```{r pruneTree2, message=FALSE}
 pruneTREE <- rpart::prune(model_metrics$dt, cp = model_metrics$dt$cptable[5, "CP"])
-rpart.plot(pruneTREE, type=4, fallen.leaves = FALSE, tweak =1.75)
+rpart.plot(pruneTREE, type=3, fallen.leaves = FALSE, roundint = FALSE)
 preds <- predict(pruneTREE, type = "class")
 metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
-prob_values <- predict(model_metrics$dt, housesTrain, type='prob')
+prob_values <- predict(pruneTREE, housesTrain, type='prob')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
 ```
 
 
-Bajando la complejidad hasta quedarnos solo con 5 hojas, observamos que el accuracy es parecido, pero que el f1-score disminuye hasta 0.56 (con una precisión bastante aceptable). Por otro lado, el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja con las casas baratas (83% de las casas de este nodo son baratas), con el 75% de los datos. Las casas con más de 4 habitaciones en se distribuyen en función de las coordenadas.
+Bajando la complejidad hasta quedarnos solo con 5 hojas, observamos que el accuracy es parecido, pero que el f1-score disminuye hasta 0.56. Por otro lado, el árbol es mucho más fácil de interpretar. Las casas con menos de 4 habitaciones directamente son una hoja con las casas baratas (83% de las casas de este nodo son baratas), con el 75% de los datos. Las casas con más de 4 habitaciones en se distribuyen en función de las coordenadas.
 
-```{r warning=FALSE}
+```{r message=FALSE}
 pruneTREE <- rpart::prune(model_metrics$dt, cp = model_metrics$dt$cptable[4, "CP"])
-rpart.plot(pruneTREE, type=4, fallen.leaves = FALSE, tweak =1.75)
+rpart.plot(pruneTREE, type=3, fallen.leaves = FALSE, roundint = FALSE)
 preds <- predict(pruneTREE, type = "class")
 metrics_function(preds, housesTrain, 'price_label_high', bool=TRUE)
+prob_values <- predict(pruneTREE, housesTrain, type='prob')
+roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
+ggplotROCCurve(roc_dt)
+opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
 ```
 
 ### Cross validation
 Utilizaremos las variables que mejor resultados nos han dado en una etapa de validación cruzada para obtener el mejor parámetro de complejidad.
 
-```{r}
-# Hay que factorizar el label para que se construya bien el árbol
-housesTrainCV <- housesTrain %>% select(Rooms, Lattitude, Longtitude, Type)
-housesTrainCV$price_label_high <- as.factor(housesTrain$price_label_high)
-housesTrainCV$price_label_high <- as.factor(ifelse(housesTrainCV$price_label_high==TRUE,"caras","baratas"))
-housesTrainCV$price_label_high <- factor(housesTrainCV$price_label_high, levels=rev(levels(housesTrainCV$price_label_high)))
-fit_control <- caret::trainControl(method = "cv", number=10, summaryFunction = twoClassSummary, classProbs = TRUE)
-cv_model <- train(price_label_high ~ ., data=housesTrainCV, method='rpart', trControl=fit_control, tuneLength=10, metric='ROC')
-```
 
 ```{r}
-cv_model
+set.seed(10)
+housesTrainCV <- housesTrain %>% select("Rooms", "Lattitude", "Longtitude", "Type", "price_label_high")
+housesTrainCV$price_label_high <- as.factor(housesTrainCV$price_label_high)
+dt_model <- decision_tree(cost_complexity = tune()) %>% set_mode('classification') %>% set_engine("rpart")
+houses_rec <- recipe(price_label_high ~ ., data=housesTrainCV)
+# Create workflow
+dt_workflow <- workflow() %>% add_model(dt_model) %>% add_recipe(houses_rec)
+dt_param <- dt_workflow %>% parameters()
+# Create grid
+dt_grid <- grid_regular(dt_param, levels=10)
 ```
 
+
 ```{r}
-plot(cv_model)
-plot(cv_model$results$ROCSD)
+# Este chunk solo hace el cv cuando el fichero no se encuentra
+path = "./models/dt_bayes_search.rds"
+houses_folds <- vfold_cv(housesTrainCV, v = 10, repeats = 3)
+dt_bayes_search <- try_bayes_cv_train(path, dt_workflow, houses_folds, dt_param)
 ```
+
 
 Fijándonos en la gráfica, quizás querramos sacrificar un poco de roc a costa de que nuestro árbol sea menos complejo. Viendo el resultado del mejor modelo, es un árbol con muchos nodos, que quizás esté sobre ajustando.
 
 ```{r}
-final_dt <- cv_model$finalModel
-rpart.plot(final_dt)
+autoplot(dt_bayes_search, type='marginals')
+autoplot(dt_bayes_search, type='performance')
+autoplot(dt_bayes_search, type='parameters')
+```
+
+```{r}
+show_best(dt_bayes_search, metric='roc_auc', 20)
 ```
 
 
-Como prueba final, elegimos el parámetro de complejidad cp=0.019616027, y probamos sobre train y validación para ver si se produce sobreajuste.
+```{r, message=FALSE}
+train_summary <- finish_workflow_train(housesTrainCV, dt_bayes_search, dt_workflow)
+train_summary$metrics
+train_summary$roc_plot
+train_summary$opt_f1_obj
+```
 
-Sobre train, las métricas serán iguales que en la primera prueba que hicimos al podar el árbol.
+
+En validación, observamos que el modelo sobreajusta en términos de f1. Pasamos de una f1 de 0.835 en train a 0.786 en validación. Esto puede deberse a que en la etapa de validación cruzada se está optimizando el AUC ROC (que vemos que cae de 0.95 a 0.93) mientras que el AUC PR sí que es sensiblemente peor. Habría que intentar optimizar esta métrica.
+
+Además, quizás se esté permitiendo al árbol tener demasiados nodos. Podemos probar a quedarnos con un parámetro de complejidad un poco mayor (reduciendo el número de nodos).
+
+
+```{r message=FALSE}
+eval_val <- evaluate_validation(housesVal, train_summary$wflow_final, train_summary$opt_f1_obj$threshold)
+eval_val
+```
+
+
+
+Como prueba final, elegimos el parámetro de complejidad cp=0.001033845, y probamos sobre train y validación para ver si se produce sobreajuste.
 
 ```{r}
-cp=0.019616027
+cp=0.001033845
 model_metrics <- dt_metrics(housesTrain, c("Rooms", "Lattitude", "Longtitude", "Type"), "price_label_high")
-model_metrics$metrics
+#model_metrics$metrics
 pruneTREE <- rpart::prune(model_metrics$dt, cp = cp)
+preds_class <- predict(pruneTREE, type = "class")
+metrics_function(preds_class, housesTrain, 'price_label_high', bool=TRUE)
 preds <- predict(pruneTREE, type = "prob")
 opt_f1 <- opt_f1_function_v2(preds[,2], housesTrain, 'price_label_high')
 opt_th_dt <- opt_f1$threshold
@@ -1080,7 +1113,7 @@ opt_f1$f1_opt
 opt_f1$p2
 ```
 
-Sobre validación, observamos que las métricas empeoran un poco, aunque el mejor f1 
+Sobre validación, observamos que las métricas empeoran un poco, aunque en este caso no se produce sobre ajuste. Se opta por sacrificar un poco de f1 para que el modelo no sobre ajuste y además sea más sencillo
 
 ```{r message=FALSE}
 val_dt <- housesVal
@@ -1092,14 +1125,7 @@ metrics_function_num(preds_dt_val, val_dt, 'price_label_high')
 
 
 ```{r}
-prob_values <- predict(pruneTREE, housesVal, type='prob')
-predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_th_dt, linetype='dashed', color=palette34[4])
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_th_dt, linetype='dashed', color=palette34[4])
-```
-
-```{r}
-saveRDS(pruneTREE, "./models/dt_best_model.rds")
+#saveRDS(pruneTREE, "./models/dt_best_model.rds")
 ```
 
 
@@ -1126,7 +1152,7 @@ rf2 <- randomForest(price_label_high ~ ., data=housesTrainOrigVar, ntree=500)
 
 Observamos que ya de primeras se obtienen buenas métricas.
 
-```{r}
+```{r message=FALSE}
 preds <- predict(rf2, type = "class")
 table(pred = preds, obs = housesTrainOrigVar$price_label_high)
 metrics_function(preds, housesTrainOrigVar, 'price_label_high', bool=TRUE)
@@ -1147,7 +1173,6 @@ var_importance <- data_frame(variable=setdiff(colnames(housesTrainOrigVar), "pri
                              importance=as.vector(importance(rf2)))
 var_importance <- arrange(var_importance, desc(importance))
 var_importance$variable <- factor(var_importance$variable, levels=var_importance$variable)
-
 p <- ggplot(var_importance, aes(x=variable, weight=importance, fill=variable))
 p <- p + geom_bar() + ggtitle("Importancia de variables")
 p <- p + xlab("Features") + ylab("Decrecimiento medio índice Gini")
@@ -1162,7 +1187,7 @@ p + theme(axis.text.x=element_blank(),
 
 Podemos probar si seleccionado las variables más importantes y volviendo a entrenar un modelo con los mismos parámetros, obtenemos resultados parecidos.
 
-Si nos quedamos con las 6 primeras, el accuracy desciende ligeramente hasta 0.89, pero el f1 score baja hasta 0.77. Si se incluye la variable *Type* adicionalmente, se consiguen resultados muy parecidos a los del primer modelo, reduciendo la complejidad. Si además quitamos la variable *Regionname*, por tener bastantes categorías, conseguimos un f1-score de 0.79.
+Si nos quedamos con las 6 primeras, el accuracy desciende ligeramente hasta 0.89, pero el f1 score baja hasta 0.77. Si se incluye la variable *Type* adicionalmente, se consiguen resultados muy parecidos a los del primer modelo, reduciendo la complejidad. Si además quitamos la variable *Regionname*, por tener bastantes categorías, conseguimos un f1-score de 0.8.
 
 
 Otras pruebas:
@@ -1195,7 +1220,6 @@ var_importance <- data_frame(variable=setdiff(colnames(housesTrainImpVars), "pri
                              importance=as.vector(importance(rf3)))
 var_importance <- arrange(var_importance, desc(importance))
 var_importance$variable <- factor(var_importance$variable, levels=var_importance$variable)
-
 p <- ggplot(var_importance, aes(x=variable, weight=importance, fill=variable))
 p <- p + geom_bar() + ggtitle("Importancia de variables")
 p <- p + xlab("Features") + ylab("Decrecimiento medio índice Gini")
@@ -1209,8 +1233,6 @@ p + theme(axis.text.x=element_blank(),
 ```
 
 
-Además, se puede probar a utilizar las variables transformadas
-
 
 ## Utilizando cross validation
 Como primera prueba, y teniendo en cuenta que las variables importantes el modelo son bastante lógicas, los resultados de este modelo son bastante buenos. Ahora se va a intentar tunear el número de árboles y la profundidad máxima de los mismos con grid search y CV, para intentar obtener unos mejores resultados, además de evaluar el modelo con conjuntos de validación. Los parámetros a tunear son:
@@ -1219,7 +1241,7 @@ Como primera prueba, y teniendo en cuenta que las variables importantes el model
 - Número de variables que se muestrean aleatoriamente al crear los árboles
 - Mínimo número de puntos para que un nodo se divida.
 
-Realizamos 10 Fold cross validation con 5 iteraciones.
+Realizamos 10 Fold cross validation con 3 iteraciones.
 
 Se utilizan las variables que se han comentado en el apartado anterior.
 
@@ -1235,24 +1257,15 @@ rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mt
 rf_grid <- grid_regular(rf_param, levels=3)
 ```
 
-```{r message=FALSE}
-# Parallelize
-all_cores <- parallel::detectCores(logical = FALSE) - 2
-registerDoFuture()
-cl <- makeCluster(all_cores)
-plan(future::cluster, workers = cl)
-```
 
 ```{r}
-houses_folds <- vfold_cv(housesTrainOrigVar, v = 10, repeats = 3)
-houses_folds
-rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
+# Este chunk solo hace el cv cuando el fichero no se encuentra
+path = "./models/rf_grid_search.rds"
+houses_folds <- vfold_cv(housesTrainImpVars, v = 10, repeats = 3)
+#rf_search <- tune_grid(rf_workflow, grid = rf_grid, resamples=houses_folds, param_info = rf_param)
+rf_search <- try_cv_train(path, rf_workflow, houses_folds, rf_grid, rf_param)
 ```
 
-```{r}
-#Execute after finishing training
-stopCluster(cl)
-```
 
 ```{r}
 autoplot(rf_search) +
@@ -1265,56 +1278,28 @@ show_best(rf_search, metric='roc_auc', 10)
 Observamos que se consiguen buenos resultados con muchas combinaciones de los parámetros. Podemos reducir la complejidad a costa de bajar un poco la métrica de clasificación.
 Para el mejor modelo, se obtienen los siguientes resultados en train y validación:
 
-```{r}
-# Prepare for final prediction
-rf_param_final <- select_best(rf_search, "roc_auc")
-rf_wflow_final <- finalize_workflow(rf_workflow, rf_param_final)
-rf_wflow_final_fit <- fit(rf_wflow_final, data = housesTrainOrigVar)
-```
-
-```{r}
-housesTrainOrigVar$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesTrainOrigVar)$.pred_class
-housesTrainOrigVar$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesTrainOrigVar, type='prob')$.pred_TRUE
-metrics(housesTrainOrigVar, truth = price_label_high, .pred, .pred_TRUE)
-```
-
 Train:
 
-```{r}
-table(pred = housesTrainOrigVar$.pred, obs = housesTrainOrigVar$price_label_high)
-metrics_function(housesTrainOrigVar$.pred, housesTrainOrigVar, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesTrain$price_label_high, housesTrainOrigVar$.pred_TRUE)
-ggplotROCCurve(roc_dt)
-opt_f1_obj <- opt_f1_function(housesTrainOrigVar$.pred_TRUE, housesTrainOrigVar, 'price_label_high', 0.3)
-opt_f1_obj$f1_opt
-opt_f1_obj$p1
-opt_f1_obj$p2
+```{r, message=FALSE}
+train_summary <- finish_workflow_train(housesTrainImpVars, rf_search, rf_workflow)
+train_summary$metrics
+train_summary$roc_plot
+train_summary$opt_f1_obj
 ```
+
+
 
 En validación, observamos que el modelo sobreajusta bastante, sobretodo en términos de f1. Pasamos de una f1 de 0.92 en train a 0.81 en validación, solo un poco mejor de lo obtenido anteriormente con parámetros por defecto. Esto puede deberse a que en la etapa de validación cruzada se está optimizando el AUC ROC (que vemos que cae de 0.99 a 0.96) mientras que el AUC PR sí que es sensiblemente peor. Habría que intentar optimizar esta métrica.
 
+
 ```{r message=FALSE}
-housesValRF <- housesVal
-housesValRF$price_label_high <- as.factor(housesValRF$price_label_high)
-housesValRF$.pred <- predict(rf_wflow_final_fit, 
-                          new_data = housesValRF)$.pred_class
-housesValRF$.pred_TRUE <- predict(rf_wflow_final_fit, 
-                          new_data = housesValRF, type='prob')$.pred_TRUE
-metrics(housesValRF, truth = price_label_high, .pred, .pred_TRUE)
-table(pred = housesValRF$.pred, obs = housesValRF$price_label_high)
-metrics_function(housesValRF$.pred, housesValRF, 'price_label_high', bool=TRUE)
-roc_dt <- roc(housesValRF$price_label_high, housesValRF$.pred_TRUE)
-ggplotROCCurve(roc_dt)
-#opt_f1_obj <- opt_f1_function(housesValRF$.pred_TRUE, housesValRF, 'price_label_high', 0.3)
-#opt_f1_obj$f1_opt
-#opt_f1_obj$p1
-#opt_f1_obj$p2
+eval_val <- evaluate_validation(housesVal, train_summary$wflow_final, train_summary$opt_f1_obj$threshold)
+eval_val
 ```
 
 
-Probamos un modelo con unos parámetros más simples (de los que aparecen en el top10 del cv):
+### Optimización bayesiana de hiperparámetros
+
 
 ```{r}
 set.seed(10)
@@ -1322,7 +1307,67 @@ housesTrainImpVars <- housesTrain[c("Rooms", "Distance", "LandsizeImp",
                                     "Lattitude", "Longtitude", "Type",
                                      "price_label_high")]
 housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
-rf4 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=50, mtry=3, nodesize=11)
+rf_model <- rand_forest(trees=tune(), mtry=tune(), min_n=tune()) %>% set_mode('classification') %>% set_engine('randomForest')
+houses_rec <- recipe(price_label_high ~ ., data=housesTrainImpVars)
+# Create workflow
+rf_workflow <- workflow() %>% add_model(rf_model) %>% add_recipe(houses_rec)
+# mtry en función del número de features
+rf_param <- rf_workflow %>% parameters() %>% update(trees = trees(c(50,500)), mtry=mtry(c(1,6)), min_n=min_n(c(2,30)))
+```
+
+
+```{r, echo=F}
+set.seed(10)
+path = "./models/rf_bayes_search.rds"
+rf_bayes_folds <- vfold_cv(housesTrainImpVars, v = 10, repeats = 1)
+rf_bayes_search <- try_bayes_cv_train(path, rf_workflow, rf_bayes_folds, rf_param)
+```
+
+```{r}
+show_best(rf_bayes_search, metric = "roc_auc", 10)
+```
+
+
+```{r}
+autoplot(rf_bayes_search, type='performance')
+autoplot(rf_bayes_search, type='parameters')
+```
+
+Para el mejor modelo, se obtienen los siguientes resultados en train y validación:
+
+TODO 12/05 METER ESTO EN UNA FUNCION PARA EVITAR POSIBLES ERRORES
+
+
+Train: observamos que se consiguen mejores resultados que con el grid search (con un f1 de casi 0.94)
+
+```{r message=FALSE}
+train_summary <- finish_workflow_train(housesTrainImpVars, rf_bayes_search, rf_workflow)
+train_summary$metrics
+train_summary$roc_plot
+train_summary$opt_f1_obj
+```
+
+
+De nuevo, vemos que el modelo sobreajusta en términos de f1 (de 0.93 a 0.809 en validación).
+
+```{r message=FALSE}
+eval_val <- evaluate_validation(housesVal, train_summary$wflow_final, train_summary$opt_f1_obj$threshold)
+eval_val
+```
+
+
+### Modelo final
+
+Probamos un modelo con unos parámetros más simples (de los que aparecen en el top10 del cv de la búsqueda bayesiana):
+
+```{r}
+set.seed(10)
+housesTrainImpVars <- housesTrain[c("Rooms", "Distance", "LandsizeImp",
+                                    "Lattitude", "Longtitude", "Type",
+                                     "price_label_high")]
+housesTrainImpVars$price_label_high <- as.factor(housesTrainImpVars$price_label_high)
+#rf4 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=50, mtry=3, nodesize=11)
+rf4 <- randomForest(price_label_high ~ ., data=housesTrainImpVars, ntree=80, mtry=4, nodesize=15)
 ```
 
 En train:
@@ -1335,6 +1380,7 @@ prob_values <- rf4$votes
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 opt_th_metrics <- opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
+opt_th_metrics$p1
 opt_th_metrics$f1_opt
 opt_th_rf <- opt_th_metrics$threshold
 ```
@@ -1354,8 +1400,8 @@ metrics_function_num(preds_rf_val, val_rf, 'price_label_high')
 ```{r}
 prob_values <- predict(rf4, housesVal, type='prob')
 predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=prob_values[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=validation_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=validation_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_th_rf, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_th_rf, linetype='dashed', color=palette34[4])
 ```
 
 ```{r}
@@ -1378,9 +1424,6 @@ Se obtiene un recall bastante bajo, lo que hace que el f1 score sea mediocre. Pa
 
 ```{r knn1}
 num_std_cols <- c('sqrt_distance_std', 'log_landsize_std', 'lattitude_std', 'longtitude_std')
-#housesTrain <- hop
-#knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 3, num_std_cols)
-#knn_metrics
 pred_knn <- knn.cv(housesTrain[,num_std_cols], k=3, cl=housesTrain[,"price_label_high"], prob = T)
 probs_knn <- reverse_probs(pred_knn)
 opt_f1_knn <- opt_f1_function(probs_knn, housesTrain, "price_label_high")
@@ -1391,7 +1434,6 @@ c(optimal_threshold = opt_f1_knn$threshold, precision = opt_f1_knn$precision, re
 Se muestra en la gráfica los distintos valores de F1-score que se obtendrían cambiando los valores de k. Se observa que el f1 score es bastante bajo, dejando de mejorar a partir de k=5 o k=7.
 
 ```{r}
-#plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
 plot_acc_f1_k_v2(housesTrain, 'price_label_high', num_std_cols)
 ```
 
@@ -1438,15 +1480,12 @@ summary(aov(price_label_high~log_room_land, data=housesTrain))
 
 ```{r}
 num_std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
-#plot_acc_f1_k(housesTrain, 'price_label_high', num_std_cols)
 plot_acc_f1_k_v2(housesTrain, 'price_label_high', num_std_cols)
 ```
 
 Con esta nueva variable, podemos elegir un k=3, consiguiendo un f1 de 0.75, y además eliminar una variable (**sqrt_distance_std**).
 
 ```{r}
-#knn_metrics <- perform_knn_cv(housesTrain, 'price_label_high', 3, num_std_cols)
-#knn_metrics
 pred_knn_3 <- knn.cv(housesTrain[,num_std_cols], k=3, cl=housesTrain[,"price_label_high"], prob = T)
 probs_knn_3 <- reverse_probs(pred_knn_3)
 opt_f1_knn_3 <- opt_f1_function(probs_knn_3, housesTrain, "price_label_high")
@@ -1487,7 +1526,6 @@ Observamos que con estas variables no conseguimos incrementar el f1 score, y que
 
 ```{r}
 std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'rooms_cat', 'car_cat', 'sell_rate_cat')
-#plot_acc_f1_k(housesTrainKnnNorm, 'price_label_high', std_cols)
 plot_acc_f1_k_v2(housesTrainKnnNorm, 'price_label_high', std_cols)
 ```
 
@@ -1495,8 +1533,6 @@ plot_acc_f1_k_v2(housesTrainKnnNorm, 'price_label_high', std_cols)
 Introduciendo todas las variables, el modelo no consigue mejorar nada apenas. La combinación que ofrece mejores resultados es el uso del tamaño de la parcela, coordenadas, habitaciones, plazas de aparcamiento y popularidad del barrio:
 
 ```{r}
-#knn_metrics <- perform_knn_cv(housesTrainKnnNorm, 'price_label_high', 3, std_cols)
-#knn_metrics
 pred_knn_ordinals <- knn.cv(housesTrainKnnNorm[,std_cols], k=3, cl=housesTrainKnnNorm[,"price_label_high"], prob = T)
 probs_knn_ordinals <- reverse_probs(pred_knn_ordinals)
 opt_f1_knn_ordinals <- opt_f1_function(probs_knn_ordinals, housesTrain, "price_label_high")
@@ -1507,13 +1543,15 @@ c(optimal_threshold = opt_f1_knn_ordinals$threshold, precision = opt_f1_knn_ordi
 Por último, vamos a probar el mejor modelo que hemos obtenido sobre nuestro conjunto de validación, con el objetivo de comprobar su funcionamiento:
 
 ```{r}
-housesVal <- read.csv('base_val.csv')
+#housesVal <- read.csv('base_val.csv')
 # Para que funcione confusionMatrix de caret, el target debe ser un factor
-housesVal$price_label_high <- as.factor(housesVal$price_label_high)
+#housesVal$price_label_high <- as.factor(housesVal$price_label_high)
+housesValKnn <- housesVal
+
 num_std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
 
-pred_knn_val <- knn(train = housesTrain[,num_std_cols], test = housesVal[,num_std_cols], cl=housesTrain[,"price_label_high"], k = 3,prob = T)
-final_preds_val <- rep(0, dim(housesVal)[1])
+pred_knn_val <- knn(train = housesTrain[,num_std_cols], test = housesValKnn[,num_std_cols], cl=housesTrain[,"price_label_high"], k = 3,prob = T)
+final_preds_val <- rep(0, dim(housesValKnn)[1])
 probs_knn_val <- reverse_probs(pred_knn_val)
 # Para hacer las predcciones utilizando el threshold óptimo
 for(i in 1:length(probs_knn_val)){
@@ -1523,8 +1561,8 @@ for(i in 1:length(probs_knn_val)){
   }else{final_preds_val[i] = F}
 }
 
-housesVal$price_label_high <- as.factor(ifelse(housesVal$price_label_high==T,1,0))
-metrics_function_num(factor(final_preds_val), housesVal, "price_label_high")
+housesValKnn$price_label_high <- as.factor(ifelse(housesValKnn$price_label_high==T,1,0))
+metrics_function_num(factor(final_preds_val), housesValKnn, "price_label_high")
 ```
 
 ##SVM
@@ -1543,29 +1581,28 @@ En nuestro conjunto de datos no contamos con esa posibilidad, debido a la alta d
 
 
 ```{r, echo=F}
-train <- read.csv('base_train.csv', encoding = 'UTF-8')
-housesNum <- train %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, log_room_land_std)
+housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, log_room_land_std)
 filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat","year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "log_room_land_std")
-train <- train %>%  select(-filter_cols)
+housesTrainSVM <- housesTrain %>%  select(-filter_cols)
 
 # Estandarización de variables categóricas ordinales, quitando sell_rate_cat, bed_cat y car_cat que en principio no aporta nada al modelo (las dos últimas por ser redundantes)
 cat_with_order = c("rooms_cat", "bath_cat")
 
-train['bath_cat'] <- train %>% pull('bath_cat') %>% 
+housesTrainSVM['bath_cat'] <- housesTrainSVM %>% pull('bath_cat') %>% 
   ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
-train['rooms_cat']<- train %>% pull('rooms_cat') %>% 
+housesTrainSVM['rooms_cat']<- housesTrainSVM %>% pull('rooms_cat') %>% 
   ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
 
-ordinal_variables <- train %>% select(cat_with_order) 
+ordinal_variables <- housesTrainSVM %>% select(cat_with_order) 
 normParam <- preProcess(ordinal_variables)
 ordinal_variables_norm <- predict(normParam, ordinal_variables)
 
 for(cat in cat_with_order){
-  train[cat] <- ordinal_variables_norm[cat]
+  housesTrainSVM[cat] <- ordinal_variables_norm[cat]
 }
 
 
-train$price_label_high<-as.factor(ifelse(train$price_label_high==TRUE,1,0))
+housesTrainSVM$price_label_high<-as.factor(ifelse(housesTrainSVM$price_label_high==TRUE,1,0))
     
 ```
 
@@ -1573,7 +1610,7 @@ train$price_label_high<-as.factor(ifelse(train$price_label_high==TRUE,1,0))
 housesPCA <- prcomp(housesNum, center = TRUE, scale = TRUE)
 df_houses_pca <- data.frame(housesPCA$x[,1:2])
 df_houses_pca$price_label <- train$price_label_high
-df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=price_label)) + geom_point() + scale_color_manual(values = palette34)
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=housesTrain$price_label)) + geom_point() + scale_color_manual(values = palette34)
 ```
 
 Con esta represntación podemos ver que claramente nuestros datos no son linearmente separables si los reducimos a dos dimensiones. Aun así, no se va a descartar la realización de pruebas utilizando un kernel lineal, ya que como se ha dicho nuestros datos no están en dos, sino en 9 dimensiones. 
@@ -1605,17 +1642,12 @@ Como se puede el menor error de clasificación utilizando este kernel lineal se 
 #saveRDS(best_linear, "./models/svm_linear_kernel.rds")
 ```
 
-```{r}
-best_svm_linear <-  readRDS("./models/svm_linear_kernel.rds")
-best_svm_linear
-```
-
 
 ```{r}
 best_svm_linear <-  readRDS("./models/svm_linear_kernel.rds")
-prob_train_linear <- best_svm_linear %>% predict(train[,1:6], probability = T) 
+prob_train_linear <- best_svm_linear %>% predict(housesTrainSVM[,1:6], probability = T) 
 prob_svm_linear <- attr(prob_train_linear, "probabilities")[,1] # La probabilidad de pertenecer a la clase "cara" (1)
-opt_svm_linear <- opt_f1_function_v2(prob_svm_linear, train, "price_label_high")
+opt_svm_linear <- opt_f1_function_v2(prob_svm_linear, housesTrainSVM, "price_label_high")
 c(optimal_threshold = opt_svm_linear$threshold, precision = opt_svm_linear$precision, recall = opt_svm_linear$recall, f1_score = opt_svm_linear$f1_opt)
 ```
 
@@ -1624,64 +1656,43 @@ Se ha alcanzado una f1_score de 0.67 aproximadamente sobre el conjunto de entren
 
 ```{r}
 svm_mod <- svm_rbf(mode = "classification", cost = tune(), rbf_sigma = tune()) %>% set_engine("kernlab")
-svm_rec <- recipe(price_label_high ~ ., data=train)
+svm_rec <- recipe(price_label_high ~ ., data=housesTrainSVM)
 svm_wflow <- workflow() %>% add_model(svm_mod) %>% add_recipe(svm_rec)
 svm_param <- svm_wflow %>% parameters() #%>% update(cost = cost(range = c()), rbf_sigma = rbf_sigma(range = c()))
 svm_param
-```
-
-```{r message=FALSE, echo=F}
-# Parallelize
-all_cores <- parallel::detectCores(logical = FALSE) - 2
-registerDoFuture()
-cl <- makeCluster(all_cores)
-plan(future::cluster, workers = cl)
 ```
 
 ```{r, echo=F}
 #tiempò aproximado de ejecución: 15 minutos
 set.seed(1291)
 
-svm_folds <- vfold_cv(train, v = 10, repeats = 1)
+path = "./models/svm_bayes_search.rds"
 
-svm_search <- tune_bayes(svm_wflow,
-                         resamples = svm_folds,
-                         param_info = svm_param,
-                         initial = 5,
-                         iter = 30,
-                         metrics = metric_set(roc_auc),
-                         control = control_bayes(no_improve = 15, verbose = FALSE))
+svm_folds <- vfold_cv(housesTrainSVM, v = 10, repeats = 1)
+svm_search <- try_bayes_cv_train(path, svm_wflow, svm_folds, svm_param)
 
 
 show_best(svm_search, metric = "roc_auc")
 
 ```
 
-```{r, echo=F}
-#Execute after finishing training
-stopCluster(cl)
-
-```
-
 En le anterior tabla se muestran los 5 mejores resultados obtenidos (en cuanto a área bajo la curva ROC). Para el cáculo de métricas y búsqueda del mejor threshold, no se va a utilizar el mejor modelo devuelto, sino que se va a hacer uso de la "one-standard error rule" propuesta por Breinman y seleccionar el modelo cuya área bajo la curva se encuentra a una desviación estándar de distancia del modelo con mejor auc. Con esto, estaremos intentando reducir en la medida de lo posbile el sobreajuste a los datos de entrenamiento: A continuación se muestran los resultados obtenidos tras el proceso de búsqueda del threshold óptimo para el modelo:
+
 
 ```{r, echo = F}
 svm_param_best <- select_by_one_std_err(svm_search, rbf_sigma, cost, metric = "roc_auc")
 svm_best <- finalize_workflow(svm_wflow, svm_param_best)
-svm_best_fit <- fit(svm_best, data = train)
+svm_best_fit <- fit(svm_best, data = housesTrainSVM)
 #saveRDS(svm_best_fit, "./models/svm_gaussian_kernel.rds")
 ```
 
-```{r}
-best_svm_gaussian <- readRDS("./models/svm_gaussian_kernel.rds")
-best_svm_gaussian
-```
 
 Una vez seleccionado el modelo, se pretende buscar el threshold óptimo. Se entiende por threshold óptimo, el que hace que el modelo alcanze la mayor f1-score. Los resultados han sido los siguientes:
 
 ```{r}
-prob_svm_gaussian <- predict(best_svm_gaussian, new_data = train, type = "prob")$.pred_1
-opt_svm_gaussian <- opt_f1_function_v2(prob_svm_gaussian, train, "price_label_high")
+best_svm_gaussian <- readRDS("./models/svm_gaussian_kernel.rds")
+prob_svm_gaussian <- predict(best_svm_gaussian, new_data = housesTrainSVM, type = "prob")$.pred_1
+opt_svm_gaussian <- opt_f1_function_v2(prob_svm_gaussian, housesTrainSVM, "price_label_high")
 c(optimal_threshold = opt_svm_gaussian$threshold, precision = opt_svm_gaussian$precision, recall = opt_svm_gaussian$recall, f1_score = opt_svm_gaussian$f1_opt)
 ```
 
@@ -1700,7 +1711,7 @@ opt_svm_gaussian$p2
 También se ha querido la distribución de las probabilidades predichas:
 
 ```{r}
-predictions <- data.frame(price_label_high=train$price_label_high, pred=prob_svm_gaussian)
+predictions <- data.frame(price_label_high=housesTrainSVM$price_label_high, pred=prob_svm_gaussian)
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_svm_gaussian$threshold, linetype='dashed', color=palette34[4])
 predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_svm_gaussian$threshold, linetype='dashed', color=palette34[4])
 ```
@@ -1710,36 +1721,37 @@ Cabe destacar que eL algoritmo de SVM, en un principio solo proporciona las etiq
 A continuación, se procede a validar el modelo utilizando el conjunto de validación:
 
 ```{r, echo=F}
-validation_svm<- read.csv('base_val.csv', encoding = 'UTF-8')
-filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat", "year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "log_room_land_std")
-validation_svm <- validation_svm %>%  select(-filter_cols)
+housesNum <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, log_room_land_std)
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat","year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "log_room_land_std")
+housesValSVM <- housesVal %>%  select(-filter_cols)
 
 # Estandarización de variables categóricas ordinales, quitando sell_rate_cat, bed_cat y car_cat que en principio no aporta nada al modelo (las dos últimas por ser redundantes)
 cat_with_order = c("rooms_cat", "bath_cat")
 
-validation_svm['rooms_cat']<- validation_svm %>% pull('rooms_cat') %>% 
-  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
-validation_svm['bath_cat'] <- validation_svm %>% pull('bath_cat') %>% 
+housesValSVM['bath_cat'] <- housesValSVM %>% pull('bath_cat') %>% 
   ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
+housesValSVM['rooms_cat']<- housesValSVM %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
 
-ordinal_variables <- validation_svm %>% select(cat_with_order) 
-normParam <- preProcess(ordinal_variables)
+ordinal_variables <- housesValSVM %>% select(cat_with_order) 
+#normParam <- preProcess(ordinal_variables)
 ordinal_variables_norm <- predict(normParam, ordinal_variables)
 
 for(cat in cat_with_order){
-  validation_svm[cat] <- ordinal_variables_norm[cat]
+  housesValSVM[cat] <- ordinal_variables_norm[cat]
 }
 
-validation_svm$price_label_high<-as.factor(ifelse(validation_svm$price_label_high==TRUE,1,0))
+
+housesValSVM$price_label_high<-as.factor(ifelse(housesValSVM$price_label_high==TRUE,1,0))
     
 ```
 
- 
+
 
 ```{r}
-prob_svm_val <- predict(best_svm_gaussian, new_data = validation_svm, type = "prob")$.pred_1
+prob_svm_val <- predict(best_svm_gaussian, new_data = housesValSVM, type = "prob")$.pred_1
 preds_svm_val <- as.factor(ifelse(prob_svm_val > opt_svm_gaussian$threshold,1,0))
-metrics_function_num(preds_svm_val, validation_svm, 'price_label_high')
+metrics_function_num(preds_svm_val, housesValSVM, 'price_label_high')
 ```
 
 

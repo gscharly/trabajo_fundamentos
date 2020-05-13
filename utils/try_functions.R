@@ -32,7 +32,7 @@ try_bayes_cv_train <- function(path, wkflow, bayes_folds, params){
                                resamples = bayes_folds,
                                param_info = params,
                                initial = 5,
-                               iter = 10,
+                               iter = 30,
                                metrics = metric_set(roc_auc),
                                control = control_bayes(no_improve = 15, verbose = FALSE))
     stopCluster(cl)
