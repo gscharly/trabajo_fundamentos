@@ -63,6 +63,8 @@ library(Hmisc)
 library(plyr)
 library(reshape2)
 library(ggmap)
+library(stringr)
+library(fuzzyjoin)
 
 source('utils/pred_type_distribution.R')
 source('utils/calculate_roc.R')
@@ -553,14 +555,6 @@ La forma que tome esta gráfica nos ayuda a seleccionar las variables. Si la com
 De todas las combinaciones probadas, atendiendo a la forma del gráfico y a la información de selección de variables, se van a utilizar la latitud y el número de baños para formar los grupos. 
 
 
-```{r kmeansKoptimo1}
-set.seed(123)
-selec_var_kmeans <- housesTrainCluster %>% select(lattitude_std, bath_cat)
-bss <- kmeans(selec_var_kmeans,centers=1)$betweenss
-for (i in 1:15) bss[i] <- kmeans(selec_var_kmeans,centers=i)$betweenss
-plot(1:15, bss, type="b", xlab="Number of Clusters",ylab="Sum of squares between groups",pch=19, col=palette34[2])
-```
-
 ```{r kmeansKoptimo2}
 n = nrow(housesTrain)
 SSW <- vector(mode = "numeric", length = 15)
@@ -596,36 +590,49 @@ bar_plot_target(housesTrain, "kmeans_cluster", "price_label_high")
 chisq.test(housesTrain$kmeans_cluster, housesTrain$price_label_high)
 ```
 
+
+## Kmeans WoE
+
 ```{r}
-predict.kmeans <- function(object, newdata){
-    centers <- object$centers
-    n_centers <- nrow(centers)
-    dist_mat <- as.matrix(dist(rbind(centers, newdata)))
-    dist_mat <- dist_mat[-seq(n_centers), seq(n_centers)]
-    max.col(-dist_mat)
-}
+housesTrainWoe <- a
+binning <- woe.binning(housesTrainWoe, 'price_dep', housesTrainWoe)
+housesTrainWoe <- woe.binning.deploy(housesTrainWoe, binning,
+                                               add.woe.or.dum.var='woe')
 
-#predict kmeans for validation and test datasets
-housesTestKmeans <- housesTest %>% select(lattitude_std, bath_cat)
-housesTestKmeans['bath_cat'] <-housesTest %>% pull('bath_cat') %>% 
-  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
-test_clust <- predict.kmeans(clust_kmeans, housesTestKmeans)
-housesTest <- housesTest %>% mutate(kmeans_cluster = test_clust)
+housesTrainWoe <- housesTrainWoe %>% select("woe.Type.binned", "woe.rooms_cat.binned",         "woe.CouncilArea.binned", "woe.Regionname.binned", "woe.lattitude_std.binned", "woe.bath_cat.binned", "woe.bed_cat.binned", "woe.longtitude_std.binned", "woe.car_cat.binned",          
+"woe.sqrt_distance_std.binned", "woe.log_landsize_std.binned", "woe.year_built_cat.binned", "woe.Method.binned", "woe.sell_rate_cat.binned")
 
-housesValKmeans <- housesVal %>% select(lattitude_std, bath_cat)
-housesValKmeans['bath_cat'] <-housesVal %>% pull('bath_cat') %>% 
-  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
-val_clust <-predict.kmeans(clust_kmeans, housesValKmeans)
-housesVal <- housesVal %>% mutate(kmeans_cluster = test_clust)
+select_var_woe = housesTrainWoe %>% select("woe.Type.binned", "woe.lattitude_std.binned")
+
+n = nrow(housesTrainWoe)
+SSW <- vector(mode = "numeric", length = 6)
+SSW[1] <- (n - 1) * sum(apply(X = select_var_woe, MARGIN = 2, FUN = 'var'))
+for (i in 1:6) SSW[i] <- sum(kmeans(select_var_woe,centers=i,nstart=25)$withinss)
+plot(1:6, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
+
+clust_kmeans_woe=kmeans(select_var_woe,centers=3,nstart=25)
+clust_kmeans_woe
+
+
+pca_var <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+housesPCA <- prcomp(pca_var, center = TRUE)
+summary(housesPCA)
+cluster_group <- clust_kmeans_woe$cluster %>%  as.factor()
+df_houses_pca <- data.frame(housesPCA$x[,1:2])
+df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
+
+housesTrain <- housesTrain %>% mutate(kmeans_cluster_woe = clust_kmeans_woe$cluster)
+bar_plot_target(housesTrain, "kmeans_cluster_woe", "price_label_high")
+chisq.test(housesTrain$kmeans_cluster, housesTrain$price_label_high)
+
 ```
-
 
 ## Hierarchical
 
 Se aplicará un cluster aglomerativo y se emplearán diferentes métodos de medida de la distancia entre clusters. 
 
 ```{r hierarchical}
-mat_dist <- dist(housesTrainCluster, method = "euclidean")
+mat_dist <- dist(selec_var_kmeans, method = "euclidean")
 hc1 <- hclust(mat_dist, method = "single" )
 den = as.dendrogram(hc1, leaflab = "none")
 plot(den)
@@ -655,9 +662,9 @@ Se prueba a graficar el dendograma empleando el método *average* y probando con
 hc2 <- hclust(mat_dist, method = "average" )
 den = as.dendrogram(hc2)
 
-avg_col_dend <- color_branches(den, h = 6, col = palette34)
+avg_col_dend <- color_branches(den, h = 2, col = palette34)
 plot(avg_col_dend, leaflab = "none", ylab = "Height")
-abline(h = 6, col = 'black')
+abline(h = 2, col = 'black')
 ```
 
 
@@ -669,15 +676,15 @@ DBSCAN evita este problema siguiendo la idea de que, para que una observación f
 
 
 ```{r dbscanEpsi}
-datos = housesTrainCluster
-dbscan::kNNdistplot(datos, k = 5)
+datos = selec_var_kmeans
+dbscan::kNNdistplot(datos, k = 8)
 ```
 
 La curva tiene el punto de inflexión en torno a 0.5, por lo que se escoge este valor como epsilon para DBSCAN.
 
 ```{r dbscan}
 set.seed(10)
-dbscan_cluster <- fpc::dbscan(data = datos, eps = 0.5, MinPts = 70)
+dbscan_cluster <- fpc::dbscan(data = datos, eps = 0.1, MinPts = 50)
 head(dbscan_cluster$cluster)
 
 # Visualización de los clusters
