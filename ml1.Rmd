@@ -503,7 +503,7 @@ El aálisis exploratorio realizado nos permite saber para qué variables la dist
 Para seguir con la selección de variables vamos a untilizar el Information Value (IV). Esta medida nos indica cómo de buena es una variable a la hora de distinguir entre las categorías binarias de la variable respuesta o dependiente.
 
 ```{r}
-a <- housesTrain %>% select("CouncilArea", "sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std", "rooms_cat", "year_built_cat", "car_cat", "Regionname", "Type", "Method", "bath_cat", "bed_cat", "sell_rate_cat", "price_label_high")
+a <- housesTrain %>% select("CouncilArea", "sqrt_distance_std", "log_landsize_std", "lattitude_std", "longtitude_std", "rooms_cat", "year_built_cat", "car_cat", "Regionname", "Type", "Method", "bath_cat", "bed_cat", "sell_rate_cat", "price_label_high", "may_have_water")
 
 
 a$price_dep <- a %>% pull(price_label_high) %>% as.numeric()
@@ -531,82 +531,15 @@ A la vista de los resultados, se puede ver que aquellas variables relacionadas c
 
 # Aprendizaje no supervisado: clustering
 
-En primer lugar, vamos a definir la base de datos con las variables cuantitativas y cualitativas ordinales a partir del dataset *housesTrain*.
+En un primer lugar, los métodos de clustering han sido probados con las variables cuantitativas y cualitativas ordinales del dataset *housesTrain*, todas ellas estandarizadas.
 
-Las variables cuantitativas las cogemos estandarizadas para eliminar el efecto de las distintas escalas de medida y las ordinales las estandarizamos al crearlas.
+Probando combinaciones de estas variables de menos a más teniendo en cuenta su information value, los mejores resultados en cuanto a menor número de grupos se consiguió utilizando la latitud y el número de baños.
 
-Estas son todas las variables que pueden emplearse para los métodos de clustring. Sin embargo, no se empezará probando con todas ellas sino que se tomarán de menos a más utilizando diferentes combinaciones. 
+Después de esto, se pasó a utilizar las variables WoE (Weight of Evidence) en relación a la variable dependiente de precio. 
 
-```{r}
-housesTrainCluster <- housesTrain %>% dplyr::select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std, rooms_cat, car_cat, bath_cat, bed_cat, sell_rate_cat)
+Utilizar estas variables, nos proporciona dos ventajas. La primera es que contamos con variables numéricas que reprensentan el porcentaje de casas caras en cada uno de los bins. La segunda es que había variables categóricas no ordinales que no podíamos emplear en los métodos clustering, pero que presentaban un IV alto, como la variable *type*.  
 
-#las variables categóricas pasan a ser factores ordenados
-housesTrainCluster['rooms_cat']<- housesTrain %>% pull('rooms_cat') %>% 
-  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() %>% scale()
-
-housesTrainCluster['car_cat'] <- housesTrain %>% pull('car_cat') %>% 
-  ordered(levels=c("Pocas_plazas","Muchas_plazas")) %>% as.numeric() %>% scale()
-
-housesTrainCluster['bath_cat'] <-housesTrain %>% pull('bath_cat') %>% 
-  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
-
-housesTrainCluster['bed_cat'] <-housesTrain %>% pull('bed_cat') %>% 
-  ordered(levels = c('Pocos_dormitorios', 'Muchos_dormitorios')) %>% as.numeric() %>% scale()
-
-housesTrainCluster['sell_rate_cat'] <-housesTrain %>% pull('sell_rate_cat') %>% 
-  ordered(levels = c('Menos_populares', 'Más_populares')) %>% as.numeric() %>% scale()
-```
-
-
-## k-means
-
-Ahora, vamos a buscar el número de clústers óptimo. La idea es que el número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible. Esto es lo mismo a buscar una división donde una suma de cuadrados entre (betweens) sea suficientemente grande y, por tanto, una suma de cuadrados dentro lo suficientemente pequeña (withins).
-
-En las siguientes dos gráficas, se muestra el *betweens* y el *withins* para un número de clusters desde 1 hasta 15. Aquel punto en el que se produce el codo y le sigue una cierta estabilización es el número de clusters que se toma como óptimo.
-
-
-La forma que tome esta gráfica nos ayuda a seleccionar las variables. Si la combinación de variables empleada genera una gráfica sin un codo claro y sin que haya una cierta estabilización, significaría que empleando esas variables no va a ser posible hacer clusters bien definidos.
-
-De todas las combinaciones probadas, atendiendo a la forma del gráfico y a la información de selección de variables, se van a utilizar la latitud y el número de baños para formar los grupos. 
-
-
-```{r kmeansKoptimo2}
-n = nrow(housesTrain)
-SSW <- vector(mode = "numeric", length = 15)
-SSW[1] <- (n - 1) * sum(apply(X = selec_var_kmeans, MARGIN = 2, FUN = 'var'))
-for (i in 1:15) SSW[i] <- sum(kmeans(selec_var_kmeans,centers=i,nstart=25)$withinss)
-plot(1:15, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
-```
-
-```{r}
-clust_kmeans=kmeans(selec_var_kmeans,centers=5,nstart=25)
-clust_kmeans
-```
-
-Observando el ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es muy elevado(85.1%). Sin embargo, este indicador hay que tomarlo con cuidado puesto que se ve influído por el número de clusters empleado, de manera que aumenta conforme tomamos más grupos.
-
-
-### PCA + visualización
-
-```{r}
-pca_var <- housesTrainCluster %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
-housesPCA <- prcomp(pca_var, center = TRUE)
-summary(housesPCA)
-cluster_group <- clust_kmeans$cluster %>%  as.factor()
-df_houses_pca <- data.frame(housesPCA$x[,1:2])
-df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
-```
-
-Vamos a comprobar si los grupos generados a partir de la combinación de una variable del tamaño de la vivienda (bath_cat) y de su localización (lattitud_std) muestran diferencias respecto a la variable target (price_label_hight). En este caso, estos grupos podrían emplearse como variable en otros modelos.
-
-```{r}
-housesTrain <- housesTrain %>% mutate(kmeans_cluster = clust_kmeans$cluster)
-bar_plot_target(housesTrain, "kmeans_cluster", "price_label_high")
-chisq.test(housesTrain$kmeans_cluster, housesTrain$price_label_high)
-```
-
-
-## Kmeans WoE
+Los modelos de clustering que se muestran a continuación utilizan las variables WoE.
 
 ```{r}
 housesTrainWoe <- a
@@ -616,7 +549,16 @@ housesTrainWoe <- woe.binning.deploy(housesTrainWoe, binning,
 
 housesTrainWoe <- housesTrainWoe %>% select("woe.Type.binned", "woe.rooms_cat.binned",         "woe.CouncilArea.binned", "woe.Regionname.binned", "woe.lattitude_std.binned", "woe.bath_cat.binned", "woe.bed_cat.binned", "woe.longtitude_std.binned", "woe.car_cat.binned",          
 "woe.sqrt_distance_std.binned", "woe.log_landsize_std.binned", "woe.year_built_cat.binned", "woe.Method.binned", "woe.sell_rate_cat.binned")
+```
 
+
+## k-means
+
+Vamos a buscar el número de clústers óptimo. La idea es que el número seŕa él óptimo cuando los individuos de un mismo grupo sean lo más homogéneos posible y los individuos pertenecientes a distintos grupos sean lo más heterogéneos posible. Esto es lo mismo a buscar una división donde una suma de cuadrados entre (betweens) sea suficientemente grande y, por tanto, una suma de cuadrados dentro lo suficientemente pequeña (withins).
+
+La forma que tome esta gráfica nos ayuda a seleccionar las variables. Si la combinación de variables empleada genera una gráfica sin un codo claro y sin que haya una cierta estabilización, significaría que empleando esas variables no va a ser posible hacer clusters bien definidos.
+
+```{r}
 select_var_woe = housesTrainWoe %>% select("woe.Type.binned", "woe.lattitude_std.binned")
 
 n = nrow(housesTrainWoe)
@@ -624,36 +566,53 @@ SSW <- vector(mode = "numeric", length = 6)
 SSW[1] <- (n - 1) * sum(apply(X = select_var_woe, MARGIN = 2, FUN = 'var'))
 for (i in 1:6) SSW[i] <- sum(kmeans(select_var_woe,centers=i,nstart=25)$withinss)
 plot(1:6, SSW, type="b", xlab="Number of Clusters", ylab="Sum of squares within groups",pch=19, col=palette34[2])
+```
 
+De todas las combinaciones probadas teniendo en cuenta la información del apartado de selección de variables y a la forma de la anterior gráfica, vamos a formar los clusters cutilizando las variables de latitud y tipo.
+
+```{r}
 clust_kmeans_woe=kmeans(select_var_woe,centers=3,nstart=25)
 clust_kmeans_woe
+```
 
+Observando el ratio de la suma de cuadrados entre-clusters y la suma de cuadrados totales, vemos que el porcentaje de varianza explicada por el modelo respecto al total de varianza observada es muy elevado(86.0%). Aunque este indicador hay que tomarlo con cuidado puesto que se ve influído por el número de clusters empleado de manera que aumenta conforme tomamos más grupos, en este caso solo hemos formado tres clusters. 
 
+```{r}
 pca_var <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
 housesPCA <- prcomp(pca_var, center = TRUE)
 summary(housesPCA)
 cluster_group <- clust_kmeans_woe$cluster %>%  as.factor()
 df_houses_pca <- data.frame(housesPCA$x[,1:2])
 df_houses_pca %>% ggplot(aes(x=PC1, y=PC2, color=cluster_group)) + geom_point() +     scale_color_manual(values = palette34)
+```
 
+
+Ahora, vamos a comprobar si los grupos generados a partir de la combinación de una variable del tamaño de la vivienda (type) y de su localización (lattitud_std) muestran diferencias respecto a la variable target.
+
+
+```{r}
 housesTrain <- housesTrain %>% mutate(kmeans_cluster_woe = clust_kmeans_woe$cluster)
-bar_plot_target(housesTrain, "kmeans_cluster_woe", "price_label_high")
-chisq.test(housesTrain$kmeans_cluster, housesTrain$price_label_high)
+housesTrain$kmeans_cluster_woe <- factor(housesTrain$kmeans_cluster_woe, levels = c(1,2,3))
 
+bar_plot_target(housesTrain, "kmeans_cluster_woe", "price_label_high")
+chisq.test(housesTrain$kmeans_cluster_woe, housesTrain$price_label_high)
 ```
 
 ## Hierarchical
 
-Se aplicará un cluster aglomerativo y se emplearán diferentes métodos de medida de la distancia entre clusters. 
+Se aplicará un cluster aglomerativo y se emplearán diferentes métodos de medida de la distancia entre clusters.
+
+Al igual que en kmeans, se van a probar diferentes combinaciones de variables. Sin embargo, es complicado emplear un criterio para seleccionar estas variables puesto que el alto número de observaciones dificulta la legibilidad del dendograma.
+
+Las diferentes combinaciones mostraron que cuando se empleaban tres o más variables la aglomeración de las observaciones se hacía más confusa. También se vio cómo la combinación de dos variables, una de la localización y otra del tamaño, siempre daban lugar a tres grupos muy similares al que se muestra en este dendograma.
 
 ```{r hierarchical}
-mat_dist <- dist(selec_var_kmeans, method = "euclidean")
+select_var_woe_h = housesTrainWoe %>% select("woe.Regionname.binned","woe.rooms_cat.binned")
+mat_dist <- dist(select_var_woe_h, method = "euclidean")
 hc1 <- hclust(mat_dist, method = "single" )
 den = as.dendrogram(hc1, leaflab = "none")
 plot(den)
 ```
-
-A pesar de que el dendograma no ofrece una visualización clara debido al alto número de observaciones, sí se puede percibir como dos grandes clustes, siendo uno de ellos (el de la izquierda), aproximadamente, tres veces mayor que el otro y unas observaciones a la derecha del todo que se aglomeran en los últimos niveles.
 
 Una vez creado el dendrograma, vamos a evaluar hasta qué punto su estructura refleja las distancias originales entre observaciones empleando el coeficiente de correlación entre la altura de los nodos del dendrograma (distancia cophenetic) y la matriz de distancias original. Cuanto más cercano es el valor a 1, mejor refleja el dendrograma la verdadera similitud entre las observaciones. Valores superiores a 0.75 suelen considerarse como buenos. Esta medida puede emplearse como criterio de ayuda para escoger entre los distintos métodos de linkage.
 
@@ -675,11 +634,11 @@ Se prueba a graficar el dendograma empleando el método *average* y probando con
 
 ```{r, warning=FALSE}
 hc2 <- hclust(mat_dist, method = "average" )
-den = as.dendrogram(hc2)
+den2 = as.dendrogram(hc2)
 
-avg_col_dend <- color_branches(den, h = 2, col = palette34)
-plot(avg_col_dend, leaflab = "none", ylab = "Height")
-abline(h = 2, col = 'black')
+avg_col_dend <- color_branches(den2, h = 1, col = palette34)
+plot(avg_col_dend, leaflab = "none", ylab = "Height") 
+abline(h = 1, col = 'black')
 ```
 
 
@@ -691,11 +650,15 @@ DBSCAN evita este problema siguiendo la idea de que, para que una observación f
 
 
 ```{r dbscanEpsi}
-datos = selec_var_kmeans
+housesTrainDbscan <- housesTrain %>% select("bath_cat", "lattitude_std")
+housesTrainDbscan['bath_cat'] <-housesTrainDbscan %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() %>% scale()
+
+datos = housesTrainDbscan
 dbscan::kNNdistplot(datos, k = 8)
 ```
 
-La curva tiene el punto de inflexión en torno a 0.5, por lo que se escoge este valor como epsilon para DBSCAN.
+La curva tiene el punto de inflexión en torno a 0.1, por lo que se escoge este valor como epsilon para DBSCAN.
 
 ```{r dbscan}
 set.seed(10)
@@ -704,7 +667,7 @@ head(dbscan_cluster$cluster)
 
 # Visualización de los clusters
 
-pca_var <- housesTrainCluster %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
+pca_var <- housesTrain %>% select(sqrt_distance_std, log_landsize_std, lattitude_std, longtitude_std)
 housesPCA <- prcomp(pca_var, center = TRUE)
 summary(housesPCA)
 cluster_group <- dbscan_cluster$cluster %>%  as.factor()
@@ -1752,9 +1715,9 @@ metrics_function_num(preds_svm_val, housesValSVM, 'price_label_high')
 ```
 
 
-## Naive Bayes
+## Naïve Bayes
 
-Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando Naive Bayes.
+Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando Naïve Bayes.
 
 ### Primer modelo
 
@@ -1772,16 +1735,16 @@ roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 
 opt_f1_nv1<- opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
-opt_f1_nv1$f1_opt
+c(optimal_threshold = opt_f1_nv1$threshold, precision = opt_f1_nv1$precision, recall = opt_f1_nv1$recall, f1_score = opt_f1_nv1$f1_opt)
 predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=prob_values[,2])
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv1$threshold, linetype='dashed', color=palette34[4])
 predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv1$threshold, linetype='dashed', color=palette34[4])
 ```
 
-Probamos a reducir el número de variables, utilizando por ejemplo las variables más importantes seleccionadas por el random forest y la variable extrída del clustering kmeans. El modelo empeora ligeramente.
+Probamos a reducir el número de variables, utilizando por ejemplo las variables más importantes seleccionadas por el random forest. El modelo empeora muy ligeramente.
 
 ```{r}
-mod_best <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster, data=housesTrain)
+mod_best <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type + rooms_cat, data=housesTrain)
 #saveRDS(mod_best, "./models/nb_best_model.rds")
 ```
 
@@ -1793,7 +1756,8 @@ roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 
 opt_f1_nv<- opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
-opt_f1_nv$f1_opt
+c(optimal_threshold = opt_f1_nv$threshold, precision = opt_f1_nv$precision, recall = opt_f1_nv$recall, f1_score = opt_f1_nv$f1_opt)
+
 predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=prob_values[,2])
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv$threshold, linetype='dashed', color=palette34[4])
 predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv$threshold, linetype='dashed', color=palette34[4])
@@ -1804,7 +1768,7 @@ Probando algún modelo con menos variables. A modo de resumen:
 - Utilizando solo las categóricas, los resultados empeoran, con un accuracy de 0.8079153, un f1 de 0.6207523 y una auc roc de 0.8552.
 - Utilizando únicamente las numéricas, el resultado lógicamente empeora, ya que Naive Bayes asume una distribución normal de las entradas numéricas, y trabaja mejor con categóricas al calcular las probabilidades de una forma más precisa conociendo las distribuciones. En este caso, tenemos un accuracy de 0.7727566, un f1 de 0.4759075 y una auc roc de 0.7913
 
-El modelo elegido como el mejor aquel que utiliza las variables sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster. No presenta el mejor f1 pero no se aleja mucho de los mejores según esta métrica y emplea menos variables.
+El modelo elegido como el mejor aquel que utiliza las variables sqrt_distance_std + Regionname + Type + rooms_cat. No presenta el mejor f1, pero está muy próximo al modelo con mejor f1, y emplea menos variables que los otros modelos probados.
 
 ### Validación
 
@@ -1814,8 +1778,6 @@ Finalmente, buscamos el corte óptimo con el mejor modelo.
 
 ```{r message=FALSE}
 validation_nv <- housesVal
-validation_nv$kmeans_cluster <- factor(validation_nv$kmeans_cluster, levels = c(1,2,3,4,5))
-
 preds_nv_val <- predict(mod_best, validation_nv, type='raw')[,2]
 preds_nv_val <- as.factor(ifelse(preds_nv_val > opt_f1_nv$threshold ,1,0))
 validation_nv$price_label_high <- factor(ifelse(validation_nv$price_label_high==TRUE,1,0))
@@ -1829,36 +1791,70 @@ Tal y como se ha comentado en el apartado de aprendizaje supervisado, nuestro pr
 
 A continuación se muestra una tabla de comparación de todos los modelos aplicados sobre el conjunto de validación según su F1 score. Para tener una información más completa a la hora de comparar, en la tabla también podemos ver las variables empleadas en cada modelo y el valor de los parámetros en caso de tenerlos.
 
+```{r, message=F, warning=F}
+#data sets validación regresión logística y svm
+validation <- read.csv('base_train.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', "Method", "log_landsize_std", "rooms_cat")
+validation <- validation %>%  select(-filter_cols)
+validation$may_have_water <- factor(validation$may_have_water, levels=c(F,T))
+validation$kmeans_cluster <- factor(validation$kmeans_cluster, levels = c(1,2,3,4,5))
+validation$price_label_high <- as.factor(ifelse(validation$price_label_high==TRUE,1,0))
+
+validation_svm<- read.csv('base_train.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat", "year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "log_room_land_std")
+validation_svm <- validation_svm %>%  select(-filter_cols)
+
+cat_with_order = c("rooms_cat", "bath_cat")
+validation_svm['rooms_cat']<- validation_svm %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
+validation_svm['bath_cat'] <- validation_svm %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric() 
+
+ordinal_variables <- validation_svm %>% select(cat_with_order) 
+normParam <- preProcess(ordinal_variables)
+ordinal_variables_norm <- predict(normParam, ordinal_variables)
+
+for(cat in cat_with_order){
+  validation_svm[cat] <- ordinal_variables_norm[cat]
+}
+
+validation_svm$price_label_high<-as.factor(ifelse(validation_svm$price_label_high==TRUE,1,0))
+```
+
+
+
+
+
 ```{r}
 #Logistic regression
 data_lr = validation
 model_lr = readRDS("./models/lr_regularized.rds")
 values_lr <- predict(model_lr, data_lr, type='response')
-f1_lr = round(opt_f1_function(values_lr, data_lr, 'price_label_high')$f1_opt, 3)
 var_lr = 'sell_rate_cat - bed_cat - car_cat - kmeans_cluster - may_have_water - lattitude_std'
-p2_lr = opt_f1_function(values_lr, data_lr, 'price_label_high')$p2
+opt_f1_lr = opt_f1_function_v2(values_lr, data_lr, 'price_label_high')
+p2_lr <- opt_f1_lr$p2
 p2_lr$data <- p2_lr$data %>% filter(metric == 'f1') %>%  mutate(model = 'lr')
 
 
 #Árbol de decision
-data_dt = housesVal
+data_dt = housesTrain
 model_dt = readRDS("./models/dt_best_model.rds")
 values_dt = predict(model_dt, data_dt, type='prob')
-f1_dt = round(opt_f1_function(values_dt, data_dt, 'price_label_high')$f1_opt, 3)
-val_dt = 'Longtitude - Rooms - Lattitude - Type'
-parameters_dt = 'cp = 0.013981636'
-p2_dt = opt_f1_function(values_dt, data_dt, 'price_label_high')$p2
+var_dt = 'Longtitude - Rooms - Lattitude - Type'
+parameters_dt = 'cp=0.019616027'
+opt_f1_dt = opt_f1_function_v2(values_dt, data_dt, 'price_label_high')
+p2_dt = opt_f1_dt$p2
 p2_dt$data <- p2_dt$data %>% filter(metric == 'f1') %>%  mutate(model = 'dt')
 
 
 #Random forest
-data_rf = housesVal
+data_rf = housesTrain
 model_rf = readRDS("./models/rf_best_model.rds")
 values_rf = predict(model_rf, data_rf, type='prob')
-f1_rf = round(opt_f1_function(values_rf, data_rf, 'price_label_high')$f1_opt, 3)
-val_rf = 'Rooms - Distance - LandsizeImp - Lattitude - Longtitude - Type'
+var_rf = 'Rooms - Distance - LandsizeImp - Lattitude - Longtitude - Type'
 parameters_rf = 'ntree = 50 / mtry = 3 / nodesize = 11'
-p2_rf = opt_f1_function(values_rf, data_rf, 'price_label_high')$p2
+opt_f1_rf = opt_f1_function_v2(values_rf[,2], data_rf, 'price_label_high')
+p2_rf = opt_f1_rf$p2
 p2_rf$data <- p2_rf$data %>% filter(metric == 'f1') %>%  mutate(model = 'rf')
 
 
@@ -1866,70 +1862,148 @@ p2_rf$data <- p2_rf$data %>% filter(metric == 'f1') %>%  mutate(model = 'rf')
 data_svm = validation_svm
 model_svm = readRDS("./models/svm_gaussian_kernel.rds")
 values_svm <- predict(model_svm, data_svm, type = "prob")$.pred_1
-f1_svm = round(opt_f1_function(values_svm, data_svm, "price_label_high")$f1_opt, 3)
-val_svm = 'sqrt_distance_std - log_landsize_std - lattitude_std - longtitude_std - rooms_cat -      bath_cat - price_label_high'
+var_svm = 'sqrt_distance_std - log_landsize_std - lattitude_std - longtitude_std - rooms_cat -      bath_cat - price_label_high'
 parameters_svm = 'cost = 30.9136 / rbf_sigma = 0.1832'
-p2_svm = opt_f1_function(values_svm, data_svm, 'price_label_high')$p2
+opt_f1_svm = opt_f1_function_v2(values_svm, data_svm, 'price_label_high')
+p2_svm = opt_f1_svm$p2
 p2_svm$data <- p2_svm$data %>% filter(metric == 'f1') %>%  mutate(model = 'svm')
 
 
 #Naive Bayes
-data_nv = housesVal
+data_nv = housesTrain
 model_nv = readRDS("./models/nb_best_model.rds")
 values_nv <- predict(model_nv, data_nv, type='raw')
-f1_nv = round(opt_f1_function(values_nv, data_nv, 'price_label_high')$f1_opt, 3)
-val_nv = 'sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster'
-p2_nv = opt_f1_function(values_nv, data_nv, 'price_label_high')$p2
+opt_f1_nv = opt_f1_function_v2(values_nv, data_nv, 'price_label_high')
+p2_nv <- opt_f1_nv$p2
 p2_nv$data <- p2_nv$data %>% filter(metric == 'f1') %>%  mutate(model = 'nv')
+var_nv = 'sqrt_distance_std + Regionname + Type + rooms_cat + kmeans_cluster'
 
+#KNN
+data_knn = housesTrain
+num_std_cols = c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
+pred_knn_val <- knn.cv(housesTrain[,num_std_cols], k=3, cl=housesTrain[,"price_label_high"], prob = T)
+values_knn <- reverse_probs(pred_knn_val)
+var_knn = 'log_landsize_std - lattitude_std - longtitude_std - log_room_land_std'
+parameters_knn = 'k = 3'
+opt_f1_knn = opt_f1_function(values_knn, data_knn, 'price_label_high')
+p2_knn = opt_f1_knn$p2
+p2_knn$data <- p2_knn$data %>% filter(metric == 'f1') %>%  mutate(model = 'knn')
+
+#Gráfica F1
+concat = rbind(p2_lr$data, p2_dt$data, p2_rf$data, p2_knn$data, p2_svm$data, p2_nv$data)
+concat %>% ggplot(aes(x=th,y=value,colour=model)) + geom_line() + scale_color_manual(values=c("#1B9E77","#D95F02","#7570B3","#66A61E","#E7298A","#E6AB02")) + ggtitle("F1 Score")+ theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+
+```{r, warning=F, message=F}
+#Naive bayes
+validation_nv <- housesVal
+validation_nv$kmeans_cluster <- factor(validation_nv$kmeans_cluster, levels = c(1,2,3,4,5))
+preds_nv_val <- predict(model_nv, validation_nv, type='raw')[,2]
+preds_nv_val <- as.factor(ifelse(preds_nv_val > opt_f1_nv$threshold ,1,0))
+validation_nv$price_label_high <- factor(ifelse(validation_nv$price_label_high==TRUE,1,0))
+metrics_nv <- metrics_function_num(preds_nv_val, validation_nv, 'price_label_high')
+f1_nv <- round(metrics_nv$f1,3)
+
+#Árbol de decision
+val_dt <- housesVal
+preds_dt_val <- predict(model_dt, val_dt, type='prob')[,2]
+preds_dt_val <- as.factor(ifelse(preds_dt_val > opt_f1_dt$threshold,1,0))
+val_dt$price_label_high <- factor(ifelse(val_dt$price_label_high==TRUE,1,0))
+metrics_dt <- metrics_function_num(preds_dt_val, val_dt, 'price_label_high')
+f1_dt <- round(metrics_dt$f1,3)
+
+#Random forest
+val_rf <- housesVal
+preds_rf_val <- predict(model_rf, val_rf, type='prob')[,2]
+preds_rf_val <- as.factor(ifelse(preds_rf_val > opt_f1_rf$threshold,1,0))
+val_rf$price_label_high <- factor(ifelse(val_rf$price_label_high==TRUE,1,0))
+metrics_rf <- metrics_function_num(preds_rf_val, val_rf, 'price_label_high')
+f1_rf <- round(metrics_rf$f1,3)
+
+#Regresión logística
+validation <- read.csv('base_val.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', "Method", "log_landsize_std", "rooms_cat")
+validation <- validation %>%  select(-filter_cols)
+validation$may_have_water <- factor(validation$may_have_water, levels=c(F,T))
+validation$kmeans_cluster <- factor(validation$kmeans_cluster, levels = c(1,2,3,4,5))
+validation$price_label_high <- as.factor(ifelse(validation$price_label_high==TRUE,1,0))
+prob_values_test <- model_lr %>% predict(validation, type = "response")
+preds_validation_lr <- as.factor(ifelse(prob_values_test > opt_f1_lr$threshold ,1,0))
+metrics_lr<-metrics_function_num(preds_validation_lr, validation, 'price_label_high')
+f1_lr <- round(metrics_lr$f1,3)
+
+
+#SVM
+validation_svm<- read.csv('base_val.csv', encoding = 'UTF-8')
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', 'sell_rate_cat', "may_have_water", "bed_cat", "car_cat", "year_built_cat", "Regionname", "Type", "Method", "kmeans_cluster", "log_room_land_std")
+validation_svm <- validation_svm %>%  select(-filter_cols)
+cat_with_order = c("rooms_cat", "bath_cat")
+validation_svm['rooms_cat']<- validation_svm %>% pull('rooms_cat') %>% 
+  ordered(levels = c('Pequeñas', 'Medianas', 'Grandes')) %>% as.numeric() 
+validation_svm['bath_cat'] <- validation_svm %>% pull('bath_cat') %>% 
+  ordered(levels = c('Pocos_baños', 'Muchos_baños')) %>% as.numeric()
+ordinal_variables <- validation_svm %>% select(cat_with_order) 
+normParam <- preProcess(ordinal_variables)
+ordinal_variables_norm <- predict(normParam, ordinal_variables)
+for(cat in cat_with_order){
+  validation_svm[cat] <- ordinal_variables_norm[cat]
+}
+validation_svm$price_label_high<-as.factor(ifelse(validation_svm$price_label_high==TRUE,1,0))
+
+prob_svm_val <- predict(model_svm, new_data = validation_svm, type = "prob")$.pred_1
+preds_svm_val <- as.factor(ifelse(prob_svm_val > opt_f1_svm$threshold,1,0))
+metrics_svm <- metrics_function_num(preds_svm_val, validation_svm, 'price_label_high')
+f1_svm <- round(metrics_svm$f1, 3)
 
 
 #KNN
-data_knn = housesVal
-num_std_cols = c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
+housesVal <- read.csv('base_val.csv')
+housesVal$price_label_high <- as.factor(housesVal$price_label_high)
+num_std_cols <- c('log_landsize_std', 'lattitude_std', 'longtitude_std', 'log_room_land_std')
 pred_knn_val <- knn(train = housesTrain[,num_std_cols], test = housesVal[,num_std_cols], cl=housesTrain[,"price_label_high"], k = 3,prob = T)
-values_knn <- reverse_probs(pred_knn_val)
-f1_knn <- round(opt_f1_function(values_knn, data_knn, "price_label_high")$f1_opt, 3)
-val_knn = 'log_landsize_std - lattitude_std - longtitude_std - log_room_land_std'
-parameters_knn = 'k = 3'
-p2_knn = opt_f1_function(values_knn, data_knn, 'price_label_high')$p2
-p2_knn$data <- p2_knn$data %>% filter(metric == 'f1') %>%  mutate(model = 'knn')
+final_preds_val <- rep(0, dim(housesVal)[1])
+probs_knn_val <- reverse_probs(pred_knn_val)
+for(i in 1:length(probs_knn_val)){
+  if(probs_knn_val[i] >= opt_f1_knn$threshold){
+    final_preds_val[i] = T
+  }else{final_preds_val[i] = F}
+}
+housesVal$price_label_high <- as.factor(ifelse(housesVal$price_label_high==T,1,0))
+metrics_knn <- metrics_function_num(factor(final_preds_val), housesVal, "price_label_high")
+f1_knn <- round(metrics_knn$f1,3)
+
 
 
 #Tabla
 dfMetricas <- data.frame(
   Modelos = c('Regresión logística', 'Árbol de decisión', 'Random forest', 'KNN', 'SVM','Naive Bayes'),
-  F1 = c(f1_lr, f1_dt, f1_rf, f1_knn,f1_svm, f1_nv),
-  Variables = c(var_lr, val_dt, val_rf, val_knn,val_svm, val_nv ),
+  F1 = c(f1_lr, f1_dt, f1_rf, f1_knn, f1_svm, f1_nv),
+  Variables = c(var_lr, var_dt, var_rf, var_knn, var_svm, var_nv ),
   Parámetros = c('/', parameters_dt, parameters_rf, parameters_knn,parameters_svm, '/'))
 
 dfMetricas %>% kable() %>% kable_styling(bootstrap_options = c('hover'), position = 'center') %>%  row_spec(3, bold = T, color = "white", background = palette34[1])
-
-#Gráfica F1
-concat = rbind(p2_lr$data, p2_dt$data, p2_rf$data, p2_knn$data, p2_svm$data, p2_nv$data)
-concat %>% ggplot(aes(x=th,y=value,colour=model)) + geom_line() + scale_color_manual(values=c("#1B9E77","#D95F02","#7570B3","#66A61E","#E7298A","#E6AB02")) + ggtitle("F1 Score")+ theme(plot.title = element_text(hjust = 0.5))
 ```
+
 
 La performance con un mayor F1 ha sido la que emplea el modelo *Random Forest*. Además, si atendemos a la explicabilidad del modelo, no es el que más variables emplea. Solamente supera en número de variables a los modelos de Naive Bayes y Árbol de decisión. Sin embargo, estos modelos tiene un F1 muy por debajo.
 
-A continuación, vamos a probar el mejor modelo sobre el conjunto de test. 
-```{r}
+A continuación, vamos a probar el mejor modelo sobre el conjunto de test.
+
+```{r warning=FALSE}
 #Random forest
 data_rf_test = housesTest
 model_rf = readRDS("./models/rf_best_model.rds")
-values_rf_test = predict(model_rf, data_rf, type='prob')
+values_rf_test = predict(model_rf, data_rf_test, type='prob')[,2]
+
+preds_final <- as.factor(ifelse(values_rf_test > opt_f1_rf$threshold,1,0))
+data_rf_test$price_label_high <- factor(ifelse(data_rf_test$price_label_high==TRUE,1,0))
+metrics_function_num(preds_final, data_rf_test, 'price_label_high')
 
 
-
-test_metrics <- val_metrics(model_rf, data_rf_test, c("Rooms", "Distance", "LandsizeImp",
-                                    "Lattitude", "Longtitude", "Type"), "price_label_high")
-test_metrics$metrics
-test_metrics$roc_plot
-test_metrics$opt_f1
-
-
-predictions <- data.frame(price_label_high=housesVal$price_label_high, pred=values_rf_test[,2])
-predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=test_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
-predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=test_metrics$opt_f1$threshold, linetype='dashed', color=palette34[4])
+predictions <- data.frame(price_label_high=housesTest$price_label_high, pred=values_rf_test)
+predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_rf$threshold, linetype='dashed', color=palette34[4])
+predictions %>% ggplot(aes(x=pred, color=price_label_high)) + geom_density(alpha=0.5) + scale_color_manual(values = palette34) + geom_vline(xintercept=opt_f1_rf$threshold, linetype='dashed', color=palette34[4])
 ```
- 
