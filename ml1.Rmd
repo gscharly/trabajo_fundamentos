@@ -87,9 +87,6 @@ housesTrain <- read.csv('base_train.csv')
 housesTest <- read.csv('base_test.csv')
 housesVal <- read.csv('base_val.csv')
 ```
-```{r}
-class(housesTrain$kmeans_cluster)
-```
 
 ```{r}
 housesTrain$kmeans_cluster <- factor(housesTrain$kmeans_cluster, levels = c(1,2,3,4,5))
@@ -1588,14 +1585,13 @@ Inicialmente se va a probar utilizando un kernel lineal para la SVM. En el caso 
 
 
 ```{r pressure, echo=FALSE}
-
 # Tarda aproximadamente 7 minutos
-svm_linear <- e1071::tune("svm", price_label_high ~ ., data = train,
-               kernel = 'linear',
-               ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+#svm_linear <- e1071::tune("svm", price_label_high ~ ., data = train,
+#               kernel = 'linear',
+#               ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
 
-
-summary(svm_linear)
+best_svm_linear <-  readRDS("./models/svm_linear_kernel.rds")
+summary(best_svm_linear)
 
 ```
 
@@ -1607,9 +1603,7 @@ Como se puede el menor error de clasificación utilizando este kernel lineal se 
 #saveRDS(best_linear, "./models/svm_linear_kernel.rds")
 ```
 
-
 ```{r}
-best_svm_linear <-  readRDS("./models/svm_linear_kernel.rds")
 prob_train_linear <- best_svm_linear %>% predict(housesTrainSVM[,1:6], probability = T) 
 prob_svm_linear <- attr(prob_train_linear, "probabilities")[,1] # La probabilidad de pertenecer a la clase "cara" (1)
 opt_svm_linear <- opt_f1_function_v2(prob_svm_linear, housesTrainSVM, "price_label_high")
