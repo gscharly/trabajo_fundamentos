@@ -1615,7 +1615,7 @@ show_best(svm_search, metric = "roc_auc")
 
 ```
 
-En le anterior tabla se muestran los 5 mejores resultados obtenidos (en cuanto a área bajo la curva ROC). Para el cáculo de métricas y búsqueda del mejor threshold, no se va a utilizar el mejor modelo devuelto, sino que se va a hacer uso de la "one-standard error rule" propuesta por Breinman y seleccionar el modelo cuya área bajo la curva se encuentra a una desviación estándar de distancia del modelo con mejor auc. Con esto, estaremos intentando reducir en la medida de lo posbile el sobreajuste a los datos de entrenamiento: A continuación se muestran los resultados obtenidos tras el proceso de búsqueda del threshold óptimo para el modelo:
+En le anterior tabla se muestran los 5 mejores resultados obtenidos (en cuanto a área bajo la curva ROC). Para el cálculo de métricas y búsqueda del mejor threshold, no se va a utilizar el mejor modelo devuelto, sino que se va a hacer uso de la "one-standard error rule" propuesta por Breinman y seleccionar el modelo cuya área bajo la curva se encuentra a una desviación estándar de distancia del modelo con mejor auc. Con esto, estaremos intentando reducir en la medida de lo posbile el sobreajuste a los datos de entrenamiento: A continuación se muestran los resultados obtenidos tras el proceso de búsqueda del threshold óptimo para el modelo:
 
 
 ```{r, echo = F}
@@ -1703,17 +1703,18 @@ Como simplificación de redes bayesianas, vamos a entrenar un modelo utilizando 
 Como primera aproximación, utilizaremos las mismas variables utilizadas en el modelo de regresión lineal múltiple (aunque el escalado debería ser indiferente). Para variables numéricas asume una distribución gausiana para calcular la verosimilitud (likelihood). Lo que saca el mod es la media en la primera columna y la varianza en la segunda para las distribuciones condicionadas.
 
 ```{r}
+housesTrain <- read.csv('base_train.csv')
 mod_1 <- naiveBayes(price_label_high ~ sqrt_distance_std + log_landsize_std + lattitude_std + longtitude_std + Type + rooms_cat + Regionname + bath_cat + year_built_cat + sell_rate_cat + Method + car_cat, data=housesTrain)
 ```
 
 Métricas en train. El f1 es algo bajo, ya que ni el recall ni el precision son demasiado buenos. Sin embargo, el AUC ROC es bastante bueno (0.9)
 
-```{r, warning=F}
+```{r, message=FALSE}
 prob_values <- predict(mod_1, housesTrain, type='raw')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
 ggplotROCCurve(roc_dt)
 
-opt_f1_nv1<- opt_f1_function_v2(prob_values, housesTrain, 'price_label_high')
+opt_f1_nv1<- opt_f1_function_v2(prob_values[,2], housesTrain, 'price_label_high')
 c(optimal_threshold = opt_f1_nv1$threshold, precision = opt_f1_nv1$precision, recall = opt_f1_nv1$recall, f1_score = opt_f1_nv1$f1_opt)
 predictions <- data.frame(price_label_high=housesTrain$price_label_high, pred=prob_values[,2])
 predictions %>% ggplot(aes(x=pred, fill=price_label_high)) + geom_histogram(alpha=0.5) + scale_fill_manual(values = palette34) + geom_vline(xintercept=opt_f1_nv1$threshold, linetype='dashed', color=palette34[4])
@@ -1728,7 +1729,7 @@ mod_best <- naiveBayes(price_label_high ~ sqrt_distance_std + Regionname + Type 
 ```
 
 
-```{r, warning=F}
+```{r, message=FALSE}
 mod_best <- readRDS("./models/nb_best_model.rds")
 prob_values <- predict(mod_best, housesTrain, type='raw')
 roc_dt <- roc(housesTrain$price_label_high, prob_values[,2])
