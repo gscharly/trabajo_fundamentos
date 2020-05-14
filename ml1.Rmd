@@ -88,6 +88,10 @@ housesTest <- read.csv('base_test.csv')
 housesVal <- read.csv('base_val.csv')
 ```
 ```{r}
+class(housesTrain$kmeans_cluster)
+```
+
+```{r}
 housesTrain$kmeans_cluster <- factor(housesTrain$kmeans_cluster, levels = c(1,2,3,4,5))
 housesVal$kmeans_cluster <- factor(housesVal$kmeans_cluster, levels = c(1,2,3,4,5))
 housesTest$kmeans_cluster <- factor(housesTest$kmeans_cluster, levels = c(1,2,3,4,5))
@@ -800,11 +804,11 @@ Dicho esto,  se ha decidido que la métrica a utilizar para comparar la performa
 
 # Regresión logística
 
-Como primera aproximación, se ha probado el modelo de regresión logística con todas las variables disponibles en el dataset. El resultado obtenido es el siguiente:
+Como primera aproximación, se ha probado el modelo de regresión logística con hasta 12 variables, sabiendo que son demasiadas para un modelo de este tipo. El resultado obtenido es el siguiente:
 
 
 ```{r}
-filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', "Method", "log_landsize_std", "rooms_cat")
+filter_cols <- c('Suburb', 'Address', 'Rooms', 'Distance', 'Lattitude', 'Longtitude', 'SellerG',  'Date', 'Postcode', 'Bedroom2', 'Bathroom', 'YearBuilt', 'CouncilArea', 'CarImp' ,'LandsizeImp', 'Price', 'log_price', 'price_label', "Method", "log_landsize_std", "rooms_cat", "kmeans_cluster")
 housesTrain_lr <- housesTrain %>% select(-filter_cols)
 housesTrain_lr$may_have_water <- factor(housesTrain_lr$may_have_water, levels = c(TRUE,FALSE))
 
@@ -844,11 +848,12 @@ coef(cv.lasso, cv.lasso$lambda.1se)
 
 Con la aplicación realizada mediante lasso, confirmamos un poco las sospechas que teníamos. Las variables numéricas relativas a la situación siguen siendo relevantes para lasso. Lo que ocurre es que en algunos casos el valor de los coeficientes asociados a ciertos niveles dentro de una misma variable categórica, son muy dispares. Esto se debe o bien a que hay un nivel muy predominante, o bien a que hay ciertos niveles que no son nada relevantes (y quizás podrían agruparse) pero otros sí. Un ejemplo claro de esto es el caso de la variable Regionname. Tal y como vimos en el análisis exploratorio, en la región Southern Metropolitan se encuentran una gran cantidad de casas "caras", mientras que en otras regiones no aparece ninguna y no van a ser relevantes para el modelo. 
 
-En vista a estos resultados, se va a probar un modelo con muchas menos variables, y poder así comparar con el modelo más complejo:
+Posteriormente, se han probado diversos modelos con diferentes combinaciones de variables, con el objetivo de obtener un modelo mucho más sencillos con resultados similares al modelo con 11 variables. A continuación se muestra el mejor encontrado:
+
 
 ```{r}
 lr_regularized <- readRDS("./models/lr_regularized.rds")
-#lr_regularized <- glm(price_label_high ~. -sell_rate_cat - bed_cat - car_cat - kmeans_cluster - may_have_water - lattitude_std, family = binomial(link = 'logit'), data = train)
+#lr_regularized <- glm(price_label_high ~. -sell_rate_cat - bed_cat - car_cat - may_have_water - lattitude_std - year_built_cat - longtitude_std, family = binomial(link = 'logit'), data = housesTrain_lr)
 summary(lr_regularized)
 ```
 
@@ -859,7 +864,7 @@ opt_f1_lr_regularized <- opt_f1_function_v2(prob_lr_regularized, housesTrain_lr,
 c(optimal_thrshold = opt_f1_lr_regularized$threshold, precision = opt_f1_lr_regularized$precision, recall =  opt_f1_lr_regularized$recall, f1_score = opt_f1_lr_regularized$f1_opt)
 ```
 
-Se puede ver que la f1_score no se ve especialmente perjudicada pasando de 13 a 7 variables. A continuación se muestra por un lado la curva PR (Precision-Recall) junto con el área bajo la misma, y por otro, una comparativa de Precision, Recall y F1 score para los diferentes thresholds:
+Se puede ver que la f1_score no se ve especialmente perjudicada pasando de 11 a 5 variables. A continuación se muestra por un lado la curva PR (Precision-Recall) junto con el área bajo la misma, y por otro, una comparativa de Precision, Recall y F1 score para los diferentes thresholds:
 
 ```{r}
 opt_f1_lr_regularized$p1
@@ -887,7 +892,7 @@ housesVal_lr$price_label_high <- as.factor(ifelse(housesVal_lr$price_label_high=
 metrics_function_num(preds_validation_lr, housesVal_lr, 'price_label_high')
 ```
 
-Como podemos ver, al simpolificar el modelo se ha conseguido que no sobreajuste en absoluto a los datos de entrenamiento. A pesar de esto, tal y como ya se ha comentado, los resultados obtenidos con este algoritmo no son excesivamente satisfactorios.
+Como podemos ver, al simpolificar el modelo se ha conseguido que no sobreajuste en absoluto a los datos de entrenamiento . A pesar de esto, tal y como ya se ha comentado, los resultados obtenidos con este algoritmo no son excesivamente satisfactorios.
 
 ## Árboles de decisión
 Se van a probar árboles de decisión sobre nuestro conjunto de datos. En primer lugar, se utilizarán las variables que se consideraron importantes en el análisis exploratorio, para después probar distintas formas de tuning e intentar evitar el sobreaprendizaje del árbol.
